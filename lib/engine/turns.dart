@@ -292,6 +292,13 @@ void _endTurn(RoundState state) {
   state.justDrawnFromPile = null;
   // Staging is per-turn; a turn cannot end mid-staging.
   state.stagedPoints = 0;
+
+  // Termination guarantee, not a rule of any variant — see [TurnConfig
+  // .truncationCap]. This is a deliberate divergence from the reference Python
+  // engine, which leaves truncation to its RL environment; a game has to end.
+  if (state.turnNumber >= state.cfg.turn.truncationCap) {
+    _finish(state, EndReason.stockExhausted, null);
+  }
 }
 
 void _finish(RoundState state, EndReason reason, int? wentOutSide) {

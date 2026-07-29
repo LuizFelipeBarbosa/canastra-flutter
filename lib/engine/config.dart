@@ -227,9 +227,19 @@ class TurnConfig {
   final int drawCount;
   final String deckExhaustionPolicy;
 
+  /// Hard ceiling on turns per round, after which the round ends where it
+  /// stands and is scored as a stock exhaustion.
+  ///
+  /// Without it a round is not guaranteed to terminate: with a whole-pile draw
+  /// rule two players can take the discard pile from each other indefinitely,
+  /// so the stock never depletes and nobody is ever forced toward going out.
+  /// Real games do not reach this — it is a safety valve, not a rule.
+  final int truncationCap;
+
   const TurnConfig({
     this.drawCount = 1,
     this.deckExhaustionPolicy = exhaustionEndRound,
+    this.truncationCap = 400,
   });
 }
 
