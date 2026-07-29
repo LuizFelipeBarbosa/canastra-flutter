@@ -1,0 +1,37 @@
+[build]
+  command = "./tool/netlify_build.sh"
+  publish = "build/web"
+
+[build.environment]
+  # Keep this pinned to the SDK the app is developed against.
+  FLUTTER_VERSION = "3.44.6"
+  FLUTTER_SUPPRESS_ANALYTICS = "true"
+  CI = "true"
+
+# Flutter web is a single page; let it handle every route itself.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Hashed build artefacts never change under the same name.
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/canvaskit/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# The bootstrap script and service worker point at the current build.
+[[headers]]
+  for = "/flutter_bootstrap.js"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/flutter_service_worker.js"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
