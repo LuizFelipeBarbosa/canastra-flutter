@@ -13,11 +13,14 @@ int meldPoints(RulesConfig cfg, Meld meld) =>
 
 int canastraBonus(RulesConfig cfg, Meld meld) {
   if (!meld.isCanastra(cfg.meld.canastraMinSize)) return 0;
-  return meld.isClean ? cfg.meld.canastraBonusClean : cfg.meld.canastraBonusDirty;
+  return meld.isClean
+      ? cfg.meld.canastraBonusClean
+      : cfg.meld.canastraBonusDirty;
 }
 
 int handPoints(RulesConfig cfg, RoundState state, int player) => state
-    .hands[player].entries
+    .hands[player]
+    .entries
     .fold(0, (sum, e) => sum + cfg.cardValue(e.key) * e.value);
 
 /// One line of the round score sheet — what the UI shows players after a round.
@@ -32,7 +35,11 @@ class SideScore {
   final int side;
   final List<ScoreLine> lines;
   final int total;
-  const SideScore({required this.side, required this.lines, required this.total});
+  const SideScore({
+    required this.side,
+    required this.lines,
+    required this.total,
+  });
 }
 
 /// Final (or would-be) round score per side, itemised.
@@ -53,7 +60,9 @@ List<SideScore> roundScoreSheet(RoundState state) {
       bonusTotal += canastraBonus(cfg, meld);
     }
     if (meldTotal != 0) lines[side].add(ScoreLine('Melded cards', meldTotal));
-    if (bonusTotal != 0) lines[side].add(ScoreLine('Canastra bonuses', bonusTotal));
+    if (bonusTotal != 0) {
+      lines[side].add(ScoreLine('Canastra bonuses', bonusTotal));
+    }
   }
 
   if (state.wentOutSide != null) {
@@ -81,7 +90,9 @@ List<SideScore> roundScoreSheet(RoundState state) {
   if (cfg.morto.count != 0) {
     for (var side = 0; side < numSides; side++) {
       if (side < state.mortoTaken.length && !state.mortoTaken[side]) {
-        lines[side].add(ScoreLine('Morto not taken', -cfg.morto.untakenPenalty));
+        lines[side].add(
+          ScoreLine('Morto not taken', -cfg.morto.untakenPenalty),
+        );
       }
     }
   }
@@ -124,5 +135,6 @@ List<SideScore> roundScoreSheet(RoundState state) {
 }
 
 /// Final (or would-be) round score per side.
-List<int> roundScores(RoundState state) =>
-    [for (final s in roundScoreSheet(state)) s.total];
+List<int> roundScores(RoundState state) => [
+  for (final s in roundScoreSheet(state)) s.total,
+];

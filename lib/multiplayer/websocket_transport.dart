@@ -78,18 +78,21 @@ class WebSocketTransport implements GameTransport {
       },
     );
 
-    send(JoinRoom(
-      roomCode: roomCode,
-      playerName: playerName,
-      preferredSeat: preferredSeat,
-    ));
+    send(
+      JoinRoom(
+        roomCode: roomCode,
+        playerName: playerName,
+        preferredSeat: preferredSeat,
+      ),
+    );
   }
 
   void _onMessage(dynamic raw) {
     if (raw is! String) return;
     try {
       final event = ServerEvent.fromJson(
-          jsonDecode(raw) as Map<String, dynamic>);
+        jsonDecode(raw) as Map<String, dynamic>,
+      );
       if (event is Joined) _seat = event.seat;
       _events.add(event);
     } on FormatException catch (e) {

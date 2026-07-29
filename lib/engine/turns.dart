@@ -146,7 +146,9 @@ void _applyPlay(RoundState state, GameAction action) {
   if (rejection != null) throw IllegalAction(rejection);
 
   if (action is CreateSeq || action is CreateSet) {
-    if (handSize == 0) throw IllegalAction('hand is empty; only GO_OUT is legal');
+    if (handSize == 0) {
+      throw IllegalAction('hand is empty; only GO_OUT is legal');
+    }
     final sideMelds = state.sideMelds(side);
     if (sideMelds.length >= cfg.meld.maxMeldSlots) {
       throw IllegalAction('meld slot cap reached');
@@ -155,22 +157,36 @@ void _applyPlay(RoundState state, GameAction action) {
       throw IllegalAction('meld would strand the hand');
     }
     if (action is CreateSet && cfg.meld.uniqueSetRankPerSide) {
-      if (sideMelds
-          .any((m) => m.kind == MeldKind.set && m.rank == action.rank)) {
+      if (sideMelds.any(
+        (m) => m.kind == MeldKind.set && m.rank == action.rank,
+      )) {
         throw IllegalAction('side already owns a set of rank ${action.rank}');
       }
     }
     final Meld meld;
     try {
       if (action is CreateSeq) {
-        meld = createSequence(cfg, hand, side, state.melds.length, action.suit,
-            action.start, action.wild);
+        meld = createSequence(
+          cfg,
+          hand,
+          side,
+          state.melds.length,
+          action.suit,
+          action.start,
+          action.wild,
+        );
       } else {
         // A pending pile-card obligation must consume the taken top card
         // itself, not a lower-suit copy of its rank.
-        meld = createSet(cfg, hand, side, state.melds.length,
-            (action as CreateSet).rank, action.wild,
-            prefer: state.pendingPileCard);
+        meld = createSet(
+          cfg,
+          hand,
+          side,
+          state.melds.length,
+          (action as CreateSet).rank,
+          action.wild,
+          prefer: state.pendingPileCard,
+        );
       }
     } on MeldError catch (e) {
       throw IllegalAction(e.message);
@@ -179,7 +195,9 @@ void _applyPlay(RoundState state, GameAction action) {
     _afterMeldAction(state, side, action, meldPoints(cfg, meld));
     _resolveEmptyHand(state, side, viaDiscard: false);
   } else if (action is AddToMeld) {
-    if (handSize == 0) throw IllegalAction('hand is empty; only GO_OUT is legal');
+    if (handSize == 0) {
+      throw IllegalAction('hand is empty; only GO_OUT is legal');
+    }
     final sideMelds = state.sideMelds(side);
     if (action.slot < 0 || action.slot >= sideMelds.length) {
       throw IllegalAction('no meld in slot ${action.slot}');
@@ -233,12 +251,17 @@ void _applyPlay(RoundState state, GameAction action) {
 /// Post-meld bookkeeping: clear a satisfied pending-pile obligation and
 /// accumulate initial-meld staging.
 void _afterMeldAction(
-    RoundState state, int side, GameAction action, int points) {
+  RoundState state,
+  int side,
+  GameAction action,
+  int points,
+) {
   if (state.pendingPileCard != null) {
     final pendingRank = idRank(state.pendingPileCard!);
     // A create of the pending rank consumed the card itself (createSet runs
     // with prefer=pending); an add satisfies only with that exact card.
-    final satisfied = (action is CreateSet && action.rank == pendingRank) ||
+    final satisfied =
+        (action is CreateSet && action.rank == pendingRank) ||
         (action is AddToMeld && action.ct == state.pendingPileCard);
     if (satisfied) {
       state.pendingPileCard = null;

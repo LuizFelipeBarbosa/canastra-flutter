@@ -45,8 +45,20 @@ const String exhaustionEndRound = 'END_ROUND';
 const String exhaustionConvertMorto = 'CONVERT_MORTO';
 
 const Map<String, int> buracoCardPoints = {
-  'A': 15, '2': 10, '3': 5, '4': 5, '5': 5, '6': 5, '7': 5,
-  '8': 10, '9': 10, '10': 10, 'J': 10, 'Q': 10, 'K': 10, 'JOKER': 20,
+  'A': 15,
+  '2': 10,
+  '3': 5,
+  '4': 5,
+  '5': 5,
+  '6': 5,
+  '7': 5,
+  '8': 10,
+  '9': 10,
+  '10': 10,
+  'J': 10,
+  'Q': 10,
+  'K': 10,
+  'JOKER': 20,
 };
 
 // --- config tree -------------------------------------------------------------
@@ -285,7 +297,9 @@ class RulesConfig {
   /// exception is applied by meld validation, not here.
   late final List<bool> _wildTable = List.generate(
     kCardSpace,
-    (ct) => ct == kJoker ? wildcard.jokersWild : wildcard.wildRanks.contains(idRank(ct)),
+    (ct) => ct == kJoker
+        ? wildcard.jokersWild
+        : wildcard.wildRanks.contains(idRank(ct)),
   );
 
   bool isWildCard(CardId ct) => _wildTable[ct];

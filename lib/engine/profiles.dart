@@ -29,8 +29,20 @@ RulesConfig buraco({int numPlayers = 2}) {
 }
 
 const Map<String, int> canastaCardPoints = {
-  'A': 20, '2': 20, '3': 5, '4': 5, '5': 5, '6': 5, '7': 5,
-  '8': 10, '9': 10, '10': 10, 'J': 10, 'Q': 10, 'K': 10, 'JOKER': 50,
+  'A': 20,
+  '2': 20,
+  '3': 5,
+  '4': 5,
+  '5': 5,
+  '6': 5,
+  '7': 5,
+  '8': 10,
+  '9': 10,
+  '10': 10,
+  'J': 10,
+  'Q': 10,
+  'K': 10,
+  'JOKER': 50,
 };
 
 const List<(int, int)> canastaThresholds = [
@@ -49,12 +61,20 @@ RulesConfig canasta({int numPlayers = 4}) {
   final int minCanastras;
   if (numPlayers == 4) {
     table = TableConfig(
-        numPlayers: 4, mode: modeTeams, teamOf: 2, cardsPerPlayer: 11);
+      numPlayers: 4,
+      mode: modeTeams,
+      teamOf: 2,
+      cardsPerPlayer: 11,
+    );
     drawCount = 1;
     minCanastras = 1;
   } else if (numPlayers == 2) {
     table = TableConfig(
-        numPlayers: 2, mode: modeIndividual, teamOf: 1, cardsPerPlayer: 15);
+      numPlayers: 2,
+      mode: modeIndividual,
+      teamOf: 1,
+      cardsPerPlayer: 15,
+    );
     drawCount = 2;
     minCanastras = 2;
   } else {
@@ -89,8 +109,10 @@ RulesConfig canasta({int numPlayers = 4}) {
       concealedBonus: 100,
       goOutMinCanastras: minCanastras,
     ),
-    initialMeld:
-        const InitialMeldConfig(enabled: true, thresholds: canastaThresholds),
+    initialMeld: const InitialMeldConfig(
+      enabled: true,
+      thresholds: canastaThresholds,
+    ),
     specialThrees: const SpecialThreesConfig(
       redThreeMode: red3BonusAutoreplace,
       redThreeBonus: 100,
@@ -99,15 +121,29 @@ RulesConfig canasta({int numPlayers = 4}) {
       blackThreeBlocksPile: true,
       blackThreeMeldOnlyGoingOut: true,
     ),
-    scoring:
-        const ScoringConfig(cardPoints: canastaCardPoints, matchTarget: 5000),
+    scoring: const ScoringConfig(
+      cardPoints: canastaCardPoints,
+      matchTarget: 5000,
+    ),
     turn: TurnConfig(drawCount: drawCount),
   );
 }
 
 const Map<String, int> rummyCardPoints = {
-  'A': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7,
-  '8': 8, '9': 9, '10': 10, 'J': 10, 'Q': 10, 'K': 10, 'JOKER': 0,
+  'A': 1,
+  '2': 2,
+  '3': 3,
+  '4': 4,
+  '5': 5,
+  '6': 6,
+  '7': 7,
+  '8': 8,
+  '9': 9,
+  '10': 10,
+  'J': 10,
+  'Q': 10,
+  'K': 10,
+  'JOKER': 0,
 };
 
 /// Basic Rummy: a single 52-card deck, no wildcards, top-card draw, no morto,
@@ -119,7 +155,11 @@ RulesConfig rummy({int numPlayers = 2}) {
   return RulesConfig(
     name: 'rummy',
     table: TableConfig(
-        numPlayers: 2, mode: modeIndividual, teamOf: 1, cardsPerPlayer: 10),
+      numPlayers: 2,
+      mode: modeIndividual,
+      teamOf: 1,
+      cardsPerPlayer: 10,
+    ),
     deck: const DeckConfig(deckCount: 1, printedJokers: 0),
     wildcard: const WildcardConfig(
       wildRanks: {},
@@ -172,8 +212,10 @@ RulesConfig biriba({int numPlayers = 4}) {
       initialUpcard: true,
       noImmediateRedrawDiscard: true,
     ),
-    scoring:
-        const ScoringConfig(cardPoints: buracoCardPoints, matchTarget: 5000),
+    scoring: const ScoringConfig(
+      cardPoints: buracoCardPoints,
+      matchTarget: 5000,
+    ),
     turn: const TurnConfig(deckExhaustionPolicy: exhaustionConvertMorto),
   );
 }
@@ -202,7 +244,8 @@ const List<GameProfile> kProfiles = [
     id: 'buraco',
     label: 'Buraco',
     tagline: 'Brazilian house rules',
-    blurb: 'Sequences and sets, twos are wild, take the whole discard pile, '
+    blurb:
+        'Sequences and sets, twos are wild, take the whole discard pile, '
         'and pick up your morto before you can go out.',
     playerCounts: [2, 4],
     build: buraco,
@@ -211,7 +254,8 @@ const List<GameProfile> kProfiles = [
     id: 'canasta',
     label: 'Canasta',
     tagline: 'Classic American',
-    blurb: 'Sets only, jokers and twos wild, a pile that freezes, red threes '
+    blurb:
+        'Sets only, jokers and twos wild, a pile that freezes, red threes '
         'for bonus, and a minimum meld that grows with your score.',
     playerCounts: [2, 4],
     build: canasta,
@@ -220,7 +264,8 @@ const List<GameProfile> kProfiles = [
     id: 'biriba',
     label: 'Biriba',
     tagline: 'Greek cousin',
-    blurb: 'Buraco scoring with jokers in the deck, and a dead hand that turns '
+    blurb:
+        'Buraco scoring with jokers in the deck, and a dead hand that turns '
         'into a fresh stock when the deck runs out.',
     playerCounts: [2, 4],
     build: biriba,
@@ -229,7 +274,8 @@ const List<GameProfile> kProfiles = [
     id: 'rummy',
     label: 'Rummy',
     tagline: 'Quick and simple',
-    blurb: 'One deck, no wilds, draw a single card, and go out fast — the '
+    blurb:
+        'One deck, no wilds, draw a single card, and go out fast — the '
         'winner scores whatever is left in the loser\'s hand.',
     playerCounts: [2],
     build: rummy,

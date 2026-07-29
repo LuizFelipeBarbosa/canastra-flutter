@@ -36,8 +36,10 @@ bool baterReady(RoundState state, int side, {List<Meld>? melds}) {
     final minSize = state.cfg.meld.canastraMinSize;
     final source = melds ?? state.sideMelds(side);
     final qualifying = source
-        .where((m) =>
-            m.isCanastra(minSize) && (m.isClean || !g.requireCleanCanastra))
+        .where(
+          (m) =>
+              m.isCanastra(minSize) && (m.isClean || !g.requireCleanCanastra),
+        )
         .length;
     if (qualifying < g.goOutMinCanastras) return false;
   }
@@ -205,7 +207,9 @@ int maxStageablePoints(
   var total = 0;
   var used = 0;
   for (final (cards, points) in atoms) {
-    if (used + cards > budget) break; // strict prefix keeps dependency order valid
+    if (used + cards > budget) {
+      break; // strict prefix keeps dependency order valid
+    }
     used += cards;
     total += points;
   }
@@ -247,8 +251,7 @@ bool canTakeConditionalPile(RoundState state) {
   final openSet = state
       .sideMelds(side)
       .any((m) => m.kind == MeldKind.set && m.rank == rank);
-  final hasWild =
-      hand.entries.any((e) => cfg.isWildCard(e.key) && e.value > 0);
+  final hasWild = hand.entries.any((e) => cfg.isWildCard(e.key) && e.value > 0);
 
   final List<int> consumptions;
   if (frozenFor) {
@@ -347,8 +350,14 @@ String? playActionExtraRejection(RoundState state, GameAction action) {
       if (state.pendingPilePairOnly && action.wild != setWildNone) {
         ok = false;
       } else {
-        ok = planSet(cfg, state.hands[player], action.rank, action.wild,
-                prefer: pending) !=
+        ok =
+            planSet(
+              cfg,
+              state.hands[player],
+              action.rank,
+              action.wild,
+              prefer: pending,
+            ) !=
             null;
       }
     } else {
@@ -371,7 +380,9 @@ String? playActionExtraRejection(RoundState state, GameAction action) {
       if (action.slot >= 0 && action.slot < sideMelds.length) {
         final target = sideMelds[action.slot];
         if (target.kind == MeldKind.set && target.rank == Rank.three) {
-          if (cfg.isWildCard(action.ct)) return 'black-three sets take no wilds';
+          if (cfg.isWildCard(action.ct)) {
+            return 'black-three sets take no wilds';
+          }
           if (state.handSize(player) - 1 > 1) {
             return 'black threes meld only when going out';
           }
@@ -409,14 +420,18 @@ String? playActionExtraRejection(RoundState state, GameAction action) {
       // Post-action staged sets: their ranks stay addable and their free wild
       // slots extend placement capacity.
       final limit = cfg.wildcard.wildcardLimitPerMeld;
-      final stagedSets =
-          state.sideMelds(side).where((m) => m.kind == MeldKind.set).toList();
+      final stagedSets = state
+          .sideMelds(side)
+          .where((m) => m.kind == MeldKind.set)
+          .toList();
       final stagedRanks = {
         for (final m in stagedSets)
           if (m.rank != null) m.rank!,
       };
       var capacity = stagedSets.fold(
-          0, (sum, m) => sum + (limit - m.wildCount).clamp(0, limit));
+        0,
+        (sum, m) => sum + (limit - m.wildCount).clamp(0, limit),
+      );
       if (action is CreateSet) {
         stagedRanks.add(action.rank);
         capacity += limit - (action.wild != setWildNone ? 1 : 0);

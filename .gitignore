@@ -25,3 +25,6 @@ android/key.properties
 __pycache__/
 
 .DS_Store
+
+# Build output
+build/

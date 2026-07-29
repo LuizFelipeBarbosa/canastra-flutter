@@ -12,7 +12,8 @@ library;
 class Prng {
   int _state;
 
-  Prng(int seed) : _state = (seed & 0x7fffffff) == 0 ? 0x2545f491 : seed & 0x7fffffff;
+  Prng(int seed)
+    : _state = (seed & 0x7fffffff) == 0 ? 0x2545f491 : seed & 0x7fffffff;
 
   /// Next raw 32-bit value.
   int _next() {

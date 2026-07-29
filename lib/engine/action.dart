@@ -62,7 +62,11 @@ class CreateSeq extends GameAction {
   /// A `seqWild*` constant.
   final int wild;
 
-  const CreateSeq({required this.suit, required this.start, required this.wild});
+  const CreateSeq({
+    required this.suit,
+    required this.start,
+    required this.wild,
+  });
 
   @override
   bool operator ==(Object other) =>
@@ -143,7 +147,8 @@ class EndRound extends GameAction {
 
 int baseDiscard(int maxMeldSlots) => baseAdd + maxMeldSlots * kCardSpace;
 
-int actionSpaceSize(int maxMeldSlots) => baseDiscard(maxMeldSlots) + kCardSpace + 2;
+int actionSpaceSize(int maxMeldSlots) =>
+    baseDiscard(maxMeldSlots) + kCardSpace + 2;
 
 /// Structured action → stable integer id.
 int encodeAction(GameAction action, int maxMeldSlots) {
@@ -153,7 +158,9 @@ int encodeAction(GameAction action, int maxMeldSlots) {
     case DrawTrash():
       return 1;
     case CreateSeq(:final suit, :final start, :final wild):
-      assert(start >= 1 && start <= numSeqShapes && wild >= 0 && wild < numSeqWild);
+      assert(
+        start >= 1 && start <= numSeqShapes && wild >= 0 && wild < numSeqWild,
+      );
       return baseSeq + (suit * numSeqShapes + (start - 1)) * numSeqWild + wild;
     case CreateSet(:final rank, :final wild):
       assert(wild >= 0 && wild < numSetWild);
@@ -183,7 +190,10 @@ GameAction decodeAction(int a, int maxMeldSlots) {
     final w = x % numSeqWild;
     x ~/= numSeqWild;
     return CreateSeq(
-        suit: x ~/ numSeqShapes, start: x % numSeqShapes + 1, wild: w);
+      suit: x ~/ numSeqShapes,
+      start: x % numSeqShapes + 1,
+      wild: w,
+    );
   }
   if (a < baseAdd) {
     final x = a - baseSet;

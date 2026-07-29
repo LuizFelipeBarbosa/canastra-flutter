@@ -48,11 +48,12 @@ class MatchHost {
     required List<SeatInfo> seats,
     AgentLevel botLevel = AgentLevel.normal,
     this.botDelay = const Duration(milliseconds: 600),
-  })  : _seats = List.of(seats),
-        _match = Match(cfg: cfg, seed: seed) {
+  }) : _seats = List.of(seats),
+       _match = Match(cfg: cfg, seed: seed) {
     if (seats.length != cfg.table.numPlayers) {
       throw ArgumentError(
-          'expected ${cfg.table.numPlayers} seats, got ${seats.length}');
+        'expected ${cfg.table.numPlayers} seats, got ${seats.length}',
+      );
     }
     for (final s in _seats) {
       if (s.kind == SeatKind.bot) {
@@ -118,15 +119,17 @@ class MatchHost {
     }
     if (_match.matchOver || _match.round.roundOver) {
       _emit(
-          seat,
-          ActionRejected(
-              actionId: actionId, reason: 'the round is already over'));
+        seat,
+        ActionRejected(actionId: actionId, reason: 'the round is already over'),
+      );
       _pushTable(seat);
       return;
     }
     if (_match.currentPlayer != seat) {
-      _emit(seat,
-          ActionRejected(actionId: actionId, reason: 'it is not your turn'));
+      _emit(
+        seat,
+        ActionRejected(actionId: actionId, reason: 'it is not your turn'),
+      );
       _pushTable(seat);
       return;
     }
@@ -141,8 +144,10 @@ class MatchHost {
       _pushTable(seat);
       return;
     } on ArgumentError catch (e) {
-      _emit(seat,
-          ActionRejected(actionId: actionId, reason: e.message.toString()));
+      _emit(
+        seat,
+        ActionRejected(actionId: actionId, reason: e.message.toString()),
+      );
       _pushTable(seat);
       return;
     }
@@ -150,8 +155,10 @@ class MatchHost {
 
     if (_match.round.roundOver) {
       // Nobody human is watching, so keep the match moving on its own.
-      final anyHuman = _seats.any((s) =>
-          s.kind != SeatKind.bot && s.kind != SeatKind.empty && s.connected);
+      final anyHuman = _seats.any(
+        (s) =>
+            s.kind != SeatKind.bot && s.kind != SeatKind.empty && s.connected,
+      );
       if (!anyHuman && !_match.matchOver) {
         _nextRound();
       }
@@ -233,20 +240,20 @@ class MatchHost {
   }
 
   void _broadcastLobby() => _emit(
-        null,
-        LobbyUpdate(
-          roomCode: roomCode,
-          profile: cfg.name,
-          numPlayers: cfg.table.numPlayers,
-          seats: seats,
-          started: _started,
-        ),
-      );
+    null,
+    LobbyUpdate(
+      roomCode: roomCode,
+      profile: cfg.name,
+      numPlayers: cfg.table.numPlayers,
+      seats: seats,
+      started: _started,
+    ),
+  );
 
   void _pushTable(int seat) => _emit(
-        seat,
-        TableUpdate(view: buildTableView(_match, seat, playerNames: _playerNames)),
-      );
+    seat,
+    TableUpdate(view: buildTableView(_match, seat, playerNames: _playerNames)),
+  );
 
   void _broadcastTable() {
     for (final s in _seats) {

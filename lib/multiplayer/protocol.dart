@@ -30,30 +30,34 @@ class SeatInfo {
     this.ready = false,
   });
 
-  SeatInfo copyWith({String? name, SeatKind? kind, bool? connected, bool? ready}) =>
-      SeatInfo(
-        seat: seat,
-        name: name ?? this.name,
-        kind: kind ?? this.kind,
-        connected: connected ?? this.connected,
-        ready: ready ?? this.ready,
-      );
+  SeatInfo copyWith({
+    String? name,
+    SeatKind? kind,
+    bool? connected,
+    bool? ready,
+  }) => SeatInfo(
+    seat: seat,
+    name: name ?? this.name,
+    kind: kind ?? this.kind,
+    connected: connected ?? this.connected,
+    ready: ready ?? this.ready,
+  );
 
   Map<String, dynamic> toJson() => {
-        'seat': seat,
-        'name': name,
-        'kind': kind.name,
-        'connected': connected,
-        'ready': ready,
-      };
+    'seat': seat,
+    'name': name,
+    'kind': kind.name,
+    'connected': connected,
+    'ready': ready,
+  };
 
   factory SeatInfo.fromJson(Map<String, dynamic> j) => SeatInfo(
-        seat: j['seat'] as int,
-        name: j['name'] as String,
-        kind: SeatKind.values.byName(j['kind'] as String),
-        connected: j['connected'] as bool,
-        ready: j['ready'] as bool,
-      );
+    seat: j['seat'] as int,
+    name: j['name'] as String,
+    kind: SeatKind.values.byName(j['kind'] as String),
+    connected: j['connected'] as bool,
+    ready: j['ready'] as bool,
+  );
 }
 
 // --- client -> server ---------------------------------------------------------
@@ -66,10 +70,10 @@ sealed class ClientCommand {
   static ClientCommand fromJson(Map<String, dynamic> j) =>
       switch (j['type'] as String) {
         'join' => JoinRoom(
-            roomCode: j['roomCode'] as String,
-            playerName: j['playerName'] as String,
-            preferredSeat: j['preferredSeat'] as int?,
-          ),
+          roomCode: j['roomCode'] as String,
+          playerName: j['playerName'] as String,
+          preferredSeat: j['preferredSeat'] as int?,
+        ),
         'ready' => SetReady(ready: j['ready'] as bool),
         'action' => SubmitAction(actionId: j['actionId'] as int),
         'nextRound' => const RequestNextRound(),
@@ -94,11 +98,11 @@ class JoinRoom extends ClientCommand {
 
   @override
   Map<String, dynamic> toJson() => {
-        'type': 'join',
-        'roomCode': roomCode,
-        'playerName': playerName,
-        'preferredSeat': preferredSeat,
-      };
+    'type': 'join',
+    'roomCode': roomCode,
+    'playerName': playerName,
+    'preferredSeat': preferredSeat,
+  };
 }
 
 class SetReady extends ClientCommand {
@@ -147,25 +151,26 @@ sealed class ServerEvent {
   static ServerEvent fromJson(Map<String, dynamic> j) =>
       switch (j['type'] as String) {
         'joined' => Joined(
-            roomCode: j['roomCode'] as String,
-            seat: j['seat'] as int,
-          ),
+          roomCode: j['roomCode'] as String,
+          seat: j['seat'] as int,
+        ),
         'lobby' => LobbyUpdate(
-            roomCode: j['roomCode'] as String,
-            profile: j['profile'] as String,
-            numPlayers: j['numPlayers'] as int,
-            seats: [
-              for (final s in (j['seats'] as List).cast<Map<String, dynamic>>())
-                SeatInfo.fromJson(s),
-            ],
-            started: j['started'] as bool,
-          ),
+          roomCode: j['roomCode'] as String,
+          profile: j['profile'] as String,
+          numPlayers: j['numPlayers'] as int,
+          seats: [
+            for (final s in (j['seats'] as List).cast<Map<String, dynamic>>())
+              SeatInfo.fromJson(s),
+          ],
+          started: j['started'] as bool,
+        ),
         'table' => TableUpdate(
-            view: TableView.fromJson(j['view'] as Map<String, dynamic>)),
+          view: TableView.fromJson(j['view'] as Map<String, dynamic>),
+        ),
         'rejected' => ActionRejected(
-            actionId: j['actionId'] as int,
-            reason: j['reason'] as String,
-          ),
+          actionId: j['actionId'] as int,
+          reason: j['reason'] as String,
+        ),
         'error' => ServerError(message: j['message'] as String),
         final t => throw FormatException('unknown event type: $t'),
       };
@@ -178,8 +183,11 @@ class Joined extends ServerEvent {
   const Joined({required this.roomCode, required this.seat});
 
   @override
-  Map<String, dynamic> toJson() =>
-      {'type': 'joined', 'roomCode': roomCode, 'seat': seat};
+  Map<String, dynamic> toJson() => {
+    'type': 'joined',
+    'roomCode': roomCode,
+    'seat': seat,
+  };
 }
 
 /// The pre-game roster; also sent when someone joins, leaves or readies up.
@@ -200,13 +208,13 @@ class LobbyUpdate extends ServerEvent {
 
   @override
   Map<String, dynamic> toJson() => {
-        'type': 'lobby',
-        'roomCode': roomCode,
-        'profile': profile,
-        'numPlayers': numPlayers,
-        'seats': [for (final s in seats) s.toJson()],
-        'started': started,
-      };
+    'type': 'lobby',
+    'roomCode': roomCode,
+    'profile': profile,
+    'numPlayers': numPlayers,
+    'seats': [for (final s in seats) s.toJson()],
+    'started': started,
+  };
 }
 
 /// The authoritative state, redacted for the receiving seat. Sent after every
@@ -227,8 +235,11 @@ class ActionRejected extends ServerEvent {
   const ActionRejected({required this.actionId, required this.reason});
 
   @override
-  Map<String, dynamic> toJson() =>
-      {'type': 'rejected', 'actionId': actionId, 'reason': reason};
+  Map<String, dynamic> toJson() => {
+    'type': 'rejected',
+    'actionId': actionId,
+    'reason': reason,
+  };
 }
 
 class ServerError extends ServerEvent {

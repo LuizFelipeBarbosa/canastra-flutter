@@ -28,10 +28,10 @@ abstract class Agent {
   int chooseAction(RulesConfig cfg, TableView view);
 
   factory Agent.forLevel(AgentLevel level, {int seed = 0}) => switch (level) {
-        AgentLevel.easy => RandomAgent(seed: seed),
-        AgentLevel.normal => HeuristicAgent(seed: seed, noise: 1.0),
-        AgentLevel.hard => HeuristicAgent(seed: seed, noise: 0.05),
-      };
+    AgentLevel.easy => RandomAgent(seed: seed),
+    AgentLevel.normal => HeuristicAgent(seed: seed, noise: 1.0),
+    AgentLevel.hard => HeuristicAgent(seed: seed, noise: 0.05),
+  };
 }
 
 class RandomAgent implements Agent {
@@ -75,8 +75,7 @@ class HeuristicAgent implements Agent {
     var bestScore = double.negativeInfinity;
     for (final id in legal) {
       final action = decodeAction(id, cfg.meld.maxMeldSlots);
-      final score =
-          _score(action, cfg, view, hand) + _rng.nextDouble() * noise;
+      final score = _score(action, cfg, view, hand) + _rng.nextDouble() * noise;
       if (score > bestScore) {
         bestScore = score;
         bestId = id;
@@ -101,7 +100,8 @@ class HeuristicAgent implements Agent {
       case AddToMeld(:final slot, :final ct):
         final myMelds = view.myMelds;
         final target = slot < myMelds.length ? myMelds[slot] : null;
-        final completes = target != null && target.size == view.canastraMinSize - 1;
+        final completes =
+            target != null && target.size == view.canastraMinSize - 1;
         if (cfg.isWildCard(ct)) return 300 + (completes ? 250 : 0);
         return 700 + (completes ? 150 : 0);
       case DrawTrash():

@@ -34,8 +34,19 @@ abstract final class Rank {
   static const int king = 12;
 
   static const List<int> values = [
-    ace, two, three, four, five, six, seven,
-    eight, nine, ten, jack, queen, king,
+    ace,
+    two,
+    three,
+    four,
+    five,
+    six,
+    seven,
+    eight,
+    nine,
+    ten,
+    jack,
+    queen,
+    king,
   ];
 }
 
@@ -48,7 +59,19 @@ const int kCardSpace = 54;
 const Set<int> kRedSuits = {Suit.diamonds, Suit.hearts};
 
 const List<String> kRankNames = [
-  'A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K',
+  'A',
+  '2',
+  '3',
+  '4',
+  '5',
+  '6',
+  '7',
+  '8',
+  '9',
+  '10',
+  'J',
+  'Q',
+  'K',
 ];
 const List<String> kSuitSymbols = ['♣', '♦', '♥', '♠'];
 
@@ -120,7 +143,7 @@ String cardStr(CardId ct) {
 
 /// Canonically ordered (unshuffled) full deck as card-type ids.
 List<CardId> buildDeck(int deckCount, int printedJokers) => [
-      for (var i = 0; i < deckCount; i++)
-        for (var ct = 0; ct < 52; ct++) ct,
-      for (var i = 0; i < printedJokers; i++) kJoker,
-    ];
+  for (var i = 0; i < deckCount; i++)
+    for (var ct = 0; ct < 52; ct++) ct,
+  for (var i = 0; i < printedJokers; i++) kJoker,
+];

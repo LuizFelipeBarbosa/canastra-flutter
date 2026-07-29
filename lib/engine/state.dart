@@ -100,25 +100,27 @@ class RoundState {
     this.roundOver = false,
     this.wentOutSide,
     this.endReason,
-  })  : trash = trash ?? [],
-        melds = melds ?? [],
-        morto = morto ?? [],
-        mortoTaken = mortoTaken ?? [],
-        redThrees = redThrees ?? [],
-        openedOnTurn = openedOnTurn ?? [],
-        initialMeldMin = initialMeldMin ?? [],
-        initialMeldDone = initialMeldDone ?? [];
+  }) : trash = trash ?? [],
+       melds = melds ?? [],
+       morto = morto ?? [],
+       mortoTaken = mortoTaken ?? [],
+       redThrees = redThrees ?? [],
+       openedOnTurn = openedOnTurn ?? [],
+       initialMeldMin = initialMeldMin ?? [],
+       initialMeldDone = initialMeldDone ?? [];
 
-  List<Meld> sideMelds(int side) =>
-      [for (final m in melds) if (m.owner == side) m];
+  List<Meld> sideMelds(int side) => [
+    for (final m in melds)
+      if (m.owner == side) m,
+  ];
 
-  int handSize(int player) =>
-      hands[player].values.fold(0, (a, b) => a + b);
+  int handSize(int player) => hands[player].values.fold(0, (a, b) => a + b);
 
   bool sideHasCanastra(int side, {bool cleanRequired = false}) {
     final minSize = cfg.meld.canastraMinSize;
-    return sideMelds(side)
-        .any((m) => m.isCanastra(minSize) && (m.isClean || !cleanRequired));
+    return sideMelds(
+      side,
+    ).any((m) => m.isCanastra(minSize) && (m.isClean || !cleanRequired));
   }
 
   int sideCanastraCount(int side) {
@@ -152,8 +154,8 @@ class MatchState {
     List<int>? actionLog,
     this.matchOver = false,
     this.winnerSide,
-  })  : scores = scores ?? List.filled(cfg.table.numSides, 0),
-        actionLog = actionLog ?? [];
+  }) : scores = scores ?? List.filled(cfg.table.numSides, 0),
+       actionLog = actionLog ?? [];
 }
 
 const List<CardId> kRedThreeIds = [
@@ -177,8 +179,12 @@ RoundState dealRound(
 }) {
   final stock = buildDeck(cfg.deck.deckCount, cfg.deck.printedJokers);
   rng.shuffle(stock);
-  return dealRoundFromStock(cfg, stock,
-      firstPlayer: firstPlayer, matchScores: matchScores);
+  return dealRoundFromStock(
+    cfg,
+    stock,
+    firstPlayer: firstPlayer,
+    matchScores: matchScores,
+  );
 }
 
 /// Deal from an already-shuffled [stock], which this function consumes.
@@ -205,7 +211,8 @@ RoundState dealRoundFromStock(
   final numSides = table.numSides;
   if (cfg.morto.count != 0 && cfg.morto.count != numSides) {
     throw ArgumentError(
-        'morto.count=${cfg.morto.count} must be 0 or match numSides=$numSides');
+      'morto.count=${cfg.morto.count} must be 0 or match numSides=$numSides',
+    );
   }
   final morto = <List<CardId>?>[
     for (var i = 0; i < cfg.morto.count; i++)
@@ -261,7 +268,9 @@ RoundState dealRoundFromStock(
 /// — a red 3 drawn as the last stock card ends the round immediately, and the
 /// caller must finish it.
 bool resolveRedThrees(RoundState state, int player, {bool replace = true}) {
-  if (state.cfg.specialThrees.redThreeMode != red3BonusAutoreplace) return false;
+  if (state.cfg.specialThrees.redThreeMode != red3BonusAutoreplace) {
+    return false;
+  }
   final side = state.cfg.table.side(player);
   final hand = state.hands[player];
   var unreplaced = false;

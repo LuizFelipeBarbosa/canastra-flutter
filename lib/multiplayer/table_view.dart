@@ -50,30 +50,30 @@ class MeldView {
   int get size => cards.length;
 
   Map<String, dynamic> toJson() => {
-        'owner': owner,
-        'isSequence': isSequence,
-        'suit': suit,
-        'rank': rank,
-        'startPos': startPos,
-        'cards': cards,
-        'wildIndices': wildIndices,
-        'isCanastra': isCanastra,
-        'isClean': isClean,
-        'points': points,
-      };
+    'owner': owner,
+    'isSequence': isSequence,
+    'suit': suit,
+    'rank': rank,
+    'startPos': startPos,
+    'cards': cards,
+    'wildIndices': wildIndices,
+    'isCanastra': isCanastra,
+    'isClean': isClean,
+    'points': points,
+  };
 
   factory MeldView.fromJson(Map<String, dynamic> j) => MeldView(
-        owner: j['owner'] as int,
-        isSequence: j['isSequence'] as bool,
-        suit: j['suit'] as int?,
-        rank: j['rank'] as int?,
-        startPos: j['startPos'] as int?,
-        cards: (j['cards'] as List).cast<int>(),
-        wildIndices: (j['wildIndices'] as List).cast<int>(),
-        isCanastra: j['isCanastra'] as bool,
-        isClean: j['isClean'] as bool,
-        points: j['points'] as int,
-      );
+    owner: j['owner'] as int,
+    isSequence: j['isSequence'] as bool,
+    suit: j['suit'] as int?,
+    rank: j['rank'] as int?,
+    startPos: j['startPos'] as int?,
+    cards: (j['cards'] as List).cast<int>(),
+    wildIndices: (j['wildIndices'] as List).cast<int>(),
+    isCanastra: j['isCanastra'] as bool,
+    isClean: j['isClean'] as bool,
+    points: j['points'] as int,
+  );
 }
 
 /// One side's itemised round score, for the end-of-round sheet.
@@ -82,25 +82,28 @@ class ScoreSheetView {
   final List<(String, int)> lines;
   final int total;
 
-  const ScoreSheetView(
-      {required this.side, required this.lines, required this.total});
+  const ScoreSheetView({
+    required this.side,
+    required this.lines,
+    required this.total,
+  });
 
   Map<String, dynamic> toJson() => {
-        'side': side,
-        'lines': [
-          for (final l in lines) {'label': l.$1, 'points': l.$2}
-        ],
-        'total': total,
-      };
+    'side': side,
+    'lines': [
+      for (final l in lines) {'label': l.$1, 'points': l.$2},
+    ],
+    'total': total,
+  };
 
   factory ScoreSheetView.fromJson(Map<String, dynamic> j) => ScoreSheetView(
-        side: j['side'] as int,
-        lines: [
-          for (final l in (j['lines'] as List).cast<Map<String, dynamic>>())
-            (l['label'] as String, l['points'] as int),
-        ],
-        total: j['total'] as int,
-      );
+    side: j['side'] as int,
+    lines: [
+      for (final l in (j['lines'] as List).cast<Map<String, dynamic>>())
+        (l['label'] as String, l['points'] as int),
+    ],
+    total: j['total'] as int,
+  );
 }
 
 class RoundResultView {
@@ -119,23 +122,23 @@ class RoundResultView {
   });
 
   Map<String, dynamic> toJson() => {
-        'roundIndex': roundIndex,
-        'reason': reason,
-        'wentOutSide': wentOutSide,
-        'sheets': [for (final s in sheets) s.toJson()],
-        'matchScores': matchScores,
-      };
+    'roundIndex': roundIndex,
+    'reason': reason,
+    'wentOutSide': wentOutSide,
+    'sheets': [for (final s in sheets) s.toJson()],
+    'matchScores': matchScores,
+  };
 
   factory RoundResultView.fromJson(Map<String, dynamic> j) => RoundResultView(
-        roundIndex: j['roundIndex'] as int,
-        reason: j['reason'] as String,
-        wentOutSide: j['wentOutSide'] as int?,
-        sheets: [
-          for (final s in (j['sheets'] as List).cast<Map<String, dynamic>>())
-            ScoreSheetView.fromJson(s),
-        ],
-        matchScores: (j['matchScores'] as List).cast<int>(),
-      );
+    roundIndex: j['roundIndex'] as int,
+    reason: j['reason'] as String,
+    wentOutSide: j['wentOutSide'] as int?,
+    sheets: [
+      for (final s in (j['sheets'] as List).cast<Map<String, dynamic>>())
+        ScoreSheetView.fromJson(s),
+    ],
+    matchScores: (j['matchScores'] as List).cast<int>(),
+  );
 }
 
 class TableView {
@@ -234,117 +237,118 @@ class TableView {
 
   bool get myTurn => currentPlayer == seat && !roundOver && !matchOver;
 
-  List<MeldView> meldsOf(int owner) =>
-      [for (final m in melds) if (m.owner == owner) m];
+  List<MeldView> meldsOf(int owner) => [
+    for (final m in melds)
+      if (m.owner == owner) m,
+  ];
 
   /// My side's melds, in the slot order `AddToMeld.slot` indexes into.
   List<MeldView> get myMelds => meldsOf(side);
 
   Map<String, dynamic> toJson() => {
-        'seat': seat,
-        'side': side,
-        'numPlayers': numPlayers,
-        'numSides': numSides,
-        'partnerSeat': partnerSeat,
-        'playerNames': playerNames,
-        'profile': profile,
-        'matchTarget': matchTarget,
-        'canastraMinSize': canastraMinSize,
-        'hand': hand,
-        'handSizes': handSizes,
-        'melds': [for (final m in melds) m.toJson()],
-        'trash': trash,
-        'stockCount': stockCount,
-        'mortoTaken': mortoTaken,
-        'mortoSizes': mortoSizes,
-        'redThrees': redThrees,
-        'currentPlayer': currentPlayer,
-        'phase': phase,
-        'turnNumber': turnNumber,
-        'frozen': frozen,
-        'pileBlocked': pileBlocked,
-        'pendingPileCard': pendingPileCard,
-        'initialMeldDone': initialMeldDone,
-        'initialMeldMin': initialMeldMin,
-        'stagedPoints': stagedPoints,
-        'publicScores': publicScores,
-        'matchScores': matchScores,
-        'roundOver': roundOver,
-        'matchOver': matchOver,
-        'wentOutSide': wentOutSide,
-        'winnerSide': winnerSide,
-        'roundIndex': roundIndex,
-        'roundResult': roundResult?.toJson(),
-        'legalActions': legalActions,
-        'history': [for (final h in history) h.toJson()],
-      };
+    'seat': seat,
+    'side': side,
+    'numPlayers': numPlayers,
+    'numSides': numSides,
+    'partnerSeat': partnerSeat,
+    'playerNames': playerNames,
+    'profile': profile,
+    'matchTarget': matchTarget,
+    'canastraMinSize': canastraMinSize,
+    'hand': hand,
+    'handSizes': handSizes,
+    'melds': [for (final m in melds) m.toJson()],
+    'trash': trash,
+    'stockCount': stockCount,
+    'mortoTaken': mortoTaken,
+    'mortoSizes': mortoSizes,
+    'redThrees': redThrees,
+    'currentPlayer': currentPlayer,
+    'phase': phase,
+    'turnNumber': turnNumber,
+    'frozen': frozen,
+    'pileBlocked': pileBlocked,
+    'pendingPileCard': pendingPileCard,
+    'initialMeldDone': initialMeldDone,
+    'initialMeldMin': initialMeldMin,
+    'stagedPoints': stagedPoints,
+    'publicScores': publicScores,
+    'matchScores': matchScores,
+    'roundOver': roundOver,
+    'matchOver': matchOver,
+    'wentOutSide': wentOutSide,
+    'winnerSide': winnerSide,
+    'roundIndex': roundIndex,
+    'roundResult': roundResult?.toJson(),
+    'legalActions': legalActions,
+    'history': [for (final h in history) h.toJson()],
+  };
 
   factory TableView.fromJson(Map<String, dynamic> j) => TableView(
-        seat: j['seat'] as int,
-        side: j['side'] as int,
-        numPlayers: j['numPlayers'] as int,
-        numSides: j['numSides'] as int,
-        partnerSeat: j['partnerSeat'] as int?,
-        playerNames: (j['playerNames'] as List).cast<String>(),
-        profile: j['profile'] as String,
-        matchTarget: j['matchTarget'] as int,
-        canastraMinSize: j['canastraMinSize'] as int,
-        hand: (j['hand'] as List).cast<int>(),
-        handSizes: (j['handSizes'] as List).cast<int>(),
-        melds: [
-          for (final m in (j['melds'] as List).cast<Map<String, dynamic>>())
-            MeldView.fromJson(m),
-        ],
-        trash: (j['trash'] as List).cast<int>(),
-        stockCount: j['stockCount'] as int,
-        mortoTaken: (j['mortoTaken'] as List).cast<bool>(),
-        mortoSizes: (j['mortoSizes'] as List).cast<int>(),
-        redThrees: [
-          for (final t in (j['redThrees'] as List)) (t as List).cast<int>(),
-        ],
-        currentPlayer: j['currentPlayer'] as int,
-        phase: j['phase'] as String,
-        turnNumber: j['turnNumber'] as int,
-        frozen: j['frozen'] as bool,
-        pileBlocked: j['pileBlocked'] as bool,
-        pendingPileCard: j['pendingPileCard'] as int?,
-        initialMeldDone: (j['initialMeldDone'] as List).cast<bool>(),
-        initialMeldMin: (j['initialMeldMin'] as List).cast<int>(),
-        stagedPoints: j['stagedPoints'] as int,
-        publicScores: (j['publicScores'] as List).cast<int>(),
-        matchScores: (j['matchScores'] as List).cast<int>(),
-        roundOver: j['roundOver'] as bool,
-        matchOver: j['matchOver'] as bool,
-        wentOutSide: j['wentOutSide'] as int?,
-        winnerSide: j['winnerSide'] as int?,
-        roundIndex: j['roundIndex'] as int,
-        roundResult: j['roundResult'] == null
-            ? null
-            : RoundResultView.fromJson(
-                j['roundResult'] as Map<String, dynamic>),
-        legalActions: (j['legalActions'] as List).cast<int>(),
-        history: [
-          for (final h in (j['history'] as List).cast<Map<String, dynamic>>())
-            GameEvent.fromJson(h),
-        ],
-      );
+    seat: j['seat'] as int,
+    side: j['side'] as int,
+    numPlayers: j['numPlayers'] as int,
+    numSides: j['numSides'] as int,
+    partnerSeat: j['partnerSeat'] as int?,
+    playerNames: (j['playerNames'] as List).cast<String>(),
+    profile: j['profile'] as String,
+    matchTarget: j['matchTarget'] as int,
+    canastraMinSize: j['canastraMinSize'] as int,
+    hand: (j['hand'] as List).cast<int>(),
+    handSizes: (j['handSizes'] as List).cast<int>(),
+    melds: [
+      for (final m in (j['melds'] as List).cast<Map<String, dynamic>>())
+        MeldView.fromJson(m),
+    ],
+    trash: (j['trash'] as List).cast<int>(),
+    stockCount: j['stockCount'] as int,
+    mortoTaken: (j['mortoTaken'] as List).cast<bool>(),
+    mortoSizes: (j['mortoSizes'] as List).cast<int>(),
+    redThrees: [
+      for (final t in (j['redThrees'] as List)) (t as List).cast<int>(),
+    ],
+    currentPlayer: j['currentPlayer'] as int,
+    phase: j['phase'] as String,
+    turnNumber: j['turnNumber'] as int,
+    frozen: j['frozen'] as bool,
+    pileBlocked: j['pileBlocked'] as bool,
+    pendingPileCard: j['pendingPileCard'] as int?,
+    initialMeldDone: (j['initialMeldDone'] as List).cast<bool>(),
+    initialMeldMin: (j['initialMeldMin'] as List).cast<int>(),
+    stagedPoints: j['stagedPoints'] as int,
+    publicScores: (j['publicScores'] as List).cast<int>(),
+    matchScores: (j['matchScores'] as List).cast<int>(),
+    roundOver: j['roundOver'] as bool,
+    matchOver: j['matchOver'] as bool,
+    wentOutSide: j['wentOutSide'] as int?,
+    winnerSide: j['winnerSide'] as int?,
+    roundIndex: j['roundIndex'] as int,
+    roundResult: j['roundResult'] == null
+        ? null
+        : RoundResultView.fromJson(j['roundResult'] as Map<String, dynamic>),
+    legalActions: (j['legalActions'] as List).cast<int>(),
+    history: [
+      for (final h in (j['history'] as List).cast<Map<String, dynamic>>())
+        GameEvent.fromJson(h),
+    ],
+  );
 }
 
 MeldView _meldView(RulesConfig cfg, Meld meld) => MeldView(
-      owner: meld.owner,
-      isSequence: meld.kind == MeldKind.sequence,
-      suit: meld.suit,
-      rank: meld.rank,
-      startPos: meld.startPos,
-      cards: [for (final s in meld.slots) s.card],
-      wildIndices: [
-        for (var i = 0; i < meld.slots.length; i++)
-          if (meld.slots[i].role == SlotRole.wild) i,
-      ],
-      isCanastra: meld.isCanastra(cfg.meld.canastraMinSize),
-      isClean: meld.isClean,
-      points: meldPoints(cfg, meld) + canastraBonus(cfg, meld),
-    );
+  owner: meld.owner,
+  isSequence: meld.kind == MeldKind.sequence,
+  suit: meld.suit,
+  rank: meld.rank,
+  startPos: meld.startPos,
+  cards: [for (final s in meld.slots) s.card],
+  wildIndices: [
+    for (var i = 0; i < meld.slots.length; i++)
+      if (meld.slots[i].role == SlotRole.wild) i,
+  ],
+  isCanastra: meld.isCanastra(cfg.meld.canastraMinSize),
+  isClean: meld.isClean,
+  points: meldPoints(cfg, meld) + canastraBonus(cfg, meld),
+);
 
 /// Live per-side score from public zones only.
 ///
@@ -370,19 +374,19 @@ List<int> _publicSideScores(RoundState state) {
 }
 
 RoundResultView _resultView(RoundResult r) => RoundResultView(
-      roundIndex: r.roundIndex,
-      reason: r.reason.name,
-      wentOutSide: r.wentOutSide,
-      sheets: [
-        for (final s in r.sheet)
-          ScoreSheetView(
-            side: s.side,
-            lines: [for (final l in s.lines) (l.label, l.points)],
-            total: s.total,
-          ),
-      ],
-      matchScores: r.matchScoresAfter,
-    );
+  roundIndex: r.roundIndex,
+  reason: r.reason.name,
+  wentOutSide: r.wentOutSide,
+  sheets: [
+    for (final s in r.sheet)
+      ScoreSheetView(
+        side: s.side,
+        lines: [for (final l in s.lines) (l.label, l.points)],
+        total: s.total,
+      ),
+  ],
+  matchScores: r.matchScoresAfter,
+);
 
 /// Build the view seat [seat] is entitled to.
 ///
@@ -417,16 +421,12 @@ TableView buildTableView(
     matchTarget: cfg.scoring.matchTarget,
     canastraMinSize: cfg.meld.canastraMinSize,
     hand: hand,
-    handSizes: [
-      for (var p = 0; p < table.numPlayers; p++) state.handSize(p),
-    ],
+    handSizes: [for (var p = 0; p < table.numPlayers; p++) state.handSize(p)],
     melds: [for (final m in state.melds) _meldView(cfg, m)],
     trash: List.of(state.trash),
     stockCount: state.stock.length,
     mortoTaken: List.of(state.mortoTaken),
-    mortoSizes: [
-      for (final packet in state.morto) packet?.length ?? 0,
-    ],
+    mortoSizes: [for (final packet in state.morto) packet?.length ?? 0],
     redThrees: [for (final tray in state.redThrees) List.of(tray)],
     currentPlayer: state.currentPlayer,
     phase: state.phase.name,
@@ -448,7 +448,9 @@ TableView buildTableView(
         ? _resultView(match.lastRoundResult!)
         : null,
     // Only the seat to act learns its move list.
-    legalActions: state.currentPlayer == seat ? match.legalActionIdsNow() : const [],
+    legalActions: state.currentPlayer == seat
+        ? match.legalActionIdsNow()
+        : const [],
     history: match.history,
   );
 }

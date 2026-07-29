@@ -174,8 +174,7 @@ class HotSeatTransport implements GameTransport {
   }
 }
 
-String _botName(int seat, int numPlayers) {
-  const names = ['Ana', 'Bruno', 'Carla', 'Diego'];
-  if (numPlayers == 4 && seat == 2) return '${names[seat % names.length]} (partner)';
-  return names[seat % names.length];
-}
+/// Short on purpose: three opponents share one phone-width row, and the
+/// handshake icon already marks which one is your partner.
+String _botName(int seat, int numPlayers) =>
+    const ['Ana', 'Bruno', 'Carla', 'Diego'][seat % 4];

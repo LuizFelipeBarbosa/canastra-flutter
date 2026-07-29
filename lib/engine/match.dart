@@ -24,16 +24,16 @@ class GameEvent {
   const GameEvent(this.actor, this.kind, {this.card});
 
   Map<String, dynamic> toJson() => {
-        'actor': actor,
-        'kind': kind,
-        if (card != null) 'card': card,
-      };
+    'actor': actor,
+    'kind': kind,
+    if (card != null) 'card': card,
+  };
 
   factory GameEvent.fromJson(Map<String, dynamic> json) => GameEvent(
-        json['actor'] as int,
-        json['kind'] as String,
-        card: json['card'] as int?,
-      );
+    json['actor'] as int,
+    json['kind'] as String,
+    card: json['card'] as int?,
+  );
 }
 
 /// How a round ended, ready to show on the score screen.
@@ -68,8 +68,8 @@ class Match {
   bool _matchOver = false;
 
   Match({required this.cfg, required this.seed})
-      : _rng = Prng(seed),
-        _matchScores = List.filled(cfg.table.numSides, 0) {
+    : _rng = Prng(seed),
+      _matchScores = List.filled(cfg.table.numSides, 0) {
     _round = dealRound(cfg, _rng, firstPlayer: 0, matchScores: _matchScores);
   }
 
@@ -92,7 +92,8 @@ class Match {
     return best;
   }
 
-  List<int> legalActionIdsNow() => _matchOver ? const [] : legalActionIds(_round);
+  List<int> legalActionIdsNow() =>
+      _matchOver ? const [] : legalActionIds(_round);
 
   List<GameAction> legalActionsNow() =>
       _matchOver ? const [] : legalActions(_round);
@@ -123,7 +124,9 @@ class Match {
       matchScoresAfter: List.of(_matchScores),
     );
     _lastRoundResult = result;
-    if (_matchScores.any((s) => s >= cfg.scoring.matchTarget)) _matchOver = true;
+    if (_matchScores.any((s) => s >= cfg.scoring.matchTarget)) {
+      _matchOver = true;
+    }
     return result;
   }
 
@@ -143,13 +146,13 @@ class Match {
   }
 
   GameEvent _eventFor(GameAction action, int actor) => switch (action) {
-        DrawDeck() => GameEvent(actor, 'drawDeck'),
-        DrawTrash() => GameEvent(actor, 'drawTrash'),
-        CreateSeq() => GameEvent(actor, 'createSeq'),
-        CreateSet() => GameEvent(actor, 'createSet'),
-        AddToMeld(:final ct) => GameEvent(actor, 'add', card: ct),
-        Discard(:final ct) => GameEvent(actor, 'discard', card: ct),
-        GoOut() => GameEvent(actor, 'goOut'),
-        EndRound() => GameEvent(actor, 'endRound'),
-      };
+    DrawDeck() => GameEvent(actor, 'drawDeck'),
+    DrawTrash() => GameEvent(actor, 'drawTrash'),
+    CreateSeq() => GameEvent(actor, 'createSeq'),
+    CreateSet() => GameEvent(actor, 'createSet'),
+    AddToMeld(:final ct) => GameEvent(actor, 'add', card: ct),
+    Discard(:final ct) => GameEvent(actor, 'discard', card: ct),
+    GoOut() => GameEvent(actor, 'goOut'),
+    EndRound() => GameEvent(actor, 'endRound'),
+  };
 }

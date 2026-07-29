@@ -1,0 +1,12 @@
+# Goldens are review aids, not CI gates: font rasterisation differs between
+# machines, so a pixel diff is noise in a normal run. Render them on purpose:
+#   flutter test --run-skipped --update-goldens test/golden_test.dart
+#
+# The online test binds a real loopback socket. It runs by default because that
+# is the only way the transport, the JSON framing and the server are actually
+# exercised together, but it is tagged so a sandbox without sockets can skip it:
+#   flutter test --exclude-tags online
+tags:
+  golden:
+    skip: "review aid; run with --run-skipped --update-goldens"
+  online:

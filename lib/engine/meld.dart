@@ -106,14 +106,14 @@ class Meld {
   }
 
   Meld copy() => Meld(
-        meldId: meldId,
-        owner: owner,
-        kind: kind,
-        suit: suit,
-        rank: rank,
-        startPos: startPos,
-        slots: [for (final s in slots) Slot(s.card, s.role)],
-      );
+    meldId: meldId,
+    owner: owner,
+    kind: kind,
+    suit: suit,
+    rank: rank,
+    startPos: startPos,
+    slots: [for (final s in slots) Slot(s.card, s.role)],
+  );
 }
 
 // --- position and role predicates --------------------------------------------
@@ -140,19 +140,20 @@ final List<List<List<CardId>?>> _seqNats = List.generate(
   4,
   (suit) => List.generate(
     kPosMax - 1,
-    (s) => s < kPosMin
-        ? null
-        : [nat(s, suit), nat(s + 1, suit), nat(s + 2, suit)],
+    (s) =>
+        s < kPosMin ? null : [nat(s, suit), nat(s + 1, suit), nat(s + 2, suit)],
   ),
 );
 
-final List<CardId> _twoOfSuit =
-    List.generate(4, (s) => cardId(Rank.two, s));
+final List<CardId> _twoOfSuit = List.generate(4, (s) => cardId(Rank.two, s));
 
 /// Other suits in ascending order — the canonical off-suit-two selection order.
 final List<List<int>> _otherSuits = List.generate(
   4,
-  (s) => [for (final o in Suit.values) if (o != s) o],
+  (s) => [
+    for (final o in Suit.values)
+      if (o != s) o,
+  ],
 );
 
 /// `[rank] -> the four natural card ids, lowest suit first`.
@@ -210,7 +211,9 @@ _CfgTables _cfgTables(RulesConfig cfg) {
       kPosMax - 1,
       (s) => s < kPosMin
           ? false
-          : posAllowed(cfg, s) && posAllowed(cfg, s + 1) && posAllowed(cfg, s + 2),
+          : posAllowed(cfg, s) &&
+                posAllowed(cfg, s + 1) &&
+                posAllowed(cfg, s + 2),
     ),
     seqEnabled: cfg.meld.allowSequences && cfg.meld.minMeldSize <= 3,
     setEnabled: cfg.meld.allowSets && cfg.meld.minMeldSize <= 3,
@@ -339,7 +342,10 @@ CreatePlan? planSequence(
 
   final slots = <(CardId, SlotRole)>[
     for (var i = 0; i < 3; i++)
-      if (positions[i] == gap) (wildCt, SlotRole.wild) else (nats[i], SlotRole.natural),
+      if (positions[i] == gap)
+        (wildCt, SlotRole.wild)
+      else
+        (nats[i], SlotRole.natural),
   ];
   final consumed = [for (final s in slots) s.$1];
   if (!_handCovers(hand, consumed)) return null;
@@ -437,10 +443,18 @@ AddPlan? planAdd(RulesConfig cfg, Map<CardId, int> hand, Meld meld, CardId ct) {
 
   // 1. Natural end extension (includes the natural-2 landing on position 2).
   if (lowOpen && isNaturalAt(cfg, ct, st - 1, suit)) {
-    return const AddPlan(kind: AddKind.extend, role: SlotRole.natural, atLow: true);
+    return const AddPlan(
+      kind: AddKind.extend,
+      role: SlotRole.natural,
+      atLow: true,
+    );
   }
   if (highOpen && isNaturalAt(cfg, ct, en + 1, suit)) {
-    return const AddPlan(kind: AddKind.extend, role: SlotRole.natural, atLow: false);
+    return const AddPlan(
+      kind: AddKind.extend,
+      role: SlotRole.natural,
+      atLow: false,
+    );
   }
 
   // 2. Wild swap-and-relocate: ct is the natural at the wild's position.
@@ -448,14 +462,25 @@ AddPlan? planAdd(RulesConfig cfg, Map<CardId, int> hand, Meld meld, CardId ct) {
   if (wi != null && isNaturalAt(cfg, ct, st + wi, suit)) {
     if (cfg.wildcard.wildRelocation == wildToHand) {
       return const AddPlan(
-          kind: AddKind.swap, role: SlotRole.natural, wildToHand: true);
+        kind: AddKind.swap,
+        role: SlotRole.natural,
+        wildToHand: true,
+      );
     }
     // Deterministic: low end first.
     if (lowOpen) {
-      return const AddPlan(kind: AddKind.swap, role: SlotRole.natural, atLow: true);
+      return const AddPlan(
+        kind: AddKind.swap,
+        role: SlotRole.natural,
+        atLow: true,
+      );
     }
     if (highOpen) {
-      return const AddPlan(kind: AddKind.swap, role: SlotRole.natural, atLow: false);
+      return const AddPlan(
+        kind: AddKind.swap,
+        role: SlotRole.natural,
+        atLow: false,
+      );
     }
     return null; // meld spans the full run; no home for the freed wild
   }
@@ -463,10 +488,18 @@ AddPlan? planAdd(RulesConfig cfg, Map<CardId, int> hand, Meld meld, CardId ct) {
   // 3. Wild placement on an open end (low end first).
   if (tables.wild[ct] && meld.wildCount < cfg.wildcard.wildcardLimitPerMeld) {
     if (lowOpen) {
-      return const AddPlan(kind: AddKind.extend, role: SlotRole.wild, atLow: true);
+      return const AddPlan(
+        kind: AddKind.extend,
+        role: SlotRole.wild,
+        atLow: true,
+      );
     }
     if (highOpen) {
-      return const AddPlan(kind: AddKind.extend, role: SlotRole.wild, atLow: false);
+      return const AddPlan(
+        kind: AddKind.extend,
+        role: SlotRole.wild,
+        atLow: false,
+      );
     }
   }
   return null;
@@ -496,7 +529,8 @@ Meld createSequence(
   final plan = planSequence(cfg, hand, suit, startPos, wildChoice);
   if (plan == null) {
     throw MeldError(
-        'illegal sequence: suit=$suit start=$startPos wild=$wildChoice');
+      'illegal sequence: suit=$suit start=$startPos wild=$wildChoice',
+    );
   }
   for (final ct in plan.consumed) {
     _consume(hand, ct);
@@ -611,7 +645,8 @@ void validateMeld(RulesConfig cfg, Meld meld) {
       final naturalHere = isNaturalAt(cfg, slot.card, pos, meld.suit!);
       if (slot.role == SlotRole.natural && !naturalHere) {
         throw MeldError(
-            'slot $i claims NATURAL but is not ${nat(pos, meld.suit!)}');
+          'slot $i claims NATURAL but is not ${nat(pos, meld.suit!)}',
+        );
       }
       if (slot.role == SlotRole.wild &&
           (naturalHere || !cfg.isWildCard(slot.card))) {
