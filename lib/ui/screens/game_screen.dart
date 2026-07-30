@@ -1,26 +1,40 @@
 /// The table.
 ///
-/// The interaction model is one thing: pick up a card, and everywhere it can
-/// legally go lights up. During the draw phase there is nothing in hand to pick
-/// up, so the stock and the pile light up instead. Everything offered comes
-/// from the host's legal-move list, so the screen can never suggest a move the
-/// engine would reject.
+/// The interaction model is one thing: pick cards up, and everywhere they can
+/// legally go lights up. During the draw phase there is nothing in hand to pick up
+/// yet, so the stock and the pile light up instead. Everything offered comes from
+/// the host's legal-move list — the screen can never suggest a move the engine
+/// would reject, and when a play needs more than one action the controller submits
+/// them in order.
+///
+/// The table is laid out absolutely, in one fixed coordinate space, by
+/// `table_layout.dart`. This file draws that result and nothing else, so the two
+/// hard problems — where things are, and what they look like — stay apart.
 library;
+
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 
 import '../../engine/cards.dart';
 import '../../game/game_controller.dart';
 import '../../game/move_index.dart';
+import '../../game/selection_plan.dart';
 import '../../multiplayer/table_view.dart';
+import '../app_scope.dart';
+import '../copy.dart';
+import '../cues.dart';
 import '../theme.dart';
-import '../widgets/card_label.dart';
-import '../widgets/hand_fan.dart';
-import '../widgets/meld_strip.dart';
+import '../widgets/controls.dart';
+import '../widgets/meld_box.dart';
 import '../widgets/playing_card.dart';
 import '../widgets/round_sheet.dart';
-import '../widgets/table_center.dart';
-import '../widgets/table_surface.dart';
+import '../widgets/stage.dart';
+import '../widgets/table_layout.dart';
+import '../widgets/table_zone.dart';
+
+/// How fast the opening deal lands, per card.
+const Duration kDealTick = Duration(milliseconds: 52);
 
 class GameScreen extends StatefulWidget {
   final GameController controller;
@@ -32,7 +46,31 @@ class GameScreen extends StatefulWidget {
 
 class _GameScreenState extends State<GameScreen> {
   GameController get c => widget.controller;
-  bool _sheetOpen = false;
+
+  int _dealt = 0;
+  Timer? _dealer;
+  int _roundShown = -1;
+
+  /// Taking a morto is a consequence rather than an action, so the event log
+  /// never mentions it. Two snapshots cover the two questions asked about it: one
+  /// view back, for the sound, and one turn back, for the line that says what the
+  /// opponent just did.
+  List<bool> _mortoLastView = const [];
+  List<bool> _mortoLastTurn = const [];
+  int _turnShown = -1;
+  int _historyWas = 0;
+
+  /// How many of my side's melds were canastras, so sealing a new one can be
+  /// heard. Counting beats looking for a meld of exactly seven, which stays true
+  /// for as long as nothing is added to it.
+  int _canastrasWas = 0;
+
+  final SoundBoard _sound = SoundBoard();
+  bool _matchRecorded = false;
+
+  /// Captured rather than read from `context` on demand: the match result is
+  /// recorded from a controller callback, which is not a build.
+  late AppPrefs _prefs;
 
   @override
   void initState() {
@@ -42,715 +80,856 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _prefs = context.prefs;
+  }
+
+  @override
   void dispose() {
+    _dealer?.cancel();
     c.removeListener(_onChange);
     super.dispose();
   }
 
   void _onChange() {
     if (!mounted) return;
-    setState(() {});
     final view = c.view;
-    if (view != null && (view.roundOver || view.matchOver) && !_sheetOpen) {
-      _sheetOpen = true;
-      // Let the final table state paint before the sheet covers it.
-      Future<void>.delayed(const Duration(milliseconds: 450), _showRoundSheet);
+    if (view != null) {
+      if (view.roundIndex != _roundShown) {
+        _roundShown = view.roundIndex;
+        _matchRecorded = false;
+        _historyWas = view.history.length;
+        _canastrasWas = 0;
+        _mortoLastTurn = List.of(view.mortoTaken);
+        _startDeal();
+      } else {
+        _cueFromHistory(view);
+      }
+      if (view.turnNumber != _turnShown) {
+        _turnShown = view.turnNumber;
+        _mortoLastTurn = List.of(_mortoLastView);
+      }
+      _mortoLastView = List.of(view.mortoTaken);
+      _canastrasWas = view.myMelds.where((m) => m.isCanastra).length;
+      _recordMatchOnce(view);
+    }
+    setState(() {});
+  }
+
+  int get _dealTotal => c.cfg.table.cardsPerPlayer * c.cfg.table.numPlayers;
+
+  void _startDeal() {
+    _dealer?.cancel();
+    _dealt = 0;
+    if (Motion.reduced(context)) {
+      _dealt = _dealTotal;
+      return;
+    }
+    _dealer = Timer.periodic(kDealTick, (timer) {
+      if (!mounted || _dealt >= _dealTotal) {
+        timer.cancel();
+        return;
+      }
+      setState(() => _dealt += 1);
+      _sound.play(Cue.deal);
+    });
+  }
+
+  /// One cue per thing that happened since the last view.
+  void _cueFromHistory(TableView view) {
+    _sound.enabled = _prefs.sound;
+    final fresh = view.history.skip(_historyWas).toList();
+    _historyWas = view.history.length;
+
+    // A morto arriving is louder than anything in the log.
+    for (var side = 0; side < view.mortoTaken.length; side++) {
+      final was = side < _mortoLastView.length && _mortoLastView[side];
+      if (!was && view.mortoTaken[side]) {
+        _sound.play(Cue.take);
+        return;
+      }
+    }
+    if (fresh.isEmpty) return;
+    // A canastra outranks whatever action completed it.
+    if (view.myMelds.where((m) => m.isCanastra).length > _canastrasWas) {
+      _sound.play(Cue.limpa);
+      return;
+    }
+    // Otherwise the newest event is the one worth hearing: a bot's whole turn
+    // arrives at once and should not rattle.
+    switch (fresh.last.kind) {
+      case 'drawTrash':
+        _sound.play(Cue.take);
+      case 'goOut':
+      case 'endRound':
+        _sound.play(Cue.out);
+      case 'createSeq':
+      case 'createSet':
+      case 'add':
+      case 'discard':
+        _sound.play(Cue.snap);
+      default:
+        _sound.play(Cue.deal);
     }
   }
 
-  Future<void> _showRoundSheet() async {
-    final view = c.view;
-    if (!mounted || view == null) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      isDismissible: false,
-      enableDrag: false,
-      builder: (context) => SingleChildScrollView(
-        child: RoundSheet(
-          view: view,
-          onContinue: () {
-            Navigator.of(context).pop();
-            view.matchOver ? c.rematch() : c.nextRound();
-          },
-        ),
-      ),
-    );
-    _sheetOpen = false;
+  /// The streak only moves when a match ends, and only once.
+  void _recordMatchOnce(TableView view) {
+    if (!view.matchOver || _matchRecorded) return;
+    _matchRecorded = true;
+    _prefs.recordMatch(won: view.winnerSide == view.side);
   }
 
   @override
   Widget build(BuildContext context) {
+    final prefs = context.prefs;
+    final p = prefs.palette;
+    final l = prefs.copy;
+    _sound.enabled = prefs.sound;
+
     if (c.fatalError != null) {
-      return _Message(text: c.fatalError!, isError: true);
+      return _Message(text: c.fatalError!, palette: p, isError: true);
     }
     final view = c.view;
-    if (view == null) return const _Message(text: 'Dealing…');
+    if (view == null) {
+      return _Message(text: '${l.deal}…', palette: p);
+    }
+
+    final layout = layOutTable(
+      LayoutInput(
+        view: view,
+        moves: c.moves,
+        selection: c.selection,
+        openSlots: c.openSlots,
+        canMeld: c.canMeldSelection,
+        canDiscard: c.discardMove != null,
+        discardGoesOut: c.discardGoesOut,
+        dealt: _dealt,
+        dealDone: _dealt >= _dealTotal,
+        words: _zoneWords(l),
+      ),
+    );
 
     return Scaffold(
-      body: TableSurface(
-        child: SafeArea(
-          // A card table does not get better by being 2000px wide; past this
-          // the layout centres and the felt keeps a hand's worth of scale.
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 900),
-              child: Column(
-                children: [
-                  _TopBar(
-                    view: view,
-                    onLeave: () => Navigator.of(context).maybePop(),
-                  ),
-                  _SeatRow(view: view),
-                  Expanded(
-                    child: _Felt(controller: c, view: view),
-                  ),
-                  if (c.notice != null)
-                    _Notice(text: c.notice!, onDismiss: c.dismissNotice),
-                  _ActionBar(controller: c, view: view),
-                  HandFan(
-                    cards: view.hand,
-                    selected: c.selectedCard,
-                    playable: c.moves.playableCards,
-                    markUnplayable: view.phase == 'play',
-                    onTap: (card) => c.selectCard(card),
-                  ),
-                  const SizedBox(height: 14),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// --- chrome -------------------------------------------------------------------
-
-class _TopBar extends StatelessWidget {
-  final TableView view;
-  final VoidCallback onLeave;
-
-  const _TopBar({required this.view, required this.onLeave});
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(8, 6, 16, 6),
-    child: Row(
-      children: [
-        IconButton(
-          onPressed: onLeave,
-          icon: const Icon(Icons.arrow_back, color: C.ash, size: 20),
-          tooltip: 'Leave the table',
-        ),
-        // The scores on the right are fixed-width and must never be pushed
-        // off, so the title column is what gives way on a narrow phone.
-        Flexible(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                view.profile.toUpperCase(),
-                overflow: TextOverflow.ellipsis,
-                style: T.display(17, color: C.bone),
-              ),
-              Text(
-                'ROUND ${view.roundIndex + 1} · TO ${view.matchTarget}',
-                overflow: TextOverflow.ellipsis,
-                softWrap: false,
-                style: T.mono(10, color: C.ashDim),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 8),
-        for (var side = 0; side < view.matchScores.length; side++)
-          Padding(
-            padding: const EdgeInsets.only(left: 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Eyebrow(side == view.side ? 'You' : 'Them'),
-                const SizedBox(height: 2),
-                Text(
-                  '${view.matchScores[side]}',
-                  style: T.mono(16, color: side == view.side ? C.mint : C.ash),
-                ),
-              ],
-            ),
-          ),
-      ],
-    ),
-  );
-}
-
-/// The other players, with the signal that matters most: how many cards they
-/// are holding. A single card means they are about to go out.
-class _SeatRow extends StatelessWidget {
-  final TableView view;
-  const _SeatRow({required this.view});
-
-  @override
-  Widget build(BuildContext context) {
-    final others = [
-      for (var p = 0; p < view.numPlayers; p++)
-        if (p != view.seat) p,
-    ];
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      child: Row(
+      body: Stage(
+        palette: p,
         children: [
-          // Three opponents on a phone only fit if each takes an equal share
-          // and gives up its name before its card count, which is the number
-          // that actually matters.
-          for (final p in others)
-            Expanded(
-              child: _Seat(
-                name: p < view.playerNames.length
-                    ? view.playerNames[p]
-                    : 'Seat $p',
-                cards: view.handSizes[p],
-                isPartner: p == view.partnerSeat,
-                toPlay: p == view.currentPlayer,
+          ..._meldBoxes(layout, p),
+          ..._zones(layout, p),
+          ..._rowLabels(view, l, p),
+          ..._cards(layout, p),
+          _header(view, prefs, p, l),
+          _opponents(view, l, p),
+          _strip(view, l, p),
+          _whyNot(l, p),
+          if (view.roundOver || view.matchOver)
+            Positioned.fill(
+              child: RoundSheet(
+                view: view,
+                palette: p,
+                copy: l,
+                onContinue: view.matchOver ? c.rematch : c.nextRound,
               ),
             ),
         ],
       ),
     );
   }
+
+  ZoneWords _zoneWords(Copy l) => ZoneWords(
+    stock: l.stock,
+    pile: l.pile,
+    morto: l.morto,
+    playArea: l.playArea,
+    playIdle: l.playIdle,
+    playReady: l.playReady,
+    pileDiscard: l.pileDiscard,
+    pileBatida: l.pileBatida,
+    empty: l.empty,
+    waiting: l.waiting,
+    taken: l.taken,
+    left: l.countLeft,
+    cards: l.countCards,
+  );
+
+  // --- the felt ------------------------------------------------------------
+
+  List<Widget> _meldBoxes(TableLayout layout, Palette p) => [
+    for (final spot in layout.melds)
+      Positioned(
+        left: spot.x,
+        top: spot.y,
+        child: MeldBox(
+          key: ValueKey('meld:${spot.mine}:${spot.slot}'),
+          meld: spot.meld,
+          palette: p,
+          width: spot.width,
+          height: kMeldBoxHeight,
+          bonus: spot.meld.isClean
+              ? c.cfg.meld.canastraBonusClean
+              : c.cfg.meld.canastraBonusDirty,
+          open: spot.open,
+          onTap: spot.open ? () => c.extendMeld(spot.slot) : null,
+        ),
+      ),
+  ];
+
+  List<Widget> _zones(TableLayout layout, Palette p) => [
+    for (final zone in layout.zones)
+      Positioned(
+        left: zone.x,
+        top: zone.y,
+        width: zone.width,
+        height: zone.height,
+        child: TableZone(
+          label: zone.label,
+          foot: zone.foot,
+          palette: p,
+          hot: zone.hot,
+          dashed: zone.dashed,
+          terminal: zone.terminal,
+          onTap: _zoneTap(zone),
+        ),
+      ),
+  ];
+
+  VoidCallback? _zoneTap(ZoneSpot zone) {
+    switch (zone.id) {
+      case 'stock':
+        final move = c.moves.firstWithTarget(MoveTarget.stock);
+        return move == null ? null : () => c.play(move);
+      case 'pile':
+        // In the play phase the pile is where a card goes; in the draw phase it
+        // is where a whole handful comes from.
+        if (c.selection.length == 1 && c.view?.phase == 'play') {
+          return c.discardSelection;
+        }
+        final take = c.moves.firstWithTarget(MoveTarget.pile);
+        return take == null ? null : () => c.play(take);
+      case 'play':
+        return c.selection.isEmpty ? null : c.meldSelection;
+      default:
+        return null;
+    }
+  }
+
+  List<Widget> _rowLabels(TableView view, Copy l, Palette p) {
+    final open = c.openSlots.length;
+    return [
+      Positioned(
+        left: 20,
+        top: kTheirLabelY,
+        child: Text(l.theirMelds, style: mono(10, color: p.ashDim)),
+      ),
+      Positioned(
+        left: 20,
+        top: kMyLabelY,
+        child: Row(
+          children: [
+            Text(l.myMelds, style: mono(10, color: p.ashDim)),
+            if (open > 0) ...[
+              const SizedBox(width: 10),
+              Text('$open ${l.spotsOpen}', style: mono(10, color: p.mint)),
+            ],
+          ],
+        ),
+      ),
+    ];
+  }
+
+  /// Cards are drawn last within the felt and stacked by their own depth, so a
+  /// hand overlaps a meld overlaps the felt. Everything except your own hand
+  /// ignores taps, so clicking the pile reaches the pile rather than the card
+  /// lying on it.
+  List<Widget> _cards(TableLayout layout, Palette p) {
+    final sorted = [...layout.cards]..sort((a, b) => a.z.compareTo(b.z));
+    return [
+      for (final spot in sorted)
+        AnimatedPositioned(
+          key: ValueKey(spot.key),
+          duration: Motion.of(context, Motion.glide),
+          curve: Motion.glideCurve,
+          left: spot.x,
+          top: spot.y,
+          child: AnimatedScale(
+            duration: Motion.of(context, Motion.glide),
+            curve: Motion.glideCurve,
+            scale: spot.scale,
+            alignment: Alignment.topLeft,
+            child: spot.inHand
+                ? Hoverable(
+                    onTap: () => c.toggleCard(spot.card),
+                    builder: (_) => PlayingCard(
+                      card: spot.card,
+                      palette: p,
+                      selected: spot.selected,
+                    ),
+                  )
+                : IgnorePointer(
+                    child: PlayingCard(
+                      card: spot.card,
+                      palette: p,
+                      faceDown: !spot.faceUp,
+                      asWild: spot.asWild,
+                    ),
+                  ),
+          ),
+        ),
+    ];
+  }
+
+  // --- chrome --------------------------------------------------------------
+
+  Widget _header(TableView view, AppPrefs prefs, Palette p, Copy l) =>
+      Positioned(
+        left: 0,
+        right: 0,
+        top: 0,
+        height: 58,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Row(
+            children: [
+              Hoverable(
+                onTap: () => Navigator.of(context).maybePop(),
+                builder: (_) => BrandMark(size: 30, palette: p, ring: 6),
+              ),
+              const SizedBox(width: 14),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    view.profile.toUpperCase(),
+                    style: T.display(14, tracking: -0.4, color: p.text),
+                  ),
+                  Text(
+                    l.roundLine(view.roundIndex + 1, view.matchTarget),
+                    style: mono(9, color: p.ashDim, height: 1.4),
+                  ),
+                ],
+              ),
+              const Spacer(),
+              if (prefs.streak > 0) ...[
+                _StreakBadge(streak: prefs.streak, palette: p, copy: l),
+                const SizedBox(width: 14),
+              ],
+              Pill(
+                label: prefs.sound ? l.soundOn : l.soundOff,
+                palette: p,
+                round: true,
+                color: prefs.sound ? p.mint : p.ashDim,
+                onTap: prefs.toggleSound,
+              ),
+              const SizedBox(width: 6),
+              Pill(
+                label: prefs.lang.toggleLabel,
+                palette: p,
+                round: true,
+                onTap: prefs.toggleLang,
+              ),
+              const SizedBox(width: 6),
+              Pill(
+                label: prefs.dark ? 'LIGHT' : 'DARK',
+                palette: p,
+                round: true,
+                onTap: prefs.toggleTheme,
+              ),
+              const SizedBox(width: 12),
+              for (var side = 0; side < view.matchScores.length; side++)
+                Padding(
+                  padding: const EdgeInsets.only(left: 12),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        side == view.side ? l.you : l.them,
+                        style: mono(9, color: p.ashDim),
+                      ),
+                      Text(
+                        '${view.matchScores[side]}',
+                        style: mono(
+                          17,
+                          color: side == view.side ? p.mint : p.ash,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+
+  Widget _opponents(TableView view, Copy l, Palette p) {
+    final seats = [
+      for (var seat = 0; seat < view.numPlayers; seat++)
+        if (seat != view.seat) seat,
+    ];
+    // Bounded, so three opponents plus a long activity line on a four-handed
+    // table run out of room rather than off the felt.
+    return Positioned(
+      left: 20,
+      right: 20,
+      top: 62,
+      child: Row(
+        children: [
+          for (final seat in seats) ...[
+            _SeatChip(
+              name: seat < view.playerNames.length
+                  ? view.playerNames[seat]
+                  : 'Seat $seat',
+              cards: view.handSizes[seat],
+              toPlay: seat == view.currentPlayer && !view.roundOver,
+              partner: seat == view.partnerSeat,
+              palette: p,
+            ),
+            const SizedBox(width: 12),
+          ],
+          if (!view.myTurn && !view.roundOver) ...[
+            _Thinking(label: l.thinking, palette: p),
+            const SizedBox(width: 12),
+          ],
+          Flexible(
+            child: Text(
+              _activity(view, l),
+              overflow: TextOverflow.ellipsis,
+              softWrap: false,
+              style: mono(10, color: p.ash),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// What the last player to act did, in the order they did it.
+  ///
+  /// Shown only once it is your turn again: while they are still playing, the
+  /// pulse says they are thinking, and a running commentary would be noise.
+  String _activity(TableView view, Copy l) {
+    if (!view.myTurn || view.history.isEmpty) return '';
+    final actor = view.history.last.actor;
+    if (actor == view.seat) return '';
+
+    final turn = view.history.reversed
+        .takeWhile((e) => e.actor == actor)
+        .toList()
+        .reversed;
+
+    var melded = 0;
+    final drew = <String>[];
+    final threw = <String>[];
+    for (final event in turn) {
+      switch (event.kind) {
+        case 'drawDeck':
+          drew.add(l.drew);
+        case 'drawTrash':
+          drew.add(l.tookPile);
+        case 'createSeq':
+        case 'createSet':
+        case 'add':
+          // Collapsed into one count: a bot laying three runs down is one thing
+          // it did, not three.
+          melded += 1;
+        case 'discard':
+          threw.add(
+            event.card == null
+                ? l.discarded
+                : '${l.discarded} ${cardStr(event.card!)}',
+          );
+      }
+    }
+
+    return [
+      ...drew,
+      if (melded > 0) '${l.melded} $melded',
+      if (_tookMortoThisTurn(view)) l.tookMorto,
+      ...threw,
+    ].join(' · ');
+  }
+
+  /// Whether a side other than mine picked its morto up during the turn just
+  /// played.
+  bool _tookMortoThisTurn(TableView view) {
+    for (var side = 0; side < view.mortoTaken.length; side++) {
+      if (side == view.side) continue;
+      final was = side < _mortoLastTurn.length && _mortoLastTurn[side];
+      if (!was && view.mortoTaken[side]) return true;
+    }
+    return false;
+  }
+
+  Widget _strip(TableView view, Copy l, Palette p) {
+    final selected = c.selection.length;
+    final actions = _stripActions(l, p);
+
+    return Positioned(
+      left: 20,
+      right: 20,
+      top: kStripY,
+      height: kStripHeight,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+          color: p.strip,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: view.myTurn && !view.roundOver ? p.mint : p.line,
+          ),
+        ),
+        child: Row(
+          children: [
+            if (selected > 0) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: p.mint,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  '$selected ${l.selected}',
+                  style: mono(10, color: p.mintInk),
+                ),
+              ),
+              const SizedBox(width: 12),
+            ],
+            for (final action in actions) ...[
+              action,
+              const SizedBox(width: 12),
+            ],
+            Expanded(
+              child: Text(
+                _coach(view, l),
+                style: T.body(13, color: p.ash, height: 1.4),
+              ),
+            ),
+            if (selected > 0) ...[
+              const SizedBox(width: 12),
+              TextLink(
+                label: l.clear,
+                palette: p,
+                fontSize: 10,
+                color: p.ashDim,
+                onTap: c.clearSelection,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// The strip carries only the moves that have nowhere on the table to be
+  /// pressed: going out, and conceding a round nobody can draw in.
+  List<Widget> _stripActions(Copy l, Palette p) {
+    final out = c.moves.firstWithTarget(MoveTarget.goOut);
+    final end = c.moves.firstWithTarget(MoveTarget.endRound);
+    return [
+      if (out != null)
+        _StripButton(
+          label: l.batida,
+          palette: p,
+          tone: p.gold,
+          ink: p.goldInk,
+          onTap: () => c.play(out),
+        ),
+      if (end != null)
+        _StripButton(
+          label: l.roundOver,
+          palette: p,
+          tone: Colors.transparent,
+          ink: p.ash,
+          onTap: () => c.play(end),
+        ),
+    ];
+  }
+
+  String _coach(TableView view, Copy l) {
+    if (view.roundOver || view.matchOver) return '';
+    if (!view.myTurn) {
+      final who = view.currentPlayer < view.playerNames.length
+          ? view.playerNames[view.currentPlayer]
+          : '';
+      return l.coachBot(who);
+    }
+    if (view.phase == 'draw') return l.coachDraw;
+    if (c.canMeldSelection) return l.coachReady;
+    if (c.selection.length == 1) return l.coachDiscard;
+    return l.coachPlay;
+  }
+
+  Widget _whyNot(Copy l, Palette p) {
+    final text = _refusalText(l);
+    return Positioned(
+      left: 20,
+      right: 20,
+      top: kWhyNotY,
+      height: 26,
+      child: text == null
+          ? const SizedBox.shrink()
+          : Row(
+              children: [
+                Text(l.whyNot, style: mono(10, color: p.pink)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    text,
+                    style: T.body(13, color: p.ash, height: 1.4),
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+
+  /// The host's own words win: it knows the reason, and it phrased it. The
+  /// design's sentences cover what the screen worked out for itself.
+  String? _refusalText(Copy l) {
+    if (c.notice != null) return c.notice;
+    return switch (c.refusal) {
+      null => null,
+      Refusal.tooShort => l.wnShort,
+      Refusal.tooManyWilds => l.wnWilds,
+      Refusal.notAMeld => l.wnMixed,
+      Refusal.doesNotFit => l.wnExtend,
+      Refusal.needCanastra => l.wnGoOut,
+      Refusal.mortoFirst => l.wnMorto,
+      Refusal.notAllowedYet => l.wnExtend,
+    };
+  }
 }
 
-class _Seat extends StatelessWidget {
-  final String name;
-  final int cards;
-  final bool isPartner;
-  final bool toPlay;
+class _StreakBadge extends StatelessWidget {
+  final int streak;
+  final Palette palette;
+  final Copy copy;
 
-  const _Seat({
-    required this.name,
-    required this.cards,
-    required this.isPartner,
-    required this.toPlay,
+  const _StreakBadge({
+    required this.streak,
+    required this.palette,
+    required this.copy,
   });
 
   @override
   Widget build(BuildContext context) {
-    final threat = cards <= 2;
-    return AnimatedContainer(
-      duration: Motion.of(context, Motion.base),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+    final p = palette;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(10),
-        color: Colors.black.withValues(alpha: toPlay ? 0.28 : 0.0),
-        border: Border.all(color: toPlay ? C.mint : Colors.transparent),
+        color: p.goldWash,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: p.goldLine),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            isPartner ? Icons.handshake_outlined : Icons.person_outline,
-            size: 14,
-            color: isPartner ? C.mint : C.ash,
-          ),
-          const SizedBox(width: 5),
-          Flexible(
-            child: Text(
-              name,
-              overflow: TextOverflow.ellipsis,
-              softWrap: false,
-              style: T.title(13, color: C.bone),
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(
+              color: p.gold,
+              borderRadius: BorderRadius.circular(3),
             ),
           ),
           const SizedBox(width: 6),
-          Text(
-            '$cards',
-            style: T.mono(13, color: threat ? C.coringa : C.ashDim),
-          ),
+          Text('${copy.streak}$streak', style: mono(10, color: p.gold)),
         ],
       ),
     );
   }
 }
 
-// --- the felt -----------------------------------------------------------------
+/// An opponent, with the signal that matters most: how many cards they are
+/// holding. One card means they are about to go out.
+class _SeatChip extends StatelessWidget {
+  final String name;
+  final int cards;
+  final bool toPlay;
+  final bool partner;
+  final Palette palette;
 
-class _Felt extends StatelessWidget {
-  final GameController controller;
-  final TableView view;
-
-  const _Felt({required this.controller, required this.view});
-
-  @override
-  Widget build(BuildContext context) {
-    final selected = controller.selectedCard;
-    final movesForCard = selected == null
-        ? const <MoveOption>[]
-        : controller.moves.forCard(selected);
-    final targetSlots = {
-      for (final m in movesForCard)
-        if (m.meldSlot != null) m.meldSlot!,
-    };
-    final discardMove = movesForCard
-        .where((m) => m.target == MoveTarget.discard)
-        .firstOrNull;
-
-    final theirMelds = [
-      for (final m in view.melds)
-        if (m.owner != view.side) m,
-    ];
-
-    // The felt is centred in whatever space is left over so a table with few
-    // melds does not sit in the top corner with a void beneath it, and scrolls
-    // once the melds outgrow the space.
-    return LayoutBuilder(
-      builder: (context, constraints) => SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(minHeight: constraints.maxHeight),
-          child: _content(
-            context,
-            movesForCard,
-            targetSlots,
-            discardMove,
-            theirMelds,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _content(
-    BuildContext context,
-    List<MoveOption> movesForCard,
-    Set<int> targetSlots,
-    MoveOption? discardMove,
-    List<MeldView> theirMelds,
-  ) {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _MeldShelf(
-          label: view.numPlayers == 4 ? "Their team's melds" : 'Their melds',
-          melds: theirMelds,
-          emptyText: 'Nothing down yet',
-        ),
-        const SizedBox(height: 10),
-        TableCenter(
-          stockCount: view.stockCount,
-          trash: view.trash,
-          mortoSizes: view.mortoSizes,
-          mortoTaken: view.mortoTaken,
-          mySide: view.side,
-          stockActive:
-              controller.moves.firstWithTarget(MoveTarget.stock) != null,
-          pileActive:
-              controller.moves.firstWithTarget(MoveTarget.pile) != null ||
-              discardMove != null,
-          pileFrozen: view.frozen,
-          pileBlocked: view.pileBlocked,
-          onStock: () {
-            final m = controller.moves.firstWithTarget(MoveTarget.stock);
-            if (m != null) controller.play(m);
-          },
-          onPile: () {
-            if (discardMove != null) {
-              controller.play(discardMove);
-              return;
-            }
-            final m = controller.moves.firstWithTarget(MoveTarget.pile);
-            if (m != null) controller.play(m);
-          },
-          onInspectPile: () => _showPile(context, view),
-        ),
-        const SizedBox(height: 10),
-        _MeldShelf(
-          label: view.numPlayers == 4 ? 'Your team\'s melds' : 'Your melds',
-          melds: view.myMelds,
-          emptyText: 'Lay a run or a set to open',
-          targetSlots: targetSlots,
-          onTapSlot: (slot) {
-            final move = movesForCard
-                .where((m) => m.meldSlot == slot)
-                .firstOrNull;
-            if (move != null) controller.play(move);
-          },
-        ),
-        const SizedBox(height: 8),
-      ],
-    );
-  }
-
-  static void _showPile(BuildContext context, TableView view) {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: C.night,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Eyebrow('The discard pile, bottom to top'),
-            const SizedBox(height: 12),
-            if (view.trash.isEmpty)
-              Text('The pile is empty.', style: T.body(14, color: C.ash))
-            else
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  for (final ct in view.trash) PlayingCard(card: ct, width: 44),
-                ],
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _MeldShelf extends StatelessWidget {
-  final String label;
-  final List<MeldView> melds;
-  final String emptyText;
-  final Set<int> targetSlots;
-  final ValueChanged<int>? onTapSlot;
-
-  const _MeldShelf({
-    required this.label,
-    required this.melds,
-    required this.emptyText,
-    this.targetSlots = const {},
-    this.onTapSlot,
+  const _SeatChip({
+    required this.name,
+    required this.cards,
+    required this.toPlay,
+    required this.partner,
+    required this.palette,
   });
 
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Eyebrow(label),
-      const SizedBox(height: 6),
-      if (melds.isEmpty)
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: C.line),
-          ),
-          alignment: Alignment.center,
-          child: Text(emptyText, style: T.body(12, color: C.ashDim)),
-        )
-      else
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              for (var i = 0; i < melds.length; i++)
-                Padding(
-                  padding: EdgeInsets.only(
-                    right: i == melds.length - 1 ? 0 : 8,
-                  ),
-                  child: MeldStrip(
-                    meld: melds[i],
-                    isTarget: targetSlots.contains(i),
-                    onTap: targetSlots.contains(i)
-                        ? () => onTapSlot?.call(i)
-                        : null,
-                  ),
-                ),
-            ],
-          ),
-        ),
-    ],
-  );
-}
-
-// --- the action bar -------------------------------------------------------------
-
-class _ActionBar extends StatelessWidget {
-  final GameController controller;
-  final TableView view;
-
-  const _ActionBar({required this.controller, required this.view});
-
-  @override
   Widget build(BuildContext context) {
-    if (!view.myTurn) {
-      final who = view.currentPlayer < view.playerNames.length
-          ? view.playerNames[view.currentPlayer]
-          : 'Seat ${view.currentPlayer}';
-      return _Strip(
-        child: Text('$who is playing…', style: T.body(13, color: C.ash)),
-      );
-    }
-
-    final selected = controller.selectedCard;
-    final moves = controller.moves;
-
-    if (view.phase == 'draw') {
-      return _Strip(
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                view.pendingPileCard != null
-                    ? 'Meld the card you took from the pile'
-                    : 'Draw from the stock, or take the pile',
-                style: T.body(13, color: C.bone),
-              ),
-            ),
-            if (moves.firstWithTarget(MoveTarget.endRound) != null)
-              _Chip(
-                move: moves.firstWithTarget(MoveTarget.endRound)!,
-                tone: C.coringa,
-                onTap: () => controller.play(
-                  moves.firstWithTarget(MoveTarget.endRound)!,
-                ),
-              ),
-          ],
-        ),
-      );
-    }
-
-    final goOut = moves.firstWithTarget(MoveTarget.goOut);
-    if (goOut != null) {
-      return _Strip(
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                'Your hand is empty — finish it.',
-                style: T.title(14, color: C.limpa),
-              ),
-            ),
-            _Chip(
-              move: goOut,
-              tone: C.limpa,
-              onTap: () => controller.play(goOut),
-            ),
-          ],
-        ),
-      );
-    }
-
-    if (selected == null) {
-      final hint = view.pendingPileCard != null
-          ? 'You must meld ${cardStr(view.pendingPileCard!)} before anything else'
-          : 'Tap a card to see where it can go';
-      return _Strip(
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(hint, style: T.body(13, color: C.ash)),
-            ),
-            _MoreMoves(controller: controller),
-          ],
-        ),
-      );
-    }
-
-    final options = moves.forCard(selected);
-    if (options.isEmpty) {
-      return _Strip(
-        child: CardSentence(
-          prefix: '',
-          cards: [selected],
-          suffix: ' has nowhere to go this turn.',
-          style: T.body(13, color: C.ashDim),
-        ),
-      );
-    }
-
-    // New melds need naming, so they get chips; adds and discards are done by
-    // tapping the glowing target on the table.
-    final creates = options
-        .where((o) => o.target == MoveTarget.newMeld)
-        .toList();
-    return _Strip(
+    final p = palette;
+    return AnimatedContainer(
+      duration: Motion.of(context, Motion.base),
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+      decoration: BoxDecoration(
+        color: p.panel,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: toPlay ? p.mint : p.line),
+      ),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  for (final o in creates)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: _Chip(
-                        move: o,
-                        tone: C.mint,
-                        onTap: () => controller.play(o),
-                      ),
-                    ),
-                  if (creates.isEmpty)
-                    CardSentence(
-                      prefix: 'Tap a glowing spot to play ',
-                      cards: [selected],
-                      style: T.body(13, color: C.ash),
-                    ),
-                ],
-              ),
+          Container(
+            width: 22,
+            height: 22,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: partner ? p.mint : p.avatar,
+              borderRadius: BorderRadius.circular(11),
+            ),
+            child: Text(
+              name.isEmpty ? '?' : name.characters.first.toUpperCase(),
+              style: mono(10, color: partner ? p.mintInk : p.avatarInk),
             ),
           ),
-          _MoreMoves(controller: controller),
+          const SizedBox(width: 8),
+          Text(name, style: T.title(13, color: p.text)),
+          const SizedBox(width: 8),
+          // Two cards or fewer is a threat, and the wild colour is the app's
+          // word for "watch out".
+          Text(
+            '$cards',
+            style: mono(13, color: cards <= 2 ? p.pink : p.ashDim),
+          ),
         ],
       ),
     );
   }
 }
 
-/// Every legal move, always reachable. Some moves — a run that spends a wild
-/// you would rather keep, say — are hard to express by tapping, and a player
-/// should never be unable to make a move the rules allow.
-class _MoreMoves extends StatelessWidget {
-  final GameController controller;
-  const _MoreMoves({required this.controller});
+class _Thinking extends StatefulWidget {
+  final String label;
+  final Palette palette;
+
+  const _Thinking({required this.label, required this.palette});
 
   @override
-  Widget build(BuildContext context) => TextButton(
-    onPressed: () => showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: C.night,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Eyebrow('${controller.moves.options.length} legal moves'),
-              const SizedBox(height: 10),
-              Flexible(
-                child: ListView(
-                  shrinkWrap: true,
-                  children: [
-                    for (final o in controller.moves.options)
-                      ListTile(
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(o.label, style: T.body(14, color: C.bone)),
-                        onTap: () {
-                          Navigator.of(sheetContext).pop();
-                          controller.play(o);
-                        },
-                      ),
-                  ],
-                ),
-              ),
-            ],
+  State<_Thinking> createState() => _ThinkingState();
+}
+
+class _ThinkingState extends State<_Thinking>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1100),
+  );
+
+  // Reduce-motion comes from the MediaQuery, which cannot be read until
+  // dependencies are in place — so the pulse starts here rather than in
+  // initState, and only once.
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (Motion.reduced(context)) {
+      _pulse.stop();
+    } else if (!_pulse.isAnimating) {
+      _pulse.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.palette;
+    return FadeTransition(
+      opacity: Tween<double>(
+        begin: 0.55,
+        end: 1.0,
+      ).animate(CurvedAnimation(parent: _pulse, curve: Curves.easeInOut)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 5,
+            height: 5,
+            decoration: BoxDecoration(
+              color: p.mint,
+              borderRadius: BorderRadius.circular(3),
+            ),
           ),
-        ),
+          const SizedBox(width: 5),
+          Text(widget.label, style: mono(10, color: p.mint)),
+        ],
       ),
-    ),
-    child: Text('All moves', style: T.mono(11, color: C.mint)),
-  );
+    );
+  }
 }
 
-class _Strip extends StatelessWidget {
-  final Widget child;
-  const _Strip({required this.child});
-
-  @override
-  Widget build(BuildContext context) => Container(
-    width: double.infinity,
-    margin: const EdgeInsets.fromLTRB(12, 4, 12, 8),
-    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-    decoration: BoxDecoration(
-      color: Colors.black.withValues(alpha: 0.30),
-      borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: C.line),
-    ),
-    child: child,
-  );
-}
-
-class _Chip extends StatelessWidget {
-  final MoveOption move;
+class _StripButton extends StatelessWidget {
+  final String label;
+  final Palette palette;
   final Color tone;
+  final Color ink;
   final VoidCallback onTap;
 
-  const _Chip({required this.move, required this.tone, required this.onTap});
+  const _StripButton({
+    required this.label,
+    required this.palette,
+    required this.tone,
+    required this.ink,
+    required this.onTap,
+  });
 
   @override
-  Widget build(BuildContext context) => Material(
-    color: tone,
-    borderRadius: BorderRadius.circular(8),
-    child: InkWell(
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    child: Hoverable(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: CardSentence(
-          prefix: move.prefix,
-          cards: move.nameCards,
-          style: T.mono(11, color: C.night),
+      builder: (hovered) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+        decoration: BoxDecoration(
+          color: tone == Colors.transparent
+              ? Colors.transparent
+              : (hovered ? brighten(tone, 1.1) : tone),
+          borderRadius: BorderRadius.circular(9),
+          border: Border.all(
+            color: tone == Colors.transparent ? palette.line : tone,
+          ),
         ),
+        child: Text(label, style: mono(11, color: ink)),
       ),
-    ),
-  );
-}
-
-class _Notice extends StatelessWidget {
-  final String text;
-  final VoidCallback onDismiss;
-
-  const _Notice({required this.text, required this.onDismiss});
-
-  @override
-  Widget build(BuildContext context) => Container(
-    width: double.infinity,
-    margin: const EdgeInsets.symmetric(horizontal: 12),
-    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-    decoration: BoxDecoration(
-      color: C.coringa.withValues(alpha: 0.14),
-      borderRadius: BorderRadius.circular(10),
-      border: Border.all(color: C.coringa.withValues(alpha: 0.5)),
-    ),
-    child: Row(
-      children: [
-        Expanded(
-          child: Text(text, style: T.body(12, color: C.bone)),
-        ),
-        GestureDetector(
-          onTap: onDismiss,
-          child: const Icon(Icons.close, size: 16, color: C.ash),
-        ),
-      ],
     ),
   );
 }
 
 class _Message extends StatelessWidget {
   final String text;
+  final Palette palette;
   final bool isError;
-  const _Message({required this.text, this.isError = false});
+
+  const _Message({
+    required this.text,
+    required this.palette,
+    this.isError = false,
+  });
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    body: TableSurface(
-      child: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Text(
-            text,
-            textAlign: TextAlign.center,
-            style: T.title(16, color: isError ? C.coringa : C.ash),
+    body: Stage(
+      palette: palette,
+      children: [
+        Positioned.fill(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(48),
+              child: Text(
+                text,
+                textAlign: TextAlign.center,
+                style: T.title(16, color: isError ? palette.pink : palette.ash),
+              ),
+            ),
           ),
         ),
-      ),
+      ],
     ),
   );
 }

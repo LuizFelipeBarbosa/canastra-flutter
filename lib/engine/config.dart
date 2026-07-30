@@ -303,4 +303,29 @@ class RulesConfig {
   );
 
   bool isWildCard(CardId ct) => _wildTable[ct];
+
+  /// The same rules, played to a different score.
+  ///
+  /// How high the match goes is the one number a player picks at setup, and it
+  /// changes nothing about how a hand is played — so it gets a rebuilder here
+  /// rather than a whole `copyWith` surface nobody would otherwise use.
+  RulesConfig withMatchTarget(int target) => RulesConfig(
+    name: name,
+    table: table,
+    deck: deck,
+    wildcard: wildcard,
+    meld: meld,
+    morto: morto,
+    discardPile: discardPile,
+    goingOut: goingOut,
+    initialMeld: initialMeld,
+    specialThrees: specialThrees,
+    scoring: ScoringConfig(
+      cardPoints: scoring.cardPoints,
+      handPenaltyMode: scoring.handPenaltyMode,
+      matchTarget: target,
+      episode: scoring.episode,
+    ),
+    turn: turn,
+  );
 }
