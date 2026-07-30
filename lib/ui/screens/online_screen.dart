@@ -11,6 +11,7 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../../account/account.dart';
 import '../../engine/profiles.dart';
 import '../../env.dart';
 import '../../game/game_controller.dart';
@@ -43,6 +44,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
   String? _error;
   late int _players = widget.numPlayers;
   bool _pushing = false;
+  bool _creating = false;
   bool _prefilled = false;
 
   @override
@@ -63,6 +65,35 @@ class _OnlineScreenState extends State<OnlineScreen> {
     super.dispose();
   }
 
+  /// Ask the backend for a fresh table and drop its code into the field, so
+  /// creating and joining share one path: the code the server minted is the
+  /// room code the host sees.
+  Future<void> _create() async {
+    if (_pushing || _creating) return;
+
+    final account = context.account;
+    final target = context.prefs.target;
+    setState(() {
+      _creating = true;
+      _error = null;
+    });
+    try {
+      final code = await account.createRoom(
+        profileId: widget.profileId,
+        numPlayers: _players,
+        matchTarget: target,
+      );
+      if (!mounted) return;
+      _room.text = code;
+      await _join();
+    } on AccountException {
+      if (!mounted) return;
+      setState(() => _error = context.copy.auth.somethingBroke);
+    } finally {
+      if (mounted) setState(() => _creating = false);
+    }
+  }
+
   Future<void> _join() async {
     if (_pushing) return;
 
@@ -80,18 +111,26 @@ class _OnlineScreenState extends State<OnlineScreen> {
     }
     setState(() => _error = null);
 
+    final target = context.prefs.target;
     final cfg = loadProfile(
       widget.profileId,
       numPlayers: _players,
-    ).withMatchTarget(context.prefs.target);
+    ).withMatchTarget(target);
+    // The declared rules only matter when this join creates the room — an
+    // existing room ignores them and the lobby reports the real ones, which
+    // the controller adopts. Online tables always wait in the lobby.
     final controller = GameController(
       cfg: cfg,
+      autoReady: false,
       transport: WebSocketTransport(
         endpoint: uri,
         roomCode: _room.text.trim(),
         playerName: _name.text.trim().isEmpty
             ? l.onlineDefaultPlayer
             : _name.text.trim(),
+        profileId: widget.profileId,
+        numPlayers: _players,
+        matchTarget: target,
       ),
     );
     _pushing = true;
@@ -170,6 +209,20 @@ class _OnlineScreenState extends State<OnlineScreen> {
                 ],
                 const SizedBox(height: 24),
                 MintButton(label: l.onlineJoinTable, palette: p, onTap: _join),
+                // Creating needs an account: the server mints the code against
+                // the signed-in owner. A signed-out player can still join any
+                // table whose name or code they were given.
+                if (hasBackend && context.account.signedIn) ...[
+                  const SizedBox(height: 14),
+                  Center(
+                    child: TextLink(
+                      label: _creating ? l.onlineCreating : l.onlineCreateTable,
+                      palette: p,
+                      color: p.ashDim,
+                      onTap: _create,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

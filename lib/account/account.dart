@@ -142,6 +142,19 @@ class Account extends ChangeNotifier {
     required int best,
   }) => _backend.uploadLegacyStats(played: played, won: won, best: best);
 
+  /// Create a private table and return its shareable join code.
+  Future<String> createRoom({
+    required String profileId,
+    required int numPlayers,
+    required int matchTarget,
+  }) => _run(
+    () => _backend.createRoom(
+      profileId: profileId,
+      numPlayers: numPlayers,
+      matchTarget: matchTarget,
+    ),
+  );
+
   Future<void> signOut() async {
     await _run(_backend.signOut);
     _setUser(null);

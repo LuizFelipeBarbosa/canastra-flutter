@@ -22,6 +22,9 @@ class FakeAuthBackend implements AuthBackend {
 
   (int played, int won, int best)? uploadedLegacy;
 
+  /// The last room created through this fake, for assertions.
+  (String profileId, int numPlayers, int matchTarget)? createdRoom;
+
   FakeAuthBackend({AuthUser? initialUser}) : _user = initialUser;
 
   @override
@@ -137,6 +140,19 @@ class FakeAuthBackend implements AuthBackend {
     required int best,
   }) async {
     uploadedLegacy = (played, won, best);
+  }
+
+  @override
+  Future<String> createRoom({
+    required String profileId,
+    required int numPlayers,
+    required int matchTarget,
+  }) async {
+    if (_user == null) {
+      throw const AccountException(AccountError.unknown, 'not signed in');
+    }
+    createdRoom = (profileId, numPlayers, matchTarget);
+    return 'AB23CD';
   }
 
   @override

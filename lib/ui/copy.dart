@@ -146,6 +146,8 @@ class Copy {
   final String onlineInvalidHost;
   final String onlineMissingTableName;
   final String onlineDefaultPlayer;
+  final String onlineCreateTable;
+  final String onlineCreating;
 
   // --- shared controls ---
   final String themeLight;
@@ -259,6 +261,8 @@ class Copy {
     required this.onlineInvalidHost,
     required this.onlineMissingTableName,
     required this.onlineDefaultPlayer,
+    required this.onlineCreateTable,
+    required this.onlineCreating,
     required this.themeLight,
     required this.themeDark,
     required this.seatFallback,
@@ -416,6 +420,8 @@ class Copy {
     onlineInvalidHost: 'This build has no usable host address.',
     onlineMissingTableName: 'Give the table a name so others can find it.',
     onlineDefaultPlayer: 'Player',
+    onlineCreateTable: 'Create a table',
+    onlineCreating: 'Setting the table…',
     themeLight: 'LIGHT',
     themeDark: 'DARK',
     seatFallback: _enSeatFallback,
@@ -545,6 +551,8 @@ class Copy {
     onlineInvalidHost: 'Esta versão não tem um endereço de servidor válido.',
     onlineMissingTableName: 'Dê um nome à mesa para os outros encontrarem.',
     onlineDefaultPlayer: 'Jogador',
+    onlineCreateTable: 'Criar uma mesa',
+    onlineCreating: 'Preparando a mesa…',
     themeLight: 'CLARO',
     themeDark: 'ESCURO',
     seatFallback: _ptSeatFallback,

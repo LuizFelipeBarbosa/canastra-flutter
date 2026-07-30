@@ -140,6 +140,23 @@ class SupabaseAuthBackend implements AuthBackend {
   }
 
   @override
+  Future<String> createRoom({
+    required String profileId,
+    required int numPlayers,
+    required int matchTarget,
+  }) => _guard(() async {
+    final row = await _client.rpc<Map<String, dynamic>>(
+      'create_room',
+      params: {
+        'p_profile_id': profileId,
+        'p_num_players': numPlayers,
+        'p_match_target': matchTarget,
+      },
+    );
+    return row['code'] as String;
+  });
+
+  @override
   Future<void> signOut() => _guard(_client.auth.signOut);
 }
 

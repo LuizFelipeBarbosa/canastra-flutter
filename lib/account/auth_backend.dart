@@ -73,6 +73,17 @@ abstract class AuthBackend {
 
   Future<void> signOut();
 
+  /// Create a private table server-side and return its shareable join code.
+  ///
+  /// Lives on the auth backend because the room row belongs to the signed-in
+  /// user — the database rejects the call without a session. Throws the same
+  /// mapped exceptions as the sign-in methods.
+  Future<String> createRoom({
+    required String profileId,
+    required int numPlayers,
+    required int matchTarget,
+  });
+
   /// External session changes such as refreshes, returns and revocations.
   Stream<AuthUser?> get changes;
 }

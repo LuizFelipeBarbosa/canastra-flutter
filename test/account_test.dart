@@ -36,6 +36,8 @@ class _NeverRestoringBackend extends FakeAuthBackend {
 }
 
 void main() {
+  _roomTests();
+
   test('restore with a persisted guest lands in guest', () async {
     final user = _user(anonymous: true);
     final account = _accountFor(FakeAuthBackend(initialUser: user));
@@ -136,5 +138,31 @@ void main() {
 
     expect(stopwatch.elapsed, lessThan(const Duration(seconds: 1)));
     expect(account.state, isA<SignedOut>());
+  });
+}
+
+/// Appended with the private-table flow: creating a room requires a session
+/// and hands back the join code the server minted.
+void _roomTests() {
+  test('creating a room returns the code and records the rules', () async {
+    final backend = FakeAuthBackend();
+    final account = Account(backend: backend);
+    await account.signInAnonymously();
+
+    final code = await account.createRoom(
+      profileId: 'canasta',
+      numPlayers: 4,
+      matchTarget: 1500,
+    );
+    expect(code, 'AB23CD');
+    expect(backend.createdRoom, ('canasta', 4, 1500));
+  });
+
+  test('creating a room while signed out fails', () async {
+    final account = Account(backend: FakeAuthBackend());
+    await expectLater(
+      account.createRoom(profileId: 'buraco', numPlayers: 2, matchTarget: 3000),
+      throwsA(isA<AccountException>()),
+    );
   });
 }
