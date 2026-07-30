@@ -33,6 +33,7 @@ class WebSocketTransport implements GameTransport {
   StreamSubscription<dynamic>? _sub;
   int? _seat;
   bool _connected = false;
+  bool _connecting = false;
   bool _disposed = false;
   int _retries = 0;
 
@@ -56,35 +57,53 @@ class WebSocketTransport implements GameTransport {
   @override
   Future<void> connect() async {
     if (_disposed) throw TransportException('transport was disposed');
-    if (_connected) return;
+    if (_connected || _connecting) return;
 
-    final WebSocketChannel channel;
+    _connecting = true;
     try {
-      channel = WebSocketChannel.connect(endpoint);
-      await channel.ready;
-    } catch (e) {
-      throw TransportException('could not reach $endpoint: $e');
+      WebSocketChannel? connectingChannel;
+      try {
+        final channel = WebSocketChannel.connect(endpoint);
+        connectingChannel = channel;
+        _channel = channel;
+        await channel.ready;
+      } catch (e) {
+        if (identical(_channel, connectingChannel)) _channel = null;
+        throw TransportException('could not reach $endpoint: $e');
+      }
+      final channel = connectingChannel;
+      if (_disposed) {
+        if (identical(_channel, channel)) _channel = null;
+        await channel.sink.close();
+        throw TransportException('transport was disposed');
+      }
+      if (!identical(_channel, channel)) {
+        await channel.sink.close();
+        return;
+      }
+      if (_connected) return;
+
+      _connected = true;
+      _retries = 0;
+      _sub = channel.stream.listen(
+        _onMessage,
+        onDone: _onDisconnected,
+        onError: (Object e) {
+          _events.add(ServerError(message: 'connection error: $e'));
+          _onDisconnected();
+        },
+      );
+
+      send(
+        JoinRoom(
+          roomCode: roomCode,
+          playerName: playerName,
+          preferredSeat: preferredSeat,
+        ),
+      );
+    } finally {
+      _connecting = false;
     }
-
-    _channel = channel;
-    _connected = true;
-    _retries = 0;
-    _sub = channel.stream.listen(
-      _onMessage,
-      onDone: _onDisconnected,
-      onError: (Object e) {
-        _events.add(ServerError(message: 'connection error: $e'));
-        _onDisconnected();
-      },
-    );
-
-    send(
-      JoinRoom(
-        roomCode: roomCode,
-        playerName: playerName,
-        preferredSeat: preferredSeat,
-      ),
-    );
   }
 
   void _onMessage(dynamic raw) {

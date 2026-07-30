@@ -37,6 +37,8 @@ dependencies:
   web_socket_channel: ^3.0.3
   shelf: ^1.4.2
   shelf_web_socket: ^3.0.0
+  # Theme, language, sound and the streak counters survive a reload.
+  shared_preferences: ^2.5.5
 
 dev_dependencies:
   flutter_test:

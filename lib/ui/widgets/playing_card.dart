@@ -1,186 +1,150 @@
 /// The card.
 ///
 /// One widget renders every card in the app — hand, meld, pile, morto — so a
-/// three of hearts looks identical wherever it appears. State that matters to
-/// the rules is drawn, not implied: a card acting as a wild wears a [C.coringa]
-/// band, a legal destination glows [C.mint], and a card you cannot use right
-/// now is dimmed rather than hidden.
+/// three of hearts looks identical wherever it appears. It is always drawn at
+/// exactly one size and scaled by whoever places it, so a melded card is the
+/// same object as a held one seen from further away rather than a second, redrawn
+/// design that happens to be smaller.
+///
+/// State that matters to the rules is drawn, not implied: a card acting as a wild
+/// wears a [Palette.pink] band, a selected one is edged and haloed
+/// [Palette.mint], and nothing else on a card carries colour.
 library;
 
 import 'package:flutter/material.dart';
 
 import '../../engine/cards.dart';
+import '../app_scope.dart';
+import '../copy.dart';
 import '../theme.dart';
 import 'suit_pip.dart';
 
-/// Standard playing-card proportion (2.5 × 3.5in).
-const double kCardAspect = 0.7;
+/// Life size, and a standard playing-card proportion (2.5 × 3.5in).
+const double kCardWidth = 76;
+const double kCardHeight = 108.6;
+const double kCardAspect = kCardWidth / kCardHeight;
 
 class PlayingCard extends StatelessWidget {
   final CardId card;
-  final double width;
+  final Palette palette;
 
-  /// The card is face down — a stock card, another player's hand, a morto.
+  /// A stock card, another player's hand, an untaken morto.
   final bool faceDown;
 
-  /// This card is currently acting as a wild inside a meld.
+  /// This card is currently standing in for another one inside a meld.
   final bool asWild;
 
+  /// Picked up, waiting to be played.
   final bool selected;
-
-  /// A legal destination or a playable card right now.
-  final bool highlighted;
-
-  /// Not playable in the current context.
-  final bool dimmed;
-
-  final VoidCallback? onTap;
 
   const PlayingCard({
     super.key,
     required this.card,
-    this.width = 64,
+    required this.palette,
     this.faceDown = false,
     this.asWild = false,
     this.selected = false,
-    this.highlighted = false,
-    this.dimmed = false,
-    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final height = width / kCardAspect;
-    final radius = BorderRadius.circular(width * 0.11);
+    final p = palette;
+    final l = context.copy;
 
     final Color edge;
     if (selected) {
-      edge = C.mint;
-    } else if (highlighted) {
-      edge = C.mint.withValues(alpha: 0.75);
+      edge = p.mint;
     } else if (asWild) {
-      edge = C.coringa;
+      edge = p.pink;
     } else {
-      edge = C.boneEdge;
+      edge = p.cardEdge;
     }
 
     return Semantics(
-      label: faceDown ? 'Face-down card' : cardLabel(card),
-      button: onTap != null,
+      label: faceDown ? l.faceDownCard : cardLabel(card, l, asWild: asWild),
       selected: selected,
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: Motion.of(context, Motion.quick),
-          curve: Motion.curve,
-          width: width,
-          height: height,
+      child: SizedBox(
+        width: kCardWidth,
+        height: kCardHeight,
+        child: DecoratedBox(
           decoration: BoxDecoration(
-            color: faceDown ? C.cardBack : C.bone,
-            borderRadius: radius,
-            border: Border.all(
-              color: edge,
-              width: selected || highlighted || asWild ? 2.0 : 1.0,
-            ),
-            boxShadow: [
-              if (selected || highlighted)
-                BoxShadow(
-                  color: C.mint.withValues(alpha: 0.35),
-                  blurRadius: 14,
-                  spreadRadius: 1,
-                )
-              else
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.35),
-                  blurRadius: 6,
-                  offset: const Offset(0, 3),
-                ),
-            ],
+            color: faceDown ? p.cardBack : p.cardBg,
+            borderRadius: BorderRadius.circular(8.4),
+            border: Border.all(color: edge, width: selected || asWild ? 2 : 1),
+            boxShadow: selected
+                ? p.glowShadow(blur: 16, spread: 2)
+                : p.cardShadow,
           ),
-          foregroundDecoration: dimmed
-              ? BoxDecoration(
-                  borderRadius: radius,
-                  color: C.night.withValues(alpha: 0.55),
-                )
-              : null,
-          child: faceDown
-              ? _CardBack(width: width)
-              : _CardFace(card: card, width: width, asWild: asWild),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8.4),
+            child: faceDown
+                ? _Back(palette: p)
+                : _Face(card: card, palette: p, asWild: asWild),
+          ),
         ),
       ),
     );
   }
 }
 
-class _CardFace extends StatelessWidget {
+class _Face extends StatelessWidget {
   final CardId card;
-  final double width;
+  final Palette palette;
   final bool asWild;
 
-  const _CardFace({
+  const _Face({
     required this.card,
-    required this.width,
-    this.asWild = false,
+    required this.palette,
+    required this.asWild,
   });
 
   @override
   Widget build(BuildContext context) {
-    if (card == kJoker) {
-      // No star glyph: the display face has none, and a fallback would render
-      // differently on every platform.
-      return Stack(
-        children: [
-          Positioned(
-            left: width * 0.09,
-            top: width * 0.07,
-            child: Text('JK', style: T.rank(width * 0.30, color: C.coringa)),
-          ),
-          Center(
-            child: Transform.rotate(
-              angle: -0.5,
-              child: Text(
-                'JOKER',
-                style: T.mono(width * 0.15, color: C.coringa),
-              ),
-            ),
-          ),
-        ],
-      );
-    }
-
-    final rank = kRankNames[card % 13];
-    final suit = card ~/ 13;
-    final ink = isRed(card) ? C.suitRed : C.suitBlack;
+    // A joker has no rank and no suit; it is only ever a wild, so it says so
+    // where every other card names itself.
+    final isTheJoker = card == kJoker;
+    final ink = isTheJoker
+        ? palette.pink
+        : isRed(card)
+        ? palette.suitRed
+        : palette.suitBlack;
 
     return Stack(
       children: [
         Positioned(
-          left: width * 0.09,
-          top: width * 0.07,
+          left: 7,
+          top: 5,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Text(rank, style: T.rank(width * 0.34, color: ink)),
-              SizedBox(height: width * 0.03),
-              SuitPip(suit: suit, size: width * 0.24, color: ink),
+              Text(
+                isTheJoker ? 'JK' : kRankNames[card % 13],
+                style: T.display(26, tracking: -1, color: ink),
+              ),
+              const SizedBox(height: 2),
+              if (!isTheJoker)
+                SuitPip(suit: card ~/ 13, size: 18, color: ink)
+              else
+                const SizedBox(height: 18),
             ],
           ),
         ),
         // The corner index is the whole card. A large centre pip would only be
-        // visible on the one card at the end of a fan, so it read as noise
-        // rather than decoration and is deliberately not here.
-        if (asWild)
+        // visible on the card at the end of a fan, so it read as noise rather
+        // than decoration and is deliberately not here.
+        if (asWild || isTheJoker)
           Positioned(
             left: 0,
             right: 0,
             bottom: 0,
             child: Container(
-              height: width * 0.17,
-              color: C.coringa,
+              height: 13,
+              color: palette.pink,
               alignment: Alignment.center,
               child: Text(
-                'WILD',
-                style: T.mono(width * 0.11, color: Colors.white),
+                context.copy.wild.toUpperCase(),
+                style: mono(8, color: Colors.white),
               ),
             ),
           ),
@@ -189,48 +153,31 @@ class _CardFace extends StatelessWidget {
   }
 }
 
-class _CardBack extends StatelessWidget {
-  final double width;
-  const _CardBack({required this.width});
+class _Back extends StatelessWidget {
+  final Palette palette;
+  const _Back({required this.palette});
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: EdgeInsets.all(width * 0.09),
+    padding: const EdgeInsets.all(7),
     child: DecoratedBox(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(width * 0.06),
-        border: Border.all(color: C.mint.withValues(alpha: 0.30)),
+        borderRadius: BorderRadius.circular(5),
+        border: Border.all(color: palette.backLine),
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            C.mint.withValues(alpha: 0.10),
-            C.coringa.withValues(alpha: 0.10),
-          ],
+          colors: [palette.backA, palette.backB],
         ),
       ),
     ),
   );
 }
 
-/// Spoken and screen-reader name for a card, e.g. "Queen of hearts".
-String cardLabel(CardId ct) {
-  if (ct == kJoker) return 'Joker';
-  const ranks = [
-    'Ace',
-    'Two',
-    'Three',
-    'Four',
-    'Five',
-    'Six',
-    'Seven',
-    'Eight',
-    'Nine',
-    'Ten',
-    'Jack',
-    'Queen',
-    'King',
-  ];
-  const suits = ['clubs', 'diamonds', 'hearts', 'spades'];
-  return '${ranks[ct % 13]} of ${suits[ct ~/ 13]}';
+/// Spoken and screen-reader name for a card in the active language.
+String cardLabel(CardId card, Copy copy, {bool asWild = false}) {
+  if (card == kJoker) return copy.joker;
+
+  final name = copy.cardName(card % 13, card ~/ 13);
+  return asWild ? copy.wildCardName(name) : name;
 }

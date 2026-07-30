@@ -8,7 +8,6 @@
 @Tags(['online'])
 library;
 
-import 'dart:async';
 import 'dart:io';
 
 import 'package:canastra/multiplayer/game_server.dart';
@@ -51,11 +50,22 @@ class _Client {
 void main() {
   late HttpServer http;
   late Uri endpoint;
+  late int connectionRequests;
 
   setUp(() async {
     final server = GameServer(profileId: 'buraco', numPlayers: 2);
+    connectionRequests = 0;
     http = await shelf_io.serve(
-      const Pipeline().addHandler(server.handler),
+      const Pipeline()
+          .addMiddleware(
+            createMiddleware(
+              requestHandler: (_) {
+                connectionRequests++;
+                return null;
+              },
+            ),
+          )
+          .addHandler(server.handler),
       InternetAddress.loopbackIPv4,
       0, // any free port
     );
@@ -63,6 +73,28 @@ void main() {
   });
 
   tearDown(() => http.close(force: true));
+
+  test('overlapping connect calls open only one WebSocket', () async {
+    final client = _Client(
+      WebSocketTransport(
+        endpoint: endpoint,
+        roomCode: 'mesa-overlap',
+        playerName: 'Ana',
+      ),
+    );
+    addTearDown(client.transport.dispose);
+    final joined = client.transport.events
+        .firstWhere((event) => event is Joined)
+        .timeout(const Duration(seconds: 5));
+
+    final first = client.transport.connect();
+    final second = client.transport.connect();
+    await Future.wait([first, second]);
+
+    expect((await joined as Joined).seat, equals(0));
+    expect(connectionRequests, equals(1));
+    expect(client.events.whereType<Joined>(), hasLength(1));
+  });
 
   test('two clients join a room and play a turn', () async {
     final a = _Client(

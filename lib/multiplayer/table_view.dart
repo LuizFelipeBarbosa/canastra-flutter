@@ -185,6 +185,8 @@ class TableView {
   final List<int> matchScores;
 
   // --- lifecycle ---
+  /// Host-owned rematch identity; presentation bookkeeping, not a game rule.
+  final int matchNumber;
   final bool roundOver;
   final bool matchOver;
   final int? wentOutSide;
@@ -225,6 +227,7 @@ class TableView {
     required this.stagedPoints,
     required this.publicScores,
     required this.matchScores,
+    required this.matchNumber,
     required this.roundOver,
     required this.matchOver,
     required this.wentOutSide,
@@ -274,6 +277,7 @@ class TableView {
     'stagedPoints': stagedPoints,
     'publicScores': publicScores,
     'matchScores': matchScores,
+    'matchNumber': matchNumber,
     'roundOver': roundOver,
     'matchOver': matchOver,
     'wentOutSide': wentOutSide,
@@ -318,6 +322,7 @@ class TableView {
     stagedPoints: j['stagedPoints'] as int,
     publicScores: (j['publicScores'] as List).cast<int>(),
     matchScores: (j['matchScores'] as List).cast<int>(),
+    matchNumber: j['matchNumber'] as int? ?? 0,
     roundOver: j['roundOver'] as bool,
     matchOver: j['matchOver'] as bool,
     wentOutSide: j['wentOutSide'] as int?,
@@ -397,6 +402,7 @@ TableView buildTableView(
   Match match,
   int seat, {
   required List<String> playerNames,
+  int matchNumber = 0,
 }) {
   final cfg = match.cfg;
   final state = match.round;
@@ -439,6 +445,7 @@ TableView buildTableView(
     stagedPoints: state.stagedPoints,
     publicScores: _publicSideScores(state),
     matchScores: match.matchScores,
+    matchNumber: matchNumber,
     roundOver: state.roundOver,
     matchOver: match.matchOver,
     wentOutSide: state.wentOutSide,
