@@ -112,7 +112,6 @@ void main() {
         botDelay: Duration.zero,
       ),
     );
-    addTearDown(controller.dispose);
     return controller;
   }
 
@@ -165,7 +164,7 @@ void main() {
         botDelay: const Duration(milliseconds: 1),
       ),
     );
-    addTearDown(controller.dispose);
+    // The screen owns and disposes the controller, so no teardown here.
     await mount(tester, GameScreen(controller: controller));
     await tester.pump(const Duration(seconds: 2));
 
