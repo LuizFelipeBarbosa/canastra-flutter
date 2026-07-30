@@ -259,6 +259,7 @@ class MatchHost {
       numPlayers: cfg.table.numPlayers,
       seats: seats,
       started: _started,
+      matchTarget: cfg.scoring.matchTarget,
     ),
   );
 

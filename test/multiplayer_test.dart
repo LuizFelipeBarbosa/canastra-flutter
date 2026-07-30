@@ -265,6 +265,14 @@ void main() {
         const RequestNextRound(),
         const RequestRematch(),
         const LeaveRoom(),
+        const JoinRoom(
+          roomCode: 'RULES',
+          playerName: 'Carla',
+          clientId: 'browser-789',
+          profileId: 'canasta',
+          numPlayers: 4,
+          matchTarget: 1500,
+        ),
       ];
       for (final cmd in commands) {
         final wire = jsonDecode(jsonEncode(cmd.toJson()));
@@ -292,6 +300,26 @@ void main() {
       expect(restored.redThrees, equals(view.redThrees));
       expect(restored.initialMeldMin, equals(view.initialMeldMin));
       expect(restored.toJson(), equals(view.toJson()));
+    });
+
+    test('a lobby update', () {
+      const update = LobbyUpdate(
+        roomCode: 'RULES',
+        profile: 'canasta',
+        numPlayers: 4,
+        seats: [
+          SeatInfo(seat: 0, name: 'Carla', kind: SeatKind.remote, ready: true),
+        ],
+        started: false,
+        matchTarget: 1500,
+      );
+      final wire = jsonDecode(jsonEncode(update.toJson()));
+      final back = ServerEvent.fromJson(wire as Map<String, dynamic>);
+
+      expect(back, isA<LobbyUpdate>());
+      final restored = back as LobbyUpdate;
+      expect(restored.matchTarget, equals(1500));
+      expect(restored.toJson(), equals(update.toJson()));
     });
   });
 }

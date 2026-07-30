@@ -360,4 +360,174 @@ void main() {
       },
     );
   });
+
+  group('per-room rules', () {
+    test('the first joiner defines rules that every client receives', () async {
+      final hosted = await _serveServer(GameServer());
+      addTearDown(() => hosted.http.close(force: true));
+      final first = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'rules-first',
+          playerName: 'Ana',
+          profileId: 'canasta',
+          numPlayers: 4,
+          matchTarget: 1500,
+        ),
+      );
+      addTearDown(first.transport.dispose);
+      final firstLobby = _nextEvent<LobbyUpdate>(first);
+
+      await first.transport.connect();
+
+      final created = await firstLobby;
+      expect(created.profile, equals('canasta'));
+      expect(created.numPlayers, equals(4));
+      expect(created.matchTarget, equals(1500));
+
+      final second = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'rules-first',
+          playerName: 'Bruno',
+        ),
+      );
+      addTearDown(second.transport.dispose);
+      final firstSawSecondJoin = _nextEvent<LobbyUpdate>(first);
+      final secondLobby = _nextEvent<LobbyUpdate>(second);
+
+      await second.transport.connect();
+
+      final updates = await Future.wait([firstSawSecondJoin, secondLobby]);
+      for (final update in updates) {
+        expect(update.profile, equals('canasta'));
+        expect(update.numPlayers, equals(4));
+        expect(update.matchTarget, equals(1500));
+      }
+      for (final update in [
+        ...first.events.whereType<LobbyUpdate>(),
+        ...second.events.whereType<LobbyUpdate>(),
+      ]) {
+        expect(update.profile, equals('canasta'));
+        expect(update.numPlayers, equals(4));
+        expect(update.matchTarget, equals(1500));
+      }
+    });
+
+    test('a later declaration cannot reconfigure an existing room', () async {
+      final hosted = await _serveServer(GameServer());
+      addTearDown(() => hosted.http.close(force: true));
+      final first = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'rules-existing',
+          playerName: 'Ana',
+          profileId: 'canasta',
+          numPlayers: 4,
+          matchTarget: 1500,
+        ),
+      );
+      addTearDown(first.transport.dispose);
+      final created = _nextEvent<LobbyUpdate>(first);
+      await first.transport.connect();
+      await created;
+
+      final later = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'rules-existing',
+          playerName: 'Bruno',
+          profileId: 'rummy',
+          numPlayers: 2,
+          matchTarget: 2000,
+        ),
+      );
+      addTearDown(later.transport.dispose);
+      final firstUpdate = _nextEvent<LobbyUpdate>(first);
+      final laterLobby = _nextEvent<LobbyUpdate>(later);
+
+      await later.transport.connect();
+
+      for (final update in await Future.wait([firstUpdate, laterLobby])) {
+        expect(update.profile, equals('canasta'));
+        expect(update.numPlayers, equals(4));
+        expect(update.matchTarget, equals(1500));
+      }
+      expect(later.transport.seat, equals(1));
+    });
+
+    test('an invalid declaration leaves no room behind', () async {
+      final hosted = await _serveServer(GameServer());
+      addTearDown(() => hosted.http.close(force: true));
+      final invalid = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'rules-invalid',
+          playerName: 'Ana',
+          profileId: 'poker',
+          numPlayers: 2,
+          matchTarget: 1500,
+          maxRetries: 0,
+        ),
+      );
+      addTearDown(invalid.transport.dispose);
+      final error = _nextEvent<ServerError>(invalid);
+
+      await invalid.transport.connect();
+
+      expect(
+        (await error).message,
+        equals("that table's rules are not offered here"),
+      );
+      expect(invalid.transport.seat, isNull);
+      expect(invalid.events.whereType<Joined>(), isEmpty);
+
+      final valid = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'rules-invalid',
+          playerName: 'Bruno',
+          profileId: 'rummy',
+          numPlayers: 2,
+          matchTarget: 2000,
+        ),
+      );
+      addTearDown(valid.transport.dispose);
+      final lobby = _nextEvent<LobbyUpdate>(valid);
+
+      await valid.transport.connect();
+
+      final created = await lobby;
+      expect(created.profile, equals('rummy'));
+      expect(created.numPlayers, equals(2));
+      expect(created.matchTarget, equals(2000));
+    });
+
+    test('an absent declaration preserves server defaults', () async {
+      final hosted = await _serveServer(
+        GameServer(
+          profileId: 'biriba',
+          numPlayers: 4,
+          defaultMatchTarget: 3500,
+        ),
+      );
+      addTearDown(() => hosted.http.close(force: true));
+      final client = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'rules-defaults',
+          playerName: 'Ana',
+        ),
+      );
+      addTearDown(client.transport.dispose);
+      final lobby = _nextEvent<LobbyUpdate>(client);
+
+      await client.transport.connect();
+
+      final created = await lobby;
+      expect(created.profile, equals('biriba'));
+      expect(created.numPlayers, equals(4));
+      expect(created.matchTarget, equals(3500));
+    });
+  });
 }

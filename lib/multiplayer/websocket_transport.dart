@@ -31,6 +31,15 @@ class WebSocketTransport implements GameTransport {
   /// Stable anonymous identity used for reconnects when host auth is off.
   final String? clientId;
 
+  /// Rule profile declared when this connection creates the room.
+  final String? profileId;
+
+  /// Player count declared when this connection creates the room.
+  final int? numPlayers;
+
+  /// Match target declared when this connection creates the room.
+  final int? matchTarget;
+
   /// How many times to retry a dropped connection before giving up.
   final int maxRetries;
 
@@ -50,6 +59,9 @@ class WebSocketTransport implements GameTransport {
     this.preferredSeat,
     this.authToken,
     this.clientId,
+    this.profileId,
+    this.numPlayers,
+    this.matchTarget,
     this.maxRetries = 5,
   });
 
@@ -110,6 +122,9 @@ class WebSocketTransport implements GameTransport {
           preferredSeat: preferredSeat,
           authToken: token,
           clientId: clientId,
+          profileId: profileId,
+          numPlayers: numPlayers,
+          matchTarget: matchTarget,
         ),
       );
     } finally {

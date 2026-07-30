@@ -19,10 +19,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import '../engine/profiles.dart';
 import 'auth.dart';
 import 'match_host.dart';
 import 'protocol.dart';
+import 'room_rules.dart';
 import 'package:shelf/shelf.dart';
 import 'package:shelf_web_socket/shelf_web_socket.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
@@ -89,6 +89,9 @@ class GameServer {
   final String profileId;
   final int numPlayers;
 
+  /// Match target used when a first joiner does not declare complete rules.
+  final int defaultMatchTarget;
+
   /// When set, every join must carry a token this verifier accepts.
   ///
   /// Null preserves the open behavior used by local development and tests.
@@ -114,6 +117,7 @@ class GameServer {
   GameServer({
     this.profileId = 'buraco',
     this.numPlayers = 2,
+    this.defaultMatchTarget = 3000,
     this.allowedOrigins,
     this.pingInterval = const Duration(seconds: 30),
     this.verifier,
@@ -186,21 +190,60 @@ class GameServer {
           }
           if (connectionClosed) return;
 
-          final target = _rooms.putIfAbsent(
-            join.roomCode,
-            () => _Room(
-              code: join.roomCode,
-              host: MatchHost(
-                roomCode: join.roomCode,
-                cfg: loadProfile(profileId, numPlayers: numPlayers),
-                seed: _nextSeed++,
-                seats: [
-                  for (var i = 0; i < numPlayers; i++)
-                    SeatInfo(seat: i, name: 'Seat $i', kind: SeatKind.remote),
-                ],
+          final existing = _rooms[join.roomCode];
+          late final _Room target;
+          if (existing != null) {
+            // A later joiner learns the room's immutable rules from its lobby
+            // update; its own declaration cannot reconfigure an active room.
+            target = existing;
+          } else {
+            late final RoomRules resolvedRules;
+            if (join.profileId != null &&
+                join.numPlayers != null &&
+                join.matchTarget != null) {
+              try {
+                resolvedRules = RoomRules.validated(
+                  profileId: join.profileId!,
+                  numPlayers: join.numPlayers!,
+                  matchTarget: join.matchTarget!,
+                );
+              } on FormatException {
+                channel.sink.add(
+                  jsonEncode(
+                    const ServerError(
+                      message: "that table's rules are not offered here",
+                    ).toJson(),
+                  ),
+                );
+                await channel.sink.close();
+                return;
+              }
+            } else {
+              // Partial declarations deliberately count as absent. Guessing
+              // their missing fields from server defaults would recreate the
+              // client/server mismatch this declaration exists to prevent.
+              resolvedRules = RoomRules(
+                profileId: profileId,
+                numPlayers: numPlayers,
+                matchTarget: defaultMatchTarget,
+              );
+            }
+            target = _rooms.putIfAbsent(
+              join.roomCode,
+              () => _Room(
+                code: join.roomCode,
+                host: MatchHost(
+                  roomCode: join.roomCode,
+                  cfg: resolvedRules.toConfig(),
+                  seed: _nextSeed++,
+                  seats: [
+                    for (var i = 0; i < resolvedRules.numPlayers; i++)
+                      SeatInfo(seat: i, name: 'Seat $i', kind: SeatKind.remote),
+                  ],
+                ),
               ),
-            ),
-          );
+            );
+          }
           final claimed = target.claimSeat(join.preferredSeat, owner: ownerId);
           if (claimed == null) {
             state = _ConnState.idle;

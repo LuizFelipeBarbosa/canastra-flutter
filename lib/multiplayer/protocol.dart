@@ -75,6 +75,9 @@ sealed class ClientCommand {
           preferredSeat: j['preferredSeat'] as int?,
           authToken: j['authToken'] as String?,
           clientId: j['clientId'] as String?,
+          profileId: j['profileId'] as String?,
+          numPlayers: j['numPlayers'] as int?,
+          matchTarget: j['matchTarget'] as int?,
         ),
         'ready' => SetReady(ready: j['ready'] as bool),
         'action' => SubmitAction(actionId: j['actionId'] as int),
@@ -98,12 +101,19 @@ class JoinRoom extends ClientCommand {
   /// Stable anonymous identity used to reclaim a seat when auth is off.
   final String? clientId;
 
+  final String? profileId;
+  final int? numPlayers;
+  final int? matchTarget;
+
   const JoinRoom({
     required this.roomCode,
     required this.playerName,
     this.preferredSeat,
     this.authToken,
     this.clientId,
+    this.profileId,
+    this.numPlayers,
+    this.matchTarget,
   });
 
   @override
@@ -114,6 +124,9 @@ class JoinRoom extends ClientCommand {
     'preferredSeat': preferredSeat,
     if (authToken != null) 'authToken': authToken,
     if (clientId != null) 'clientId': clientId,
+    if (profileId != null) 'profileId': profileId,
+    if (numPlayers != null) 'numPlayers': numPlayers,
+    if (matchTarget != null) 'matchTarget': matchTarget,
   };
 }
 
@@ -175,6 +188,7 @@ sealed class ServerEvent {
               SeatInfo.fromJson(s),
           ],
           started: j['started'] as bool,
+          matchTarget: j['matchTarget'] as int?,
         ),
         'table' => TableUpdate(
           view: TableView.fromJson(j['view'] as Map<String, dynamic>),
@@ -209,6 +223,7 @@ class LobbyUpdate extends ServerEvent {
   final int numPlayers;
   final List<SeatInfo> seats;
   final bool started;
+  final int? matchTarget;
 
   const LobbyUpdate({
     required this.roomCode,
@@ -216,6 +231,7 @@ class LobbyUpdate extends ServerEvent {
     required this.numPlayers,
     required this.seats,
     required this.started,
+    this.matchTarget,
   });
 
   @override
@@ -226,6 +242,7 @@ class LobbyUpdate extends ServerEvent {
     'numPlayers': numPlayers,
     'seats': [for (final s in seats) s.toJson()],
     'started': started,
+    if (matchTarget != null) 'matchTarget': matchTarget,
   };
 }
 
