@@ -61,12 +61,21 @@ class Stage extends StatelessWidget {
               height: kStage.height,
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(6),
-                child: DecoratedBox(
-                  decoration: BoxDecoration(gradient: groundGradient(palette)),
-                  child: CustomPaint(
-                    painter: AzulejoPainter(ink: palette.motifInk),
-                    child: Stack(children: children),
-                  ),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    RepaintBoundary(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: groundGradient(palette),
+                        ),
+                        child: CustomPaint(
+                          painter: AzulejoPainter(ink: palette.motifInk),
+                        ),
+                      ),
+                    ),
+                    Stack(children: children),
+                  ],
                 ),
               ),
             ),

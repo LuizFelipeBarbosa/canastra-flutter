@@ -14,6 +14,8 @@ library;
 import 'package:flutter/material.dart';
 
 import '../../engine/cards.dart';
+import '../app_scope.dart';
+import '../copy.dart';
 import '../theme.dart';
 import 'suit_pip.dart';
 
@@ -47,6 +49,7 @@ class PlayingCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = palette;
+    final l = context.copy;
 
     final Color edge;
     if (selected) {
@@ -58,7 +61,7 @@ class PlayingCard extends StatelessWidget {
     }
 
     return Semantics(
-      label: faceDown ? 'Face-down card' : cardLabel(card),
+      label: faceDown ? l.faceDownCard : cardLabel(card, l, asWild: asWild),
       selected: selected,
       child: SizedBox(
         width: kCardWidth,
@@ -139,7 +142,10 @@ class _Face extends StatelessWidget {
               height: 13,
               color: palette.pink,
               alignment: Alignment.center,
-              child: Text('WILD', style: mono(8, color: Colors.white)),
+              child: Text(
+                context.copy.wild.toUpperCase(),
+                style: mono(8, color: Colors.white),
+              ),
             ),
           ),
       ],
@@ -168,24 +174,10 @@ class _Back extends StatelessWidget {
   );
 }
 
-/// Spoken and screen-reader name for a card, e.g. "Queen of hearts".
-String cardLabel(CardId ct) {
-  if (ct == kJoker) return 'Joker';
-  const ranks = [
-    'Ace',
-    'Two',
-    'Three',
-    'Four',
-    'Five',
-    'Six',
-    'Seven',
-    'Eight',
-    'Nine',
-    'Ten',
-    'Jack',
-    'Queen',
-    'King',
-  ];
-  const suits = ['clubs', 'diamonds', 'hearts', 'spades'];
-  return '${ranks[ct % 13]} of ${suits[ct ~/ 13]}';
+/// Spoken and screen-reader name for a card in the active language.
+String cardLabel(CardId card, Copy copy, {bool asWild = false}) {
+  if (card == kJoker) return copy.joker;
+
+  final name = copy.cardName(card % 13, card ~/ 13);
+  return asWild ? copy.wildCardName(name) : name;
 }

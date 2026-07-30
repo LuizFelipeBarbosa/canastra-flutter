@@ -4,8 +4,9 @@
 /// engine only creates melds at the minimum size and extends them one card at a
 /// time. `selection_plan.dart` bridges that, and the thing worth testing is that
 /// it produces a *sequence the engine will actually accept*, in an order that
-/// works — so every plan here is replayed through the real host, and the assertion
-/// is that the host took every step.
+/// works — so every plan here is replayed directly through the engine's [Match],
+/// whose legality checks are what a real host defers to. A real `MatchHost` is
+/// exercised separately in `game_controller_test.dart`.
 library;
 
 import 'package:canastra/engine/action.dart';

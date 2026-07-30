@@ -86,6 +86,10 @@ class GameController extends ChangeNotifier {
       if (_disposed) return;
       _fatal = e.message;
       notifyListeners();
+    } catch (e) {
+      if (_disposed) return;
+      _fatal = '$e';
+      notifyListeners();
     }
   }
 
@@ -299,6 +303,7 @@ class GameController extends ChangeNotifier {
       return false;
     }
     final out = cfg.goingOut;
+    if (out.discardToGoOut == discardOutForbidden) return false;
     if (out.requireMortoTaken &&
         !(view.side < view.mortoTaken.length && view.mortoTaken[view.side])) {
       return false;

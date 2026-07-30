@@ -494,14 +494,17 @@ TableLayout layOutTable(LayoutInput input) {
 
   // --- the play area: whatever is left of your meld row ---
   const minPlayWidth = 190.0;
-  const maxPlayX = 1240.0 - minPlayWidth;
+  const playRight = 1220.0;
+  const maxPlayX = playRight - minPlayWidth;
   final playX = myMeldsEndX < maxPlayX ? myMeldsEndX : maxPlayX;
   zones.add(
     ZoneSpot(
       id: 'play',
       x: playX,
       y: kMyRowY,
-      width: (1220 - playX) < minPlayWidth ? minPlayWidth : 1220 - playX,
+      width: (playRight - playX) < minPlayWidth
+          ? minPlayWidth
+          : playRight - playX,
       height: kMeldBoxHeight,
       label: words.playArea,
       foot: input.canMeld ? words.playReady : words.playIdle,

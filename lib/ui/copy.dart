@@ -63,8 +63,11 @@ class Copy {
   final String pileBatida;
 
   // --- counts ---
-  final String left;
-  final String left1;
+
+  /// Takes the stock count because languages put the number in different
+  /// places around the word meaning "left".
+  final String Function(int count) countLeft;
+
   final String cards;
   final String card1;
   final String empty;
@@ -76,7 +79,19 @@ class Copy {
   final String clear;
   final String batida;
   final String roundOver;
-  final String spotsOpen;
+
+  /// Takes the number of unused meld slots.
+  final String Function(int count) spotsOpen;
+
+  // --- cards and melds ---
+  final List<String> rankNames;
+  final List<String> suitNames;
+  final String joker;
+  final String faceDownCard;
+  final String wild;
+  final String through;
+  final String setOf;
+  final String canastra;
 
   // --- coaching ---
   final String coachDraw;
@@ -95,6 +110,7 @@ class Copy {
   final String wnExtend;
   final String wnGoOut;
   final String wnMorto;
+  final String wnNotAllowedYet;
 
   // --- what the opponent just did ---
   final String tookPile;
@@ -176,8 +192,7 @@ class Copy {
     required this.playReady,
     required this.pileDiscard,
     required this.pileBatida,
-    required this.left,
-    required this.left1,
+    required this.countLeft,
     required this.cards,
     required this.card1,
     required this.empty,
@@ -188,6 +203,14 @@ class Copy {
     required this.batida,
     required this.roundOver,
     required this.spotsOpen,
+    required this.rankNames,
+    required this.suitNames,
+    required this.joker,
+    required this.faceDownCard,
+    required this.wild,
+    required this.through,
+    required this.setOf,
+    required this.canastra,
     required this.coachDraw,
     required this.coachPlay,
     required this.coachReady,
@@ -200,6 +223,7 @@ class Copy {
     required this.wnExtend,
     required this.wnGoOut,
     required this.wnMorto,
+    required this.wnNotAllowedYet,
     required this.tookPile,
     required this.discarded,
     required this.melded,
@@ -242,8 +266,24 @@ class Copy {
   /// "3 cards" / "1 card", with the right singular.
   String countCards(int n) => '$n ${n == 1 ? card1 : cards}';
 
-  /// "24 left" / "1 left".
-  String countLeft(int n) => '$n ${n == 1 ? left1 : left}';
+  /// A full spoken card name, such as "Queen of hearts".
+  String cardName(int rank, int suit) =>
+      '${rankNames[rank]} ${suitNames[suit]}';
+
+  /// A natural card used as a wild keeps its printed identity while also
+  /// naming the role it is playing.
+  String wildCardName(String name) => '$name, $wild';
+
+  /// A run's spoken name. Keeping the connector in copy lets Portuguese say
+  /// "dois a quatro" where English says "Two through Four".
+  String runName(int lowRank, int highRank, int suit) {
+    if (lowRank == highRank) return cardName(lowRank, suit);
+    return '${rankNames[lowRank]} $through ${rankNames[highRank]} '
+        '${suitNames[suit]}';
+  }
+
+  /// A set's spoken name; its card count is announced separately.
+  String setName(int rank) => '$setOf ${rankNames[rank]}';
 
   /// The eyebrow over the table: "ROUND 2 · FIRST TO 3000".
   String roundLine(int number, int target) =>
@@ -279,8 +319,7 @@ class Copy {
     playReady: 'click to lay it down',
     pileDiscard: 'click to discard',
     pileBatida: 'click to go out',
-    left: 'left',
-    left1: 'left',
+    countLeft: _enCountLeft,
     cards: 'cards',
     card1: 'card',
     empty: 'empty',
@@ -290,7 +329,29 @@ class Copy {
     clear: 'CLEAR',
     batida: 'GO OUT',
     roundOver: 'END THE ROUND',
-    spotsOpen: 'SPOTS OPEN FOR WHAT YOU HOLD',
+    spotsOpen: _enSpotsOpen,
+    rankNames: [
+      'Ace',
+      'Two',
+      'Three',
+      'Four',
+      'Five',
+      'Six',
+      'Seven',
+      'Eight',
+      'Nine',
+      'Ten',
+      'Jack',
+      'Queen',
+      'King',
+    ],
+    suitNames: ['of clubs', 'of diamonds', 'of hearts', 'of spades'],
+    joker: 'Joker',
+    faceDownCard: 'Face-down card',
+    wild: 'wild',
+    through: 'through',
+    setOf: 'Set of',
+    canastra: 'canastra',
     coachDraw: 'Draw one from the stock, or take the whole discard pile.',
     coachPlay:
         'Pick cards, then click the table to lay them down — or a meld to '
@@ -306,6 +367,7 @@ class Copy {
     wnExtend: "That doesn't fit this meld.",
     wnGoOut: 'You need one canastra and an empty hand to go out.',
     wnMorto: 'Your morto comes to your hand first.',
+    wnNotAllowedYet: "The rules don't allow that right now.",
     tookPile: 'TOOK THE PILE',
     discarded: 'DISCARDED',
     melded: 'MELDED',
@@ -384,8 +446,7 @@ class Copy {
     playReady: 'clique para baixar',
     pileDiscard: 'clique para descartar',
     pileBatida: 'clique para bater',
-    left: 'restam',
-    left1: 'resta',
+    countLeft: _ptCountLeft,
     cards: 'cartas',
     card1: 'carta',
     empty: 'vazio',
@@ -395,7 +456,29 @@ class Copy {
     clear: 'LIMPAR',
     batida: 'BATER',
     roundOver: 'ENCERRAR A RODADA',
-    spotsOpen: 'LUGARES ABERTOS PARA O QUE VOCÊ TEM',
+    spotsOpen: _ptSpotsOpen,
+    rankNames: [
+      'ás',
+      'dois',
+      'três',
+      'quatro',
+      'cinco',
+      'seis',
+      'sete',
+      'oito',
+      'nove',
+      'dez',
+      'valete',
+      'dama',
+      'rei',
+    ],
+    suitNames: ['de paus', 'de ouros', 'de copas', 'de espadas'],
+    joker: 'coringa',
+    faceDownCard: 'carta virada para baixo',
+    wild: 'curinga',
+    through: 'a',
+    setOf: 'Jogo de',
+    canastra: 'canastra',
     coachDraw: 'Compre uma do monte, ou pegue o lixo inteiro.',
     coachPlay:
         'Escolha as cartas e clique na mesa para baixar — ou num jogo para '
@@ -410,6 +493,7 @@ class Copy {
     wnExtend: 'Isso não encaixa nesse jogo.',
     wnGoOut: 'Para bater você precisa de uma canastra e da mão vazia.',
     wnMorto: 'O morto vem para a sua mão primeiro.',
+    wnNotAllowedYet: 'As regras não permitem isso agora.',
     tookPile: 'PEGOU O LIXO',
     discarded: 'DESCARTOU',
     melded: 'BAIXOU',
@@ -468,6 +552,13 @@ String _enWentOut(String who) => '$who went out';
 String _ptWentOut(String who) => '$who bateu';
 String _enSeatFallback(int seat) => 'Seat $seat';
 String _ptSeatFallback(int seat) => 'Assento $seat';
+String _enCountLeft(int count) => '$count left';
+String _ptCountLeft(int count) => '${count == 1 ? 'resta' : 'restam'} $count';
+String _enSpotsOpen(int count) =>
+    '$count ${count == 1 ? 'SPOT OPEN' : 'SPOTS OPEN'} FOR WHAT YOU HOLD';
+String _ptSpotsOpen(int count) =>
+    '$count ${count == 1 ? 'LUGAR ABERTO' : 'LUGARES ABERTOS'} '
+    'PARA O QUE VOCÊ TEM';
 
 /// How a variant is sold on the landing screen.
 ///
@@ -522,5 +613,19 @@ const Map<Lang, Map<String, VariantCopy>> kVariantCopy = {
   },
 };
 
-VariantCopy variantCopy(Lang lang, String id) =>
-    kVariantCopy[lang]![id] ?? kVariantCopy[Lang.en]![id]!;
+VariantCopy variantCopy(Lang lang, String id) {
+  final known = kVariantCopy[lang]?[id] ?? kVariantCopy[Lang.en]?[id];
+  if (known != null) return known;
+
+  final words = id
+      .trim()
+      .replaceAll(RegExp(r'[_-]+'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ');
+  final name = words.isEmpty
+      ? (lang == Lang.pt ? 'VARIANTE' : 'VARIANT')
+      : words.toUpperCase();
+  final description = lang == Lang.pt
+      ? 'Uma variante personalizada de ${words.isEmpty ? 'jogo' : words}.'
+      : 'A custom ${words.isEmpty ? 'game' : words} variant.';
+  return VariantCopy(name, description);
+}

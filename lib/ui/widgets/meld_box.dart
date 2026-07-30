@@ -10,10 +10,14 @@
 /// itself, and the bonus flies off the meld as it lands.
 library;
 
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
+import '../../engine/cards.dart';
 import '../../game/move_index.dart';
 import '../../multiplayer/table_view.dart';
+import '../app_scope.dart';
 import '../theme.dart';
 import 'controls.dart';
 
@@ -51,15 +55,19 @@ class _MeldBoxState extends State<MeldBox> with TickerProviderStateMixin {
   // Built eagerly rather than lazily: a `late final` controller whose first read
   // is dispose() would create a ticker against an already-deactivated element,
   // which is exactly what happens to a meld that never becomes a canastra.
-  late final AnimationController _stamp = AnimationController(
-    vsync: this,
-    duration: Motion.stamp,
-    value: widget.meld.isCanastra ? 1 : 0,
-  );
-  late final AnimationController _fly = AnimationController(
-    vsync: this,
-    duration: Motion.fly,
-  );
+  late final AnimationController _stamp;
+  late final AnimationController _fly;
+
+  @override
+  void initState() {
+    super.initState();
+    _stamp = AnimationController(
+      vsync: this,
+      duration: Motion.stamp,
+      value: widget.meld.isCanastra ? 1 : 0,
+    );
+    _fly = AnimationController(vsync: this, duration: Motion.fly);
+  }
 
   @override
   void didUpdateWidget(MeldBox old) {
@@ -87,12 +95,20 @@ class _MeldBoxState extends State<MeldBox> with TickerProviderStateMixin {
   Widget build(BuildContext context) {
     final meld = widget.meld;
     final p = widget.palette;
+    final l = context.copy;
     final accent = meld.isClean ? p.gold : p.pink;
+    final spokenName = meld.isSequence
+        ? l.runName(
+            rankAt(meld.startPos!),
+            rankAt(meld.startPos! + meld.size - 1),
+            meld.suit!,
+          )
+        : l.setName(meld.rank!);
 
     return Semantics(
       label:
-          '${meldLabel(meld)}, ${meld.size} cards'
-          '${meld.isCanastra ? ', canastra' : ''}',
+          '$spokenName, ${l.countCards(meld.size)}'
+          '${meld.isCanastra ? ', ${l.canastra}' : ''}',
       button: widget.onTap != null,
       child: Hoverable(
         onTap: widget.onTap,
@@ -201,7 +217,7 @@ class _Seal extends StatelessWidget {
         return Opacity(
           opacity: t < 0.1 ? t / 0.1 : 1,
           child: Transform.rotate(
-            angle: -12 * 3.1415926535 / 180,
+            angle: -12 * math.pi / 180,
             child: Transform.scale(scale: scale, child: child),
           ),
         );

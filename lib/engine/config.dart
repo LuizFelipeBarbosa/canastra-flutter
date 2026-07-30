@@ -233,6 +233,19 @@ class ScoringConfig {
     this.matchTarget = 3000,
     this.episode = episodeRound,
   });
+
+  /// Rebuilds the scoring rules while preserving every field not overridden.
+  ScoringConfig copyWith({
+    Map<String, int>? cardPoints,
+    String? handPenaltyMode,
+    int? matchTarget,
+    String? episode,
+  }) => ScoringConfig(
+    cardPoints: cardPoints ?? this.cardPoints,
+    handPenaltyMode: handPenaltyMode ?? this.handPenaltyMode,
+    matchTarget: matchTarget ?? this.matchTarget,
+    episode: episode ?? this.episode,
+  );
 }
 
 class TurnConfig {
@@ -320,12 +333,7 @@ class RulesConfig {
     goingOut: goingOut,
     initialMeld: initialMeld,
     specialThrees: specialThrees,
-    scoring: ScoringConfig(
-      cardPoints: scoring.cardPoints,
-      handPenaltyMode: scoring.handPenaltyMode,
-      matchTarget: target,
-      episode: scoring.episode,
-    ),
+    scoring: scoring.copyWith(matchTarget: target),
     turn: turn,
   );
 }

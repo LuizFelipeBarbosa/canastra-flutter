@@ -100,7 +100,8 @@ class _GameScreenState extends State<GameScreen> {
     final view = c.view;
     if (view != null) {
       final newMatch = view.matchNumber != _matchShown;
-      if (newMatch || view.roundIndex != _roundShown) {
+      final newRound = newMatch || view.roundIndex != _roundShown;
+      if (newRound) {
         if (newMatch) _matchShown = view.matchNumber;
         _roundShown = view.roundIndex;
         _matchRecorded = false;
@@ -113,7 +114,10 @@ class _GameScreenState extends State<GameScreen> {
       }
       if (view.turnNumber != _turnShown) {
         _turnShown = view.turnNumber;
-        _mortoLastTurn = List.of(_mortoLastView);
+        // A new round already established its own baseline above. Reusing the
+        // previous view here would bring a taken morto forward from the round
+        // that just ended and hide a first-turn pickup in the activity line.
+        if (!newRound) _mortoLastTurn = List.of(_mortoLastView);
       }
       _mortoLastView = List.of(view.mortoTaken);
       _canastrasWas = view.myMelds.where((m) => m.isCanastra).length;
@@ -337,7 +341,7 @@ class _GameScreenState extends State<GameScreen> {
             Text(l.myMelds, style: mono(10, color: p.ashDim)),
             if (open > 0) ...[
               const SizedBox(width: 10),
-              Text('$open ${l.spotsOpen}', style: mono(10, color: p.mint)),
+              Text(l.spotsOpen(open), style: mono(10, color: p.mint)),
             ],
           ],
         ),
@@ -545,7 +549,8 @@ class _GameScreenState extends State<GameScreen> {
           threw.add(
             event.card == null
                 ? l.discarded
-                : '${l.discarded} ${cardStr(event.card!)}',
+                : '${l.discarded} '
+                      '${event.card == kJoker ? l.joker : cardStr(event.card!)}',
           );
       }
     }
@@ -704,7 +709,7 @@ class _GameScreenState extends State<GameScreen> {
       Refusal.doesNotFit => l.wnExtend,
       Refusal.needCanastra => l.wnGoOut,
       Refusal.mortoFirst => l.wnMorto,
-      Refusal.notAllowedYet => l.wnExtend,
+      Refusal.notAllowedYet => l.wnNotAllowedYet,
     };
   }
 }
@@ -833,6 +838,7 @@ class _ThinkingState extends State<_Thinking>
     super.didChangeDependencies();
     if (Motion.reduced(context)) {
       _pulse.stop();
+      _pulse.value = 1;
     } else if (!_pulse.isAnimating) {
       _pulse.repeat(reverse: true);
     }

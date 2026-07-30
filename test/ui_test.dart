@@ -10,15 +10,20 @@
 library;
 
 import 'package:canastra/ai/agent.dart';
+import 'package:canastra/engine/cards.dart';
 import 'package:canastra/engine/profiles.dart';
 import 'package:canastra/game/game_controller.dart';
 import 'package:canastra/game/move_index.dart';
 import 'package:canastra/multiplayer/local_transport.dart';
+import 'package:canastra/multiplayer/table_view.dart';
 import 'package:canastra/ui/app_scope.dart';
+import 'package:canastra/ui/copy.dart';
 import 'package:canastra/ui/screens/game_screen.dart';
 import 'package:canastra/ui/screens/landing_screen.dart';
 import 'package:canastra/ui/screens/setup_screen.dart';
 import 'package:canastra/ui/theme.dart';
+import 'package:canastra/ui/widgets/meld_box.dart';
+import 'package:canastra/ui/widgets/playing_card.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -116,7 +121,114 @@ Future<void> _finishRound(
   await tester.pump(const Duration(milliseconds: 400));
 }
 
+String _semanticsLabel(WidgetTester tester, Finder widget) {
+  final semantics = find.descendant(
+    of: widget,
+    matching: find.byType(Semantics),
+  );
+  return tester.widget<Semantics>(semantics.first).properties.label!;
+}
+
 void main() {
+  test('count-aware copy follows each language naturally', () {
+    final en = Copy.of(Lang.en);
+    final pt = Copy.of(Lang.pt);
+
+    expect(en.spotsOpen(1), '1 SPOT OPEN FOR WHAT YOU HOLD');
+    expect(en.spotsOpen(2), '2 SPOTS OPEN FOR WHAT YOU HOLD');
+    expect(pt.spotsOpen(1), '1 LUGAR ABERTO PARA O QUE VOCÊ TEM');
+    expect(pt.spotsOpen(2), '2 LUGARES ABERTOS PARA O QUE VOCÊ TEM');
+    expect(en.countLeft(24), '24 left');
+    expect(pt.countLeft(1), 'resta 1');
+    expect(pt.countLeft(24), 'restam 24');
+  });
+
+  test('an unknown variant gets a readable localized fallback', () {
+    final en = variantCopy(Lang.en, 'house_rules');
+    final pt = variantCopy(Lang.pt, 'house_rules');
+
+    expect(en.tagline, 'HOUSE RULES');
+    expect(en.blurb, 'A custom house rules variant.');
+    expect(pt.tagline, 'HOUSE RULES');
+    expect(pt.blurb, 'Uma variante personalizada de house rules.');
+  });
+
+  testWidgets('card and meld semantics follow the language toggle', (
+    tester,
+  ) async {
+    // ensureSemantics()'s handle must be disposed inside the test body: Flutter's
+    // own end-of-test verification for stray SemanticsHandles runs before
+    // addTearDown callbacks would fire, so disposing it there is too late.
+    final semantics = tester.ensureSemantics();
+    final run = MeldView(
+      owner: 0,
+      isSequence: true,
+      suit: Suit.hearts,
+      rank: null,
+      startPos: 2,
+      cards: [
+        cardId(Rank.two, Suit.hearts),
+        cardId(Rank.three, Suit.hearts),
+        cardId(Rank.four, Suit.hearts),
+      ],
+      wildIndices: const [],
+      isCanastra: false,
+      isClean: true,
+      points: 15,
+    );
+    final prefs = await _pumpAt(
+      tester,
+      _desktop,
+      Scaffold(
+        body: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            PlayingCard(
+              card: cardId(Rank.two, Suit.hearts),
+              palette: Palette.dark,
+              asWild: true,
+            ),
+            PlayingCard(card: kJoker, palette: Palette.dark),
+            PlayingCard(
+              card: cardId(Rank.ace, Suit.clubs),
+              palette: Palette.dark,
+              faceDown: true,
+            ),
+            MeldBox(
+              meld: run,
+              palette: Palette.dark,
+              width: 180,
+              height: 90,
+              bonus: 0,
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final cards = find.byType(PlayingCard);
+    final meld = find.byType(MeldBox);
+    expect(_semanticsLabel(tester, cards.at(0)), 'Two of hearts, wild');
+    expect(_semanticsLabel(tester, cards.at(1)), 'Joker');
+    expect(_semanticsLabel(tester, cards.at(2)), 'Face-down card');
+    expect(
+      _semanticsLabel(tester, meld),
+      'Two through Four of hearts, 3 cards',
+    );
+    expect(find.text('WILD'), findsNWidgets(2));
+
+    prefs.toggleLang();
+    await tester.pump();
+
+    expect(_semanticsLabel(tester, cards.at(0)), 'dois de copas, curinga');
+    expect(_semanticsLabel(tester, cards.at(1)), 'coringa');
+    expect(_semanticsLabel(tester, cards.at(2)), 'carta virada para baixo');
+    expect(_semanticsLabel(tester, meld), 'dois a quatro de copas, 3 cartas');
+    expect(find.text('CURINGA'), findsNWidgets(2));
+    expect(tester.takeException(), isNull);
+    semantics.dispose();
+  });
+
   for (final (name, size) in const [
     ('life size', _desktop),
     ('a phone', _phone),
@@ -263,6 +375,39 @@ void main() {
       dark: false,
     );
     await tester.pump(const Duration(seconds: 2));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('reduced motion leaves the thinking label fully opaque', (
+    tester,
+  ) async {
+    final controller = await _dealt(tester, 'buraco');
+    final prefs = await _pumpAt(
+      tester,
+      _desktop,
+      MediaQuery(
+        data: const MediaQueryData(disableAnimations: true),
+        child: GameScreen(controller: controller),
+      ),
+    );
+
+    controller.play(controller.moves.firstWithTarget(MoveTarget.stock)!);
+    await tester.pump();
+    controller.play(
+      controller.moves.options.firstWhere(
+        (move) => move.target == MoveTarget.discard,
+      ),
+    );
+    await tester.pump();
+
+    final pulseFade = find
+        .ancestor(
+          of: find.text(prefs.copy.thinking),
+          matching: find.byType(FadeTransition),
+        )
+        .first;
+    expect(pulseFade, findsOneWidget);
+    expect(tester.widget<FadeTransition>(pulseFade).opacity.value, 1);
     expect(tester.takeException(), isNull);
   });
 

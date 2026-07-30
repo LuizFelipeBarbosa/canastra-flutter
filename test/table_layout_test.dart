@@ -2,6 +2,9 @@
 library;
 
 import 'package:canastra/engine/cards.dart';
+import 'package:canastra/game/move_index.dart';
+import 'package:canastra/multiplayer/table_view.dart';
+import 'package:canastra/ui/widgets/stage.dart';
 import 'package:canastra/ui/widgets/table_layout.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -20,6 +23,98 @@ List<CardSpot> _hand(List<CardId> cards) => [
 Map<CardId, String> _keysByCard(Iterable<CardSpot> spots) => {
   for (final spot in spots) spot.card: spot.key,
 };
+
+String _count(int value) => '$value';
+
+const _words = ZoneWords(
+  stock: 'stock',
+  pile: 'pile',
+  morto: 'morto',
+  playArea: 'play',
+  playIdle: 'idle',
+  playReady: 'ready',
+  pileDiscard: 'discard',
+  pileBatida: 'out',
+  empty: 'empty',
+  waiting: 'waiting',
+  taken: 'taken',
+  left: _count,
+  cards: _count,
+);
+
+TableLayout _crowdedTableLayout() {
+  final melds = [
+    for (var slot = 0; slot < 9; slot++)
+      MeldView(
+        owner: 0,
+        isSequence: false,
+        suit: null,
+        rank: slot,
+        startPos: null,
+        cards: [
+          for (var copy = 0; copy < 7; copy++)
+            cardId(slot, copy % Suit.values.length),
+        ],
+        wildIndices: const [],
+        isCanastra: true,
+        isClean: true,
+        points: 100,
+      ),
+  ];
+  final view = TableView(
+    seat: 0,
+    side: 0,
+    numPlayers: 2,
+    numSides: 2,
+    partnerSeat: null,
+    playerNames: const ['You', 'Them'],
+    profile: 'buraco',
+    matchTarget: 3000,
+    canastraMinSize: 7,
+    hand: const [],
+    handSizes: const [0, 0],
+    melds: melds,
+    trash: const [],
+    stockCount: 0,
+    mortoTaken: const [false, false],
+    mortoSizes: const [0, 0],
+    redThrees: const [[], []],
+    currentPlayer: 0,
+    phase: 'play',
+    turnNumber: 0,
+    frozen: false,
+    pileBlocked: false,
+    pendingPileCard: null,
+    initialMeldDone: const [true, true],
+    initialMeldMin: const [0, 0],
+    stagedPoints: 0,
+    publicScores: const [0, 0],
+    matchScores: const [0, 0],
+    matchNumber: 0,
+    roundOver: false,
+    matchOver: false,
+    wentOutSide: null,
+    winnerSide: null,
+    roundIndex: 0,
+    roundResult: null,
+    legalActions: const [],
+    history: const [],
+  );
+  return layOutTable(
+    LayoutInput(
+      view: view,
+      moves: MoveIndex.empty,
+      selection: const [],
+      openSlots: const {},
+      canMeld: false,
+      canDiscard: false,
+      discardGoesOut: false,
+      dealt: 0,
+      dealDone: true,
+      words: _words,
+    ),
+  );
+}
 
 void main() {
   group('CardIdentityTracker', () {
@@ -150,5 +245,15 @@ void main() {
       expect(handSpot.key, isNot('stock:0'));
       expect(handSpot.key, startsWith('card:0:'));
     });
+  });
+
+  test('a fully compressed play zone keeps the stage right gutter', () {
+    final play = _crowdedTableLayout().zones.singleWhere(
+      (zone) => zone.id == 'play',
+    );
+
+    expect(play.x, 1030);
+    expect(play.width, 190);
+    expect(kStage.width - (play.x + play.width), 20);
   });
 }
