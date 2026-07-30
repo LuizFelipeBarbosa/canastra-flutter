@@ -85,18 +85,55 @@ construction. Tests assert a seat is never shown another player's cards, is
 never told another seat's legal moves, and that the card counts it can see add
 up to the full deck. Bots consume `TableView` too, so a bot cannot peek either.
 
-To play across machines:
+To play across machines locally:
 
 ```bash
 dart run bin/server.dart --profile buraco --players 2 --port 8080
-# then in the app: Play online -> ws://<host>:8080, same table name
+# then in the app: Play online -> same table name. Debug builds default to
+# ws://localhost:8080; see GAME_HOST below.
 ```
 
 `bin/server.dart` is a real host, covered by `test/online_test.dart`, which
-starts it on a socket and drives it with two genuine WebSocket clients. It is
-in-memory and unauthenticated on purpose: it exists to prove the seam and to
-develop against. Shipping online play means adding identity, persistence,
-reconnection tokens and rate limiting — none of which touch the game code.
+starts it on a socket and drives it with two genuine WebSocket clients.
+
+## Deploying
+
+Two targets, because they need different things. The app is static files;
+the host is a process that has to stay up.
+
+| Piece    | Where   | Config                     |
+|----------|---------|----------------------------|
+| Flutter web app | Netlify | `netlify.toml`, `tool/netlify_build.sh` |
+| Game host       | Fly.io  | `fly.toml`, `Dockerfile`   |
+
+The host is **one machine that never sleeps** (`auto_stop_machines = 'off'`,
+`min_machines_running = 1`). A match lives in memory in one process, so stopping
+the machine drops every table in progress, and a second replica would put the
+two halves of a table in different processes. Scaling out means sharding rooms
+by code across machines, not adding replicas.
+
+```bash
+fly launch --no-deploy   # once; pick a name and set it in fly.toml
+fly deploy
+```
+
+The app finds the host through a compile-time constant, not a text field:
+
+```bash
+flutter build web --release --dart-define=GAME_HOST=wss://your-app.fly.dev
+```
+
+`GAME_HOST` is set in `netlify.toml`, and `tool/netlify_build.sh` fails the
+build if it is missing — without it the app would point at each visitor's own
+localhost, which presents as a lobby that never starts rather than an error.
+It must be `wss://`: browsers refuse a plaintext socket from an https page.
+
+`ALLOWED_ORIGINS` in `fly.toml` pins which site may open sockets; the handshake
+returns 403 to anything else. Keep it in step with the Netlify domain.
+
+Still in-memory and unauthenticated: seats are not bound to people, so
+reconnection tokens, identity and rate limiting remain the next work — none of
+which touch the game code.
 
 ## Design
 

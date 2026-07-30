@@ -1,0 +1,41 @@
+# The host keeps every live match in memory, so this is deliberately a single
+# machine that never sleeps. Scaling means sharding rooms across instances
+# (room code -> machine), never adding replicas behind this one: two machines
+# would put the two halves of a table in different processes.
+app = 'canastra-host'
+primary_region = 'gru'
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[env]
+  GAME_PROFILE = 'buraco'
+  GAME_PLAYERS = '2'
+  # The site allowed to open sockets. Replace with your real Netlify domain —
+  # a wrong value here is a 403 on the handshake, not a silent failure.
+  ALLOWED_ORIGINS = 'https://canastra.netlify.app'
+
+[http_service]
+  internal_port = 8080
+  # Netlify serves the app over TLS and browsers refuse ws:// from an https
+  # page, so the host has to answer wss://. Fly terminates that here.
+  force_https = true
+  auto_start_machines = true
+  # Never stop. Stopping the machine drops every match in progress, and a
+  # request-triggered cold start would strand players mid-hand.
+  auto_stop_machines = 'off'
+  min_machines_running = 1
+  processes = ['app']
+
+# A WebSocket-only server answers 400 to a plain GET, so checks target the
+# dedicated /health route in bin/server.dart.
+[[http_service.checks]]
+  interval = '30s'
+  timeout = '5s'
+  grace_period = '10s'
+  method = 'GET'
+  path = '/health'
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '512mb'

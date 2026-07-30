@@ -1,0 +1,22 @@
+# The image needs pubspec, bin/ and lib/ and nothing else. Everything below is
+# either large (golden PNGs, bundled fonts, the web build) or irrelevant to a
+# headless host (platform runners, IDE state).
+.dart_tool/
+.git/
+.github/
+build/
+test/
+android/
+ios/
+linux/
+macos/
+windows/
+web/
+assets/
+.idea/
+.vscode/
+*.iml
+Dockerfile
+.dockerignore
+netlify.toml
+README.md

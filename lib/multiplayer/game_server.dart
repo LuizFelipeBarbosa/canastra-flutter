@@ -69,12 +69,36 @@ class _Room {
 class GameServer {
   final String profileId;
   final int numPlayers;
+
+  /// Browser origins allowed to open a socket, or null to accept any.
+  ///
+  /// Null suits local development and the tests. A deployed host should pin
+  /// this to the site that serves the app, because otherwise any page on the
+  /// internet can open rooms against it.
+  final List<String>? allowedOrigins;
+
+  /// How often to ping an idle client.
+  ///
+  /// Proxies drop connections that go quiet, and a player thinking over a hand
+  /// is quiet for minutes, so this both keeps the socket open and surfaces a
+  /// peer that vanished without sending a close frame.
+  final Duration? pingInterval;
+
   final Map<String, _Room> _rooms = {};
   var _nextSeed = 1;
 
-  GameServer({this.profileId = 'buraco', this.numPlayers = 2});
+  GameServer({
+    this.profileId = 'buraco',
+    this.numPlayers = 2,
+    this.allowedOrigins,
+    this.pingInterval = const Duration(seconds: 30),
+  });
 
-  Handler get handler => webSocketHandler(_onConnection);
+  Handler get handler => webSocketHandler(
+    _onConnection,
+    allowedOrigins: allowedOrigins,
+    pingInterval: pingInterval,
+  );
 
   void _onConnection(WebSocketChannel channel, String? _) {
     _Room? room;

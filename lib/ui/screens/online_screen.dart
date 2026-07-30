@@ -1,8 +1,6 @@
 /// Joining a table hosted somewhere else.
 ///
 /// This is the same [GameScreen] as offline play — only the transport differs.
-/// It is wired end to end against `bin/server.dart`; point it at a deployed
-/// host and nothing here changes.
 library;
 
 import 'package:flutter/material.dart';
@@ -13,6 +11,19 @@ import '../../multiplayer/websocket_transport.dart';
 import '../theme.dart';
 import '../widgets/table_surface.dart';
 import 'game_screen.dart';
+
+/// Where this build looks for its host.
+///
+/// Baked in at compile time rather than typed by the player:
+/// `flutter build web --dart-define=GAME_HOST=wss://your-host`. The default is
+/// what `dart run bin/server.dart` gives you during development.
+///
+/// A build served over https must use `wss://` — browsers refuse a plaintext
+/// socket from a secure page.
+const gameHost = String.fromEnvironment(
+  'GAME_HOST',
+  defaultValue: 'ws://localhost:8080',
+);
 
 class OnlineScreen extends StatefulWidget {
   final String profileId;
@@ -29,27 +40,23 @@ class OnlineScreen extends StatefulWidget {
 }
 
 class _OnlineScreenState extends State<OnlineScreen> {
-  final _server = TextEditingController(text: 'ws://localhost:8080');
   final _room = TextEditingController(text: 'mesa-1');
-  final _name = TextEditingController(text: 'Luiz');
+  final _name = TextEditingController();
   String? _error;
 
   @override
   void dispose() {
-    _server.dispose();
     _room.dispose();
     _name.dispose();
     super.dispose();
   }
 
   void _join() {
-    final uri = Uri.tryParse(_server.text.trim());
+    final uri = Uri.tryParse(gameHost);
     if (uri == null ||
         !uri.hasScheme ||
         !(uri.isScheme('ws') || uri.isScheme('wss'))) {
-      setState(
-        () => _error = 'The address needs to start with ws:// or wss://',
-      );
+      setState(() => _error = 'This build has no usable host address.');
       return;
     }
     if (_room.text.trim().isEmpty) {
@@ -108,19 +115,22 @@ class _OnlineScreenState extends State<OnlineScreen> {
                       border: Border.all(color: C.line),
                     ),
                     child: Text(
-                      'Everyone at a table joins the same host with the same '
-                      'table name. To run one on your own machine:\n\n'
-                      'dart run bin/server.dart --profile '
-                      '${widget.profileId} --players ${widget.numPlayers}',
+                      'Everyone playing together joins the same table name. '
+                      'Pick one and share it with the '
+                      '${widget.numPlayers - 1} '
+                      'other ${widget.numPlayers == 2 ? 'player' : 'players'} '
+                      '— play starts once every seat is ready.',
                       style: T.body(12, color: C.ash),
                     ),
                   ),
                   const SizedBox(height: 20),
-                  _Field(label: 'Host address', controller: _server),
-                  const SizedBox(height: 14),
                   _Field(label: 'Table name', controller: _room),
                   const SizedBox(height: 14),
-                  _Field(label: 'Your name', controller: _name),
+                  _Field(
+                    label: 'Your name',
+                    controller: _name,
+                    hint: 'How others see you',
+                  ),
                   if (_error != null) ...[
                     const SizedBox(height: 14),
                     Text(_error!, style: T.body(13, color: C.coringa)),
@@ -157,8 +167,9 @@ class _OnlineScreenState extends State<OnlineScreen> {
 class _Field extends StatelessWidget {
   final String label;
   final TextEditingController controller;
+  final String? hint;
 
-  const _Field({required this.label, required this.controller});
+  const _Field({required this.label, required this.controller, this.hint});
 
   @override
   Widget build(BuildContext context) => Column(
@@ -171,6 +182,8 @@ class _Field extends StatelessWidget {
         style: T.body(15, color: C.bone),
         decoration: InputDecoration(
           filled: true,
+          hintText: hint,
+          hintStyle: T.body(15, color: C.ash),
           fillColor: Colors.black.withValues(alpha: 0.24),
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 14,

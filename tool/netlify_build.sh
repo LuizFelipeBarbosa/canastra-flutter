@@ -16,4 +16,15 @@ git config --global --add safe.directory "$FLUTTER_ROOT"
 
 flutter --version
 flutter pub get
-flutter build web --release
+
+# Where the built app looks for the game host. Set in netlify.toml; without it
+# the build would silently point at each visitor's own localhost, which looks
+# like a lobby that never starts rather than an error.
+if [ -z "${GAME_HOST:-}" ]; then
+  echo "error: GAME_HOST is not set — online play would be dead in this build." >&2
+  echo "       Set it in netlify.toml under [build.environment]." >&2
+  exit 1
+fi
+
+echo "Building against host: $GAME_HOST"
+flutter build web --release --dart-define=GAME_HOST="$GAME_HOST"

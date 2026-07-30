@@ -1,0 +1,42 @@
+name: Deploy game host
+
+# Only the Fly host. The Flutter web app deploys separately on Netlify, which
+# builds from the same push.
+#
+# The path filter is not an optimisation: every deploy replaces the machine, and
+# a machine holds every live match in memory, so an unnecessary deploy ends
+# games that were in progress. Redeploy only when the host's own sources move.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'bin/**'
+      - 'lib/engine/**'
+      - 'lib/ai/**'
+      - 'lib/multiplayer/**'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'fly.toml'
+      - '.github/workflows/fly-deploy.yml'
+  workflow_dispatch:
+
+# Two deploys racing would fight over the single machine.
+concurrency:
+  group: fly-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: fly deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      # --remote-only builds on Fly's amd64 builder rather than the runner.
+      - run: flyctl deploy --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
