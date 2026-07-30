@@ -2,7 +2,7 @@
 # machine that never sleeps. Scaling means sharding rooms across instances
 # (room code -> machine), never adding replicas behind this one: two machines
 # would put the two halves of a table in different processes.
-app = 'canastra-host'
+app = 'canastra-flutter'
 primary_region = 'gru'
 
 [build]
@@ -11,9 +11,9 @@ primary_region = 'gru'
 [env]
   GAME_PROFILE = 'buraco'
   GAME_PLAYERS = '2'
-  # The site allowed to open sockets. Replace with your real Netlify domain —
-  # a wrong value here is a 403 on the handshake, not a silent failure.
-  ALLOWED_ORIGINS = 'https://canastra.netlify.app'
+  # The site allowed to open sockets. No trailing slash: a browser's Origin
+  # header is scheme and host only, and a mismatch is a 403 on the handshake.
+  ALLOWED_ORIGINS = 'https://canastra-flutter.netlify.app'
 
 [http_service]
   internal_port = 8080
@@ -24,6 +24,10 @@ primary_region = 'gru'
   # Never stop. Stopping the machine drops every match in progress, and a
   # request-triggered cold start would strand players mid-hand.
   auto_stop_machines = 'off'
+  # Note this does NOT cap the machine count: `fly deploy` still adds a second
+  # machine for high availability unless you pass --ha=false, and a second
+  # machine means two players on one table code never meet. Deploy with
+  # --ha=false (the CI workflow does) and keep `fly scale count 1`.
   min_machines_running = 1
   processes = ['app']
 

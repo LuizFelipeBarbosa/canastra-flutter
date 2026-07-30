@@ -10,7 +10,7 @@
   # The multiplayer host, compiled into the app. Must be wss:// — a browser
   # refuses a plaintext socket from this https page. Matches the Fly app name
   # in fly.toml; change both together.
-  GAME_HOST = "wss://canastra-host.fly.dev"
+  GAME_HOST = "wss://canastra-flutter.fly.dev"
 
 # Flutter web is a single page; let it handle every route itself.
 [[redirects]]
