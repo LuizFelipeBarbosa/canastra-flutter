@@ -7,7 +7,9 @@ build/
 *.iml
 .idea/
 .vscode/
-pubspec.lock
+# pubspec.lock is deliberately committed. This is an application, not a
+# library, and the Fly image builds from it — ignoring it would let a deploy
+# resolve a different dependency set than the one tested here.
 
 # Platform
 ios/Pods/
