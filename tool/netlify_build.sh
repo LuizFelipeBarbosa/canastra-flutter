@@ -26,5 +26,15 @@ if [ -z "${GAME_HOST:-}" ]; then
   exit 1
 fi
 
+# Accounts, stats and matchmaking. Unlike the host these are optional: a build
+# without them still deals, plays and keeps a local streak, it just cannot sign
+# anyone in. So warn and carry on rather than failing the deploy.
+if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_ANON_KEY:-}" ]; then
+  echo "warning: SUPABASE_URL/SUPABASE_ANON_KEY not set — this build has no accounts." >&2
+fi
+
 echo "Building against host: $GAME_HOST"
-flutter build web --release --dart-define=GAME_HOST="$GAME_HOST"
+flutter build web --release \
+  --dart-define=GAME_HOST="$GAME_HOST" \
+  --dart-define=SUPABASE_URL="${SUPABASE_URL:-}" \
+  --dart-define=SUPABASE_ANON_KEY="${SUPABASE_ANON_KEY:-}"
