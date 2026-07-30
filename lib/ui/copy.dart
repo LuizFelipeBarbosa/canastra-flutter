@@ -164,6 +164,13 @@ class Copy {
   final String soundOn;
   final String soundOff;
 
+  /// Signing in, and everything that hangs off having an account.
+  ///
+  /// Grouped rather than flattened in here: accounts alone are some forty
+  /// strings, and a hundred-and-thirty-parameter constructor is a place
+  /// mistakes hide. Read as `l.auth.sendCode`.
+  final AuthCopy auth;
+
   const Copy({
     required this.kicker,
     required this.headline,
@@ -259,6 +266,7 @@ class Copy {
     required this.best,
     required this.soundOn,
     required this.soundOff,
+    required this.auth,
   });
 
   static Copy of(Lang lang) => lang == Lang.pt ? _pt : _en;
@@ -414,6 +422,7 @@ class Copy {
     best: 'BEST',
     soundOn: 'SOUND ON',
     soundOff: 'SOUND OFF',
+    auth: _enAuth,
   );
 
   static const _pt = Copy(
@@ -541,11 +550,229 @@ class Copy {
     best: 'MELHOR',
     soundOn: 'SOM LIGADO',
     soundOff: 'SOM DESLIGADO',
+    auth: _ptAuth,
   );
 }
 
+/// Everything the app says about accounts.
+///
+/// A guest is a real account that happens to have no way back into it — so the
+/// copy never calls it "your account", and never promises more than the browser
+/// it lives in can keep.
+class AuthCopy {
+  // --- the account pill and the sign-in screen ---
+  final String signIn;
+  final String signOut;
+  final String account;
+  final String guest;
+  final String title;
+  final String blurb;
+  final String playAsGuest;
+  final String withGoogle;
+  final String withApple;
+  final String or;
+
+  // --- email ---
+  final String emailLabel;
+  final String emailHint;
+  final String sendCode;
+  final String usePassword;
+  final String passwordLabel;
+  final String passwordHint;
+  final String forgotPassword;
+  final String createAccount;
+
+  // --- the one-time code ---
+  final String codeTitle;
+
+  /// Takes the address the code went to.
+  final String Function(String email) codeSentTo;
+  final String codeLabel;
+  final String verify;
+  final String resend;
+  final String changeEmail;
+
+  // --- the profile ---
+  final String profileTitle;
+  final String displayNameLabel;
+  final String displayNameHint;
+  final String save;
+  final String saved;
+
+  // --- guest, and leaving guest behind ---
+  final String guestBanner;
+  final String guestWarning;
+  final String keepMyGames;
+  final String upgradeTitle;
+  final String upgradeBlurb;
+
+  // --- what went wrong ---
+  final String badEmail;
+  final String badCode;
+  final String expiredCode;
+  final String weakPassword;
+  final String wrongPassword;
+  final String accountExists;
+  final String offline;
+  final String somethingBroke;
+
+  const AuthCopy({
+    required this.signIn,
+    required this.signOut,
+    required this.account,
+    required this.guest,
+    required this.title,
+    required this.blurb,
+    required this.playAsGuest,
+    required this.withGoogle,
+    required this.withApple,
+    required this.or,
+    required this.emailLabel,
+    required this.emailHint,
+    required this.sendCode,
+    required this.usePassword,
+    required this.passwordLabel,
+    required this.passwordHint,
+    required this.forgotPassword,
+    required this.createAccount,
+    required this.codeTitle,
+    required this.codeSentTo,
+    required this.codeLabel,
+    required this.verify,
+    required this.resend,
+    required this.changeEmail,
+    required this.profileTitle,
+    required this.displayNameLabel,
+    required this.displayNameHint,
+    required this.save,
+    required this.saved,
+    required this.guestBanner,
+    required this.guestWarning,
+    required this.keepMyGames,
+    required this.upgradeTitle,
+    required this.upgradeBlurb,
+    required this.badEmail,
+    required this.badCode,
+    required this.expiredCode,
+    required this.weakPassword,
+    required this.wrongPassword,
+    required this.accountExists,
+    required this.offline,
+    required this.somethingBroke,
+  });
+}
+
+const _enAuth = AuthCopy(
+  signIn: 'SIGN IN',
+  signOut: 'Sign out',
+  account: 'ACCOUNT',
+  guest: 'GUEST',
+  title: 'Keep your table',
+  blurb:
+      'An account carries your streak, your record and your friends from one '
+      'device to the next. You can also just sit down and play.',
+  playAsGuest: 'Play as guest',
+  withGoogle: 'Continue with Google',
+  withApple: 'Continue with Apple',
+  or: 'or',
+  emailLabel: 'EMAIL',
+  emailHint: 'you@example.com',
+  sendCode: 'Send me a code',
+  usePassword: 'Use a password instead',
+  passwordLabel: 'PASSWORD',
+  passwordHint: 'At least eight characters',
+  forgotPassword: 'Forgot your password?',
+  createAccount: 'Create account',
+  codeTitle: 'Check your email',
+  codeSentTo: _enCodeSentTo,
+  codeLabel: 'SIX-DIGIT CODE',
+  verify: 'Sign in',
+  resend: 'Send another',
+  changeEmail: 'Use a different address',
+  profileTitle: 'Your account',
+  displayNameLabel: 'NAME AT THE TABLE',
+  displayNameHint: 'How others see you',
+  save: 'Save',
+  saved: 'Saved',
+  guestBanner: 'You are playing as a guest.',
+  guestWarning:
+      'A guest game lives in this browser only. Clear your browsing data and it '
+      'is gone for good — there is no way to get it back.',
+  keepMyGames: 'Keep my games',
+  upgradeTitle: 'Keep your games',
+  upgradeBlurb:
+      'Add an email and everything you have played so far comes with you — same '
+      'record, same streak, same friends, on any device.',
+  badEmail: 'That does not look like an email address.',
+  badCode: 'That code is not right. Check it and try again.',
+  expiredCode: 'That code has expired. Ask for another.',
+  weakPassword: 'Use at least eight characters.',
+  wrongPassword: 'That email and password do not match.',
+  accountExists:
+      'An account with that email already exists. Signing into it will leave '
+      'this guest game behind.',
+  offline: 'No connection. You can still play offline.',
+  somethingBroke: 'That did not work. Try again in a moment.',
+);
+
+const _ptAuth = AuthCopy(
+  signIn: 'ENTRAR',
+  signOut: 'Sair',
+  account: 'CONTA',
+  guest: 'VISITANTE',
+  title: 'Guarde a sua mesa',
+  blurb:
+      'Com uma conta a sua sequência, o seu retrospecto e os seus parceiros vão '
+      'com você para qualquer aparelho. Ou senta e joga, do mesmo jeito.',
+  playAsGuest: 'Jogar como visitante',
+  withGoogle: 'Continuar com o Google',
+  withApple: 'Continuar com a Apple',
+  or: 'ou',
+  emailLabel: 'E-MAIL',
+  emailHint: 'voce@exemplo.com',
+  sendCode: 'Me manda um código',
+  usePassword: 'Usar senha',
+  passwordLabel: 'SENHA',
+  passwordHint: 'No mínimo oito caracteres',
+  forgotPassword: 'Esqueceu a senha?',
+  createAccount: 'Criar conta',
+  codeTitle: 'Olhe o seu e-mail',
+  codeSentTo: _ptCodeSentTo,
+  codeLabel: 'CÓDIGO DE SEIS DÍGITOS',
+  verify: 'Entrar',
+  resend: 'Mandar outro',
+  changeEmail: 'Usar outro endereço',
+  profileTitle: 'Sua conta',
+  displayNameLabel: 'NOME NA MESA',
+  displayNameHint: 'Como os outros veem você',
+  save: 'Salvar',
+  saved: 'Salvo',
+  guestBanner: 'Você está jogando como visitante.',
+  guestWarning:
+      'Um jogo de visitante fica só neste navegador. Se limpar os dados de '
+      'navegação, acabou — não tem como recuperar.',
+  keepMyGames: 'Guardar meus jogos',
+  upgradeTitle: 'Guarde os seus jogos',
+  upgradeBlurb:
+      'Coloque um e-mail e tudo que você já jogou vai junto — mesmo retrospecto, '
+      'mesma sequência, mesmos parceiros, em qualquer aparelho.',
+  badEmail: 'Isso não parece um endereço de e-mail.',
+  badCode: 'Esse código não confere. Veja de novo e tente outra vez.',
+  expiredCode: 'Esse código venceu. Peça outro.',
+  weakPassword: 'Use no mínimo oito caracteres.',
+  wrongPassword: 'Esse e-mail e essa senha não batem.',
+  accountExists:
+      'Já existe uma conta com esse e-mail. Se entrar nela, este jogo de '
+      'visitante fica para trás.',
+  offline: 'Sem conexão. Dá para jogar offline do mesmo jeito.',
+  somethingBroke: 'Não deu certo. Tente de novo daqui a pouco.',
+);
+
 // Torn out as top-level functions because a const constructor cannot hold a
 // closure.
+String _enCodeSentTo(String email) => 'We sent a six-digit code to $email.';
+String _ptCodeSentTo(String email) =>
+    'Mandamos um código de seis dígitos para $email.';
 String _enBotPlaying(String who) => '$who is playing.';
 String _ptBotPlaying(String who) => '$who está jogando.';
 String _enWentOut(String who) => '$who went out';

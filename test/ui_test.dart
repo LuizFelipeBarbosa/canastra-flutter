@@ -9,6 +9,8 @@
 /// area. Those are what can still overflow, so those are what is pumped here.
 library;
 
+import 'package:canastra/account/account.dart';
+import 'package:canastra/account/fake_auth_backend.dart';
 import 'package:canastra/ai/agent.dart';
 import 'package:canastra/engine/cards.dart';
 import 'package:canastra/engine/profiles.dart';
@@ -16,11 +18,15 @@ import 'package:canastra/game/game_controller.dart';
 import 'package:canastra/game/move_index.dart';
 import 'package:canastra/multiplayer/local_transport.dart';
 import 'package:canastra/multiplayer/table_view.dart';
+import 'package:canastra/ui/account_scope.dart';
 import 'package:canastra/ui/app_scope.dart';
 import 'package:canastra/ui/copy.dart';
 import 'package:canastra/ui/screens/game_screen.dart';
 import 'package:canastra/ui/screens/landing_screen.dart';
+import 'package:canastra/ui/screens/otp_screen.dart';
+import 'package:canastra/ui/screens/profile_screen.dart';
 import 'package:canastra/ui/screens/setup_screen.dart';
+import 'package:canastra/ui/screens/sign_in_screen.dart';
 import 'package:canastra/ui/theme.dart';
 import 'package:canastra/ui/widgets/meld_box.dart';
 import 'package:canastra/ui/widgets/playing_card.dart';
@@ -38,6 +44,7 @@ Future<AppPrefs> _pumpAt(
   Size size,
   Widget child, {
   bool dark = true,
+  Account? account,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1.0;
@@ -48,11 +55,14 @@ Future<AppPrefs> _pumpAt(
   await tester.pumpWidget(
     AppScope(
       prefs: prefs,
-      child: ListenableBuilder(
-        listenable: prefs,
-        builder: (context, _) => MaterialApp(
-          theme: buildTheme(prefs.palette, dark: prefs.dark),
-          home: child,
+      child: AccountScope(
+        account: account ?? Account(backend: FakeAuthBackend()),
+        child: ListenableBuilder(
+          listenable: prefs,
+          builder: (context, _) => MaterialApp(
+            theme: buildTheme(prefs.palette, dark: prefs.dark),
+            home: child,
+          ),
         ),
       ),
     ),
@@ -258,6 +268,62 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+
+  testWidgets('the landing header offers sign in', (tester) async {
+    await _pumpAt(tester, _desktop, const LandingScreen());
+
+    expect(find.text('SIGN IN'), findsOneWidget);
+  });
+
+  testWidgets('sign in as guest lands back with a guest pill', (tester) async {
+    final account = Account(backend: FakeAuthBackend());
+    await _pumpAt(tester, _desktop, const LandingScreen(), account: account);
+
+    await tester.tap(find.text('SIGN IN'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(Copy.of(Lang.en).auth.playAsGuest));
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(find.text('GUEST'), findsOneWidget);
+  });
+
+  for (final (screenName, screen) in const [
+    ('sign in', SignInScreen()),
+    ('code', OtpScreen(email: 'a@b.com')),
+    ('profile', ProfileScreen()),
+  ]) {
+    for (final (sizeName, size) in const [
+      ('life size', _desktop),
+      ('a phone', _phone),
+    ]) {
+      testWidgets('the $screenName screen lays out at $sizeName', (
+        tester,
+      ) async {
+        await _pumpAt(tester, size, screen);
+
+        expect(tester.takeException(), isNull);
+      });
+    }
+  }
+
+  testWidgets('the code screen rejects a wrong code', (tester) async {
+    final account = Account(backend: FakeAuthBackend());
+    await account.sendOtp('a@b.com');
+    await _pumpAt(
+      tester,
+      _desktop,
+      const OtpScreen(email: 'a@b.com'),
+      account: account,
+    );
+
+    await tester.enterText(find.byType(TextField), '111111');
+    await tester.tap(find.text(Copy.of(Lang.en).auth.verify));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text(Copy.of(Lang.en).auth.badCode), findsOneWidget);
+  });
 
   testWidgets('popping the game screen disposes its session', (tester) async {
     final controller = await _dealt(
