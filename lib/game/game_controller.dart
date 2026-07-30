@@ -173,8 +173,14 @@ class GameController extends ChangeNotifier {
       return;
     }
     _queue = _queue.sublist(1);
-    _awaitingView = true;
-    transport.send(SubmitAction(actionId: next));
+    try {
+      transport.send(SubmitAction(actionId: next));
+      _awaitingView = true;
+    } catch (e) {
+      _queue = [];
+      _notice = e is TransportException ? e.message : '$e';
+      notifyListeners();
+    }
   }
 
   // --- picking cards up ---------------------------------------------------
@@ -332,8 +338,13 @@ class GameController extends ChangeNotifier {
     }
     _notice = null;
     _refusal = null;
-    _awaitingView = true;
-    transport.send(SubmitAction(actionId: actionId));
+    try {
+      transport.send(SubmitAction(actionId: actionId));
+      _awaitingView = true;
+    } catch (e) {
+      _notice = e is TransportException ? e.message : '$e';
+      notifyListeners();
+    }
   }
 
   void nextRound() => transport.send(const RequestNextRound());

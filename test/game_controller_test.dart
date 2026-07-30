@@ -44,6 +44,7 @@ class _TestTransport implements GameTransport {
 
   StreamSubscription<ServerEvent>? _subscription;
   bool holdEvents = false;
+  bool throwOnSend = false;
   int submitCount = 0;
 
   _TestTransport(MatchHost host)
@@ -72,6 +73,7 @@ class _TestTransport implements GameTransport {
 
   @override
   void send(ClientCommand command) {
+    if (throwOnSend) throw TransportException('down');
     if (command is SubmitAction) submitCount += 1;
     _delegate.send(command);
   }
@@ -260,6 +262,57 @@ void main() {
       expect(table.controller.notice, isNull);
       expect(table.controller.view!.turnNumber, equals(turn + 1));
       expect(table.host.match.round.trash.last, equals(fiveClubs));
+    },
+  );
+
+  test(
+    'a synchronous send failure does not block the next submission',
+    () async {
+      final table = await _table(
+        rig: (host) => _setPlayHand(host, [fiveClubs, ...ballast]),
+      );
+      table.controller.toggleCard(fiveClubs);
+      table.transport.throwOnSend = true;
+
+      expect(table.controller.discardSelection, returnsNormally);
+      expect(table.controller.notice, equals('down'));
+      expect(table.controller.busy, isFalse);
+      expect(table.transport.submitCount, isZero);
+
+      table.transport.throwOnSend = false;
+      table.controller.discardSelection();
+      expect(table.transport.submitCount, equals(1));
+
+      await _settle();
+      expect(table.host.match.round.trash.last, equals(fiveClubs));
+    },
+  );
+
+  test(
+    'a synchronous queued send failure drops the plan for a retry',
+    () async {
+      final run = [fiveClubs, sixClubs, sevenClubs, eightClubs, nineClubs];
+      final table = await _table(
+        rig: (host) => _setPlayHand(host, [...run, ...ballast]),
+      );
+      for (final card in run) {
+        table.controller.toggleCard(card);
+      }
+      table.transport.throwOnSend = true;
+
+      expect(table.controller.meldSelection, returnsNormally);
+      expect(table.controller.notice, equals('down'));
+      expect(table.controller.busy, isFalse);
+      expect(table.transport.submitCount, isZero);
+
+      table.transport.throwOnSend = false;
+      table.controller.meldSelection();
+      await _settle();
+
+      expect(table.controller.busy, isFalse);
+      expect(table.controller.selection, isEmpty);
+      expect(table.controller.view!.myMelds.single.size, equals(5));
+      expect(table.transport.submitCount, equals(3));
     },
   );
 

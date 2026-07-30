@@ -49,6 +49,7 @@ class _GameScreenState extends State<GameScreen> {
 
   int _dealt = 0;
   Timer? _dealer;
+  int _matchShown = -1;
   int _roundShown = -1;
 
   /// Taking a morto is a consequence rather than an action, so the event log
@@ -98,7 +99,9 @@ class _GameScreenState extends State<GameScreen> {
     if (!mounted) return;
     final view = c.view;
     if (view != null) {
-      if (view.roundIndex != _roundShown || view.history.length < _historyWas) {
+      final newMatch = view.matchNumber != _matchShown;
+      if (newMatch || view.roundIndex != _roundShown) {
+        if (newMatch) _matchShown = view.matchNumber;
         _roundShown = view.roundIndex;
         _matchRecorded = false;
         _historyWas = view.history.length;

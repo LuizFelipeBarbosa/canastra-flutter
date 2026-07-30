@@ -68,8 +68,12 @@ Future<GameController> _dealt(
   int? numPlayers,
   int seed = 4,
   Duration botDelay = Duration.zero,
+  int? matchTarget,
 }) async {
-  final cfg = loadProfile(profileId, numPlayers: numPlayers);
+  final profile = loadProfile(profileId, numPlayers: numPlayers);
+  final cfg = matchTarget == null
+      ? profile
+      : profile.withMatchTarget(matchTarget);
   final controller = GameController(
     cfg: cfg,
     transport: LocalTransport.singlePlayer(
@@ -80,6 +84,36 @@ Future<GameController> _dealt(
     ),
   );
   return controller;
+}
+
+Future<void> _finishRound(
+  WidgetTester tester,
+  GameController controller,
+) async {
+  // Take every legal move the host offers until the round ends. Not a strategy —
+  // the point is that the screen survives a whole round of real states.
+  var guard = 0;
+  while (!controller.view!.roundOver && guard++ < 3000) {
+    final moves = controller.moves.options;
+    if (moves.isNotEmpty) {
+      // Prefer a discard, so turns actually pass and the round terminates.
+      controller.play(
+        moves.lastWhere(
+          (m) => m.target == MoveTarget.discard,
+          orElse: () => moves.first,
+        ),
+      );
+    }
+    // An empty move list means it is the opponent's turn; pump and wait.
+    await tester.pump(const Duration(milliseconds: 16));
+  }
+  expect(controller.view!.roundOver, isTrue, reason: 'round never ended');
+
+  // The sheet deliberately waits for the last card to land before covering the
+  // table, then rises — so it needs a pump for the delay and a pump for the
+  // animation before anything of it is on screen.
+  await tester.pump(const Duration(milliseconds: 500));
+  await tester.pump(const Duration(milliseconds: 400));
 }
 
 void main() {
@@ -268,46 +302,51 @@ void main() {
       'buraco',
       seed: 21,
       botDelay: const Duration(milliseconds: 1),
+      matchTarget: 1000000,
     );
     await _pumpAt(tester, _desktop, GameScreen(controller: controller));
     await tester.pump(const Duration(seconds: 2));
 
-    // Take every legal move the host offers until the round ends. Not a strategy —
-    // the point is that the screen survives a whole round of real states.
-    var guard = 0;
-    while (!controller.view!.roundOver && guard++ < 3000) {
-      final moves = controller.moves.options;
-      if (moves.isNotEmpty) {
-        // Prefer a discard, so turns actually pass and the round terminates.
-        controller.play(
-          moves.lastWhere(
-            (m) => m.target == MoveTarget.discard,
-            orElse: () => moves.first,
-          ),
-        );
-      }
-      // An empty move list means it is the opponent's turn; pump and wait.
-      await tester.pump(const Duration(milliseconds: 16));
-    }
-
-    expect(controller.view!.roundOver, isTrue, reason: 'round never ended');
-
-    // The sheet deliberately waits for the last card to land before covering the
-    // table, then rises — so it needs a pump for the delay and a pump for the
-    // animation before anything of it is on screen.
-    await tester.pump(const Duration(milliseconds: 500));
-    await tester.pump(const Duration(milliseconds: 400));
-
-    // Playing blind can occasionally settle the whole match in one round.
-    final onward = controller.view!.matchOver
-        ? 'New match'
-        : 'Deal the next round';
-    expect(find.text(onward), findsOneWidget);
+    await _finishRound(tester, controller);
+    expect(controller.view!.matchOver, isFalse);
+    expect(find.text('Deal the next round'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
-    await tester.tap(find.text(onward));
+    await tester.tap(find.text('Deal the next round'));
     await tester.pump(const Duration(seconds: 2));
     expect(controller.view!.roundOver, isFalse, reason: 'a new round is dealt');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('each rematch records its finished match', (tester) async {
+    final controller = await _dealt(
+      tester,
+      'buraco',
+      seed: 21,
+      botDelay: const Duration(milliseconds: 1),
+      matchTarget: 1,
+    );
+    final prefs = await _pumpAt(
+      tester,
+      _desktop,
+      GameScreen(controller: controller),
+    );
+    await tester.pump(const Duration(seconds: 2));
+
+    await _finishRound(tester, controller);
+    expect(controller.view!.matchOver, isTrue);
+    expect(find.text('New match'), findsOneWidget);
+    expect(prefs.played, equals(1));
+
+    await tester.tap(find.text('New match'));
+    await tester.pump(const Duration(seconds: 2));
+    expect(controller.view!.matchNumber, equals(1));
+    expect(controller.view!.roundOver, isFalse);
+
+    await _finishRound(tester, controller);
+    expect(controller.view!.matchOver, isTrue);
+    expect(find.text('New match'), findsOneWidget);
+    expect(prefs.played, equals(2));
     expect(tester.takeException(), isNull);
   });
 

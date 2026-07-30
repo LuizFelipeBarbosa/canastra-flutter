@@ -82,22 +82,21 @@ class _OnlineScreenState extends State<OnlineScreen> {
       widget.profileId,
       numPlayers: _players,
     ).withMatchTarget(context.prefs.target);
+    final controller = GameController(
+      cfg: cfg,
+      transport: WebSocketTransport(
+        endpoint: uri,
+        roomCode: _room.text.trim(),
+        playerName: _name.text.trim().isEmpty
+            ? l.onlineDefaultPlayer
+            : _name.text.trim(),
+      ),
+    );
     _pushing = true;
     try {
       await Navigator.of(context).push(
         MaterialPageRoute<void>(
-          builder: (_) => GameScreen(
-            controller: GameController(
-              cfg: cfg,
-              transport: WebSocketTransport(
-                endpoint: uri,
-                roomCode: _room.text.trim(),
-                playerName: _name.text.trim().isEmpty
-                    ? l.onlineDefaultPlayer
-                    : _name.text.trim(),
-              ),
-            ),
-          ),
+          builder: (_) => GameScreen(controller: controller),
         ),
       );
     } finally {

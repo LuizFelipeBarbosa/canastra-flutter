@@ -37,6 +37,7 @@ class MatchHost {
   final _outbound = StreamController<HostMessage>.broadcast();
 
   Match _match;
+  int _matchNumber = 0;
   bool _started = false;
   bool _disposed = false;
   int _botGeneration = 0;
@@ -177,6 +178,7 @@ class MatchHost {
   void _rematch() {
     if (!_match.matchOver) return;
     _botGeneration++;
+    _matchNumber++;
     _match = Match(cfg: cfg, seed: seed + 1013 * (_match.roundIndex + 1));
     _broadcastTable();
     _scheduleBot();
@@ -202,7 +204,12 @@ class MatchHost {
       if (_disposed || generation != _botGeneration) return;
       if (_match.matchOver || _match.round.roundOver) return;
       if (_match.currentPlayer != seat) return;
-      final view = buildTableView(_match, seat, playerNames: _playerNames);
+      final view = buildTableView(
+        _match,
+        seat,
+        playerNames: _playerNames,
+        matchNumber: _matchNumber,
+      );
       if (view.legalActions.isEmpty) return;
       _applyAndBroadcast(seat, agent.chooseAction(cfg, view));
     }
@@ -219,7 +226,12 @@ class MatchHost {
         _agents.containsKey(_match.currentPlayer) &&
         guard++ < maxActions) {
       final seat = _match.currentPlayer;
-      final view = buildTableView(_match, seat, playerNames: _playerNames);
+      final view = buildTableView(
+        _match,
+        seat,
+        playerNames: _playerNames,
+        matchNumber: _matchNumber,
+      );
       if (view.legalActions.isEmpty) break;
       _applyAndBroadcast(seat, _agents[seat]!.chooseAction(cfg, view));
     }
@@ -252,7 +264,14 @@ class MatchHost {
 
   void _pushTable(int seat) => _emit(
     seat,
-    TableUpdate(view: buildTableView(_match, seat, playerNames: _playerNames)),
+    TableUpdate(
+      view: buildTableView(
+        _match,
+        seat,
+        playerNames: _playerNames,
+        matchNumber: _matchNumber,
+      ),
+    ),
   );
 
   void _broadcastTable() {

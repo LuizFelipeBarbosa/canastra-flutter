@@ -178,21 +178,20 @@ class _SetupScreenState extends State<SetupScreen> {
     // A visible seed would let players compare deals; an invisible one just has
     // to differ between games.
     final seed = DateTime.now().microsecondsSinceEpoch & 0x7fffffff;
+    final controller = GameController(
+      cfg: cfg,
+      transport: LocalTransport.singlePlayer(
+        cfg: cfg,
+        seed: seed,
+        botLevel: prefs.agentLevel,
+      ),
+    );
 
     _pushing = true;
     try {
       await Navigator.of(context).push(
         MaterialPageRoute<void>(
-          builder: (_) => GameScreen(
-            controller: GameController(
-              cfg: cfg,
-              transport: LocalTransport.singlePlayer(
-                cfg: cfg,
-                seed: seed,
-                botLevel: prefs.agentLevel,
-              ),
-            ),
-          ),
+          builder: (_) => GameScreen(controller: controller),
         ),
       );
     } finally {
