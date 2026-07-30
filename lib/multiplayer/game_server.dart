@@ -9,11 +9,10 @@
 /// play. Clients connect to `ws://host:port/ws`, send [JoinRoom] with a room
 /// code, and play once every seat has readied up.
 ///
-/// This is deliberately in-memory and unauthenticated: it exists to prove the
-/// transport seam end to end and to develop against. Before shipping online
-/// play you would add identity, persistence, reconnection tokens and rate
-/// limiting — none of which touch the game code, because the host already
-/// speaks only [ClientCommand] and [ServerEvent].
+/// This is deliberately in-memory and open by default so local development
+/// stays frictionless. A production host can require Supabase identity without
+/// changing the game code, because the host still speaks only [ClientCommand]
+/// and [ServerEvent].
 library;
 
 import 'dart:async';
@@ -21,16 +20,20 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../engine/profiles.dart';
+import 'auth.dart';
 import 'match_host.dart';
 import 'protocol.dart';
 import 'package:shelf/shelf.dart';
 import 'package:shelf_web_socket/shelf_web_socket.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+enum _ConnState { idle, authorizing, seated }
+
 class _Room {
   final String code;
   final MatchHost host;
   final Map<int, WebSocketChannel> clients = {};
+  final Map<int, String> seatOwners = {};
   late final StreamSubscription<HostMessage> _sub;
 
   _Room({required this.code, required this.host}) {
@@ -46,15 +49,31 @@ class _Room {
     });
   }
 
-  /// The first seat that is free, or null when the room is full.
-  int? claimSeat(int? preferred) {
+  /// Reclaims an owned chair first, otherwise picks the first free seat.
+  int? claimSeat(int? preferred, {String? owner}) {
+    if (owner != null) {
+      for (final entry in seatOwners.entries) {
+        final seat = entry.key;
+        final isBot = host.seats.any(
+          (candidate) =>
+              candidate.seat == seat && candidate.kind == SeatKind.bot,
+        );
+        if (entry.value == owner && !clients.containsKey(seat) && !isBot) {
+          return seat;
+        }
+      }
+    }
+
     final free = host.seats
         .where((s) => s.kind != SeatKind.bot && !clients.containsKey(s.seat))
         .map((s) => s.seat)
         .toList();
     if (free.isEmpty) return null;
-    if (preferred != null && free.contains(preferred)) return preferred;
-    return free.first;
+    final claimed = preferred != null && free.contains(preferred)
+        ? preferred
+        : free.first;
+    if (owner != null) seatOwners[claimed] = owner;
+    return claimed;
   }
 
   Future<void> close() async {
@@ -69,6 +88,11 @@ class _Room {
 class GameServer {
   final String profileId;
   final int numPlayers;
+
+  /// When set, every join must carry a token this verifier accepts.
+  ///
+  /// Null preserves the open behavior used by local development and tests.
+  final TokenVerifier? verifier;
 
   /// Browser origins allowed to open a socket, or null to accept any.
   ///
@@ -92,6 +116,7 @@ class GameServer {
     this.numPlayers = 2,
     this.allowedOrigins,
     this.pingInterval = const Duration(seconds: 30),
+    this.verifier,
   });
 
   Handler get handler => webSocketHandler(
@@ -103,9 +128,12 @@ class GameServer {
   void _onConnection(WebSocketChannel channel, String? _) {
     _Room? room;
     int? seat;
+    String? ownerId;
+    var state = _ConnState.idle;
+    var connectionClosed = false;
 
     channel.stream.listen(
-      (raw) {
+      (raw) async {
         if (raw is! String) return;
         final ClientCommand cmd;
         try {
@@ -115,10 +143,49 @@ class GameServer {
           return;
         }
 
+        if (state == _ConnState.authorizing) {
+          if (cmd is! JoinRoom) {
+            channel.sink.add(
+              jsonEncode(const ServerError(message: 'still joining').toJson()),
+            );
+          }
+          return;
+        }
+
         if (cmd is JoinRoom) {
-          if (room != null) return; // already seated
+          if (state == _ConnState.seated) return;
+          // Set before the first await so a burst of joins can claim only once.
+          state = _ConnState.authorizing;
           // Bound to a local so the nested closure keeps the promoted type.
           final join = cmd;
+          final tokenVerifier = verifier;
+          if (tokenVerifier != null) {
+            final token = join.authToken;
+            if (token == null) {
+              channel.sink.add(
+                jsonEncode(
+                  const ServerError(message: 'sign in to play').toJson(),
+                ),
+              );
+              await channel.sink.close();
+              return;
+            }
+            final user = await tokenVerifier.verify(token);
+            if (user == null) {
+              channel.sink.add(
+                jsonEncode(
+                  const ServerError(message: 'session rejected').toJson(),
+                ),
+              );
+              await channel.sink.close();
+              return;
+            }
+            ownerId = user.id;
+          } else {
+            ownerId = join.clientId;
+          }
+          if (connectionClosed) return;
+
           final target = _rooms.putIfAbsent(
             join.roomCode,
             () => _Room(
@@ -134,8 +201,9 @@ class GameServer {
               ),
             ),
           );
-          final claimed = target.claimSeat(cmd.preferredSeat);
+          final claimed = target.claimSeat(join.preferredSeat, owner: ownerId);
           if (claimed == null) {
+            state = _ConnState.idle;
             channel.sink.add(
               jsonEncode(const ServerError(message: 'room is full').toJson()),
             );
@@ -144,6 +212,7 @@ class GameServer {
           room = target;
           seat = claimed;
           target.clients[claimed] = channel;
+          state = _ConnState.seated;
           stdout.writeln(
             '[${join.roomCode}] ${join.playerName} -> seat $claimed',
           );
@@ -164,12 +233,17 @@ class GameServer {
         r.host.handle(s, cmd);
       },
       onDone: () async {
+        connectionClosed = true;
         final r = room;
         final s = seat;
         if (r == null || s == null) return;
         r.clients.remove(s);
         r.host.handle(s, const LeaveRoom());
         stdout.writeln('[${r.code}] seat $s disconnected');
+        // A seat's owner entry needs no cleanup of its own: the room dies with
+        // its last socket, taking seatOwners with it. Reclaim only ever spans
+        // the life of a room that some other seat is still keeping alive;
+        // surviving a fully empty room (grace timers) is a later phase.
         if (r.clients.isEmpty) {
           _rooms.remove(r.code);
           await r.close();

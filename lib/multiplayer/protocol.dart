@@ -73,6 +73,8 @@ sealed class ClientCommand {
           roomCode: j['roomCode'] as String,
           playerName: j['playerName'] as String,
           preferredSeat: j['preferredSeat'] as int?,
+          authToken: j['authToken'] as String?,
+          clientId: j['clientId'] as String?,
         ),
         'ready' => SetReady(ready: j['ready'] as bool),
         'action' => SubmitAction(actionId: j['actionId'] as int),
@@ -90,10 +92,18 @@ class JoinRoom extends ClientCommand {
   /// Null lets the host place you in the first free seat.
   final int? preferredSeat;
 
+  /// Supabase access token; the host verifies it when authentication is on.
+  final String? authToken;
+
+  /// Stable anonymous identity used to reclaim a seat when auth is off.
+  final String? clientId;
+
   const JoinRoom({
     required this.roomCode,
     required this.playerName,
     this.preferredSeat,
+    this.authToken,
+    this.clientId,
   });
 
   @override
@@ -102,6 +112,8 @@ class JoinRoom extends ClientCommand {
     'roomCode': roomCode,
     'playerName': playerName,
     'preferredSeat': preferredSeat,
+    if (authToken != null) 'authToken': authToken,
+    if (clientId != null) 'clientId': clientId,
   };
 }
 

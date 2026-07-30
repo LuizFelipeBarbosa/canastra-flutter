@@ -25,6 +25,12 @@ class WebSocketTransport implements GameTransport {
   final String playerName;
   final int? preferredSeat;
 
+  /// Supplies a fresh Supabase access token for each connection attempt.
+  final Future<String?> Function()? authToken;
+
+  /// Stable anonymous identity used for reconnects when host auth is off.
+  final String? clientId;
+
   /// How many times to retry a dropped connection before giving up.
   final int maxRetries;
 
@@ -42,6 +48,8 @@ class WebSocketTransport implements GameTransport {
     required this.roomCode,
     required this.playerName,
     this.preferredSeat,
+    this.authToken,
+    this.clientId,
     this.maxRetries = 5,
   });
 
@@ -61,6 +69,7 @@ class WebSocketTransport implements GameTransport {
 
     _connecting = true;
     try {
+      final token = await authToken?.call();
       WebSocketChannel? connectingChannel;
       try {
         final channel = WebSocketChannel.connect(endpoint);
@@ -99,6 +108,8 @@ class WebSocketTransport implements GameTransport {
           roomCode: roomCode,
           playerName: playerName,
           preferredSeat: preferredSeat,
+          authToken: token,
+          clientId: clientId,
         ),
       );
     } finally {

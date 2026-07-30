@@ -10,6 +10,7 @@ library;
 
 import 'dart:io';
 
+import 'package:canastra/multiplayer/auth.dart';
 import 'package:canastra/multiplayer/game_server.dart';
 import 'package:canastra/multiplayer/protocol.dart';
 import 'package:canastra/multiplayer/table_view.dart';
@@ -27,8 +28,7 @@ class _Client {
     transport.events.listen(events.add);
   }
 
-  TableView? get table =>
-      events.whereType<TableUpdate>().isEmpty
+  TableView? get table => events.whereType<TableUpdate>().isEmpty
       ? null
       : events.whereType<TableUpdate>().last.view;
 
@@ -46,6 +46,39 @@ class _Client {
     throw StateError('timed out; last view: ${table?.toJson()}');
   }
 }
+
+class _StubVerifier implements TokenVerifier {
+  @override
+  Future<AuthedUser?> verify(String token) async => token == 'good-token'
+      ? const AuthedUser(
+          id: 'verified-user',
+          email: 'player@example.com',
+          isAnonymous: false,
+        )
+      : null;
+}
+
+Future<({HttpServer http, Uri endpoint})> _serveServer(
+  GameServer server,
+) async {
+  final http = await shelf_io.serve(
+    server.handler,
+    InternetAddress.loopbackIPv4,
+    0,
+  );
+  return (
+    http: http,
+    endpoint: Uri.parse('ws://${http.address.host}:${http.port}'),
+  );
+}
+
+Future<T> _nextEvent<T extends ServerEvent>(_Client client) => client
+    .transport
+    .events
+    .where((event) => event is T)
+    .cast<T>()
+    .first
+    .timeout(const Duration(seconds: 5));
 
 void main() {
   late HttpServer http;
@@ -179,6 +212,152 @@ void main() {
     expect(
       clients[2].events.whereType<ServerError>().map((e) => e.message),
       contains('room is full'),
+    );
+  });
+
+  group('optional join authentication', () {
+    test('a protected server rejects a missing token', () async {
+      final hosted = await _serveServer(
+        GameServer(numPlayers: 2, verifier: _StubVerifier()),
+      );
+      addTearDown(() => hosted.http.close(force: true));
+      final client = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'auth-missing',
+          playerName: 'Ana',
+          maxRetries: 0,
+        ),
+      );
+      addTearDown(client.transport.dispose);
+      final error = _nextEvent<ServerError>(client);
+
+      await client.transport.connect();
+
+      expect((await error).message, equals('sign in to play'));
+      expect(client.transport.seat, isNull);
+      expect(client.events.whereType<Joined>(), isEmpty);
+    });
+
+    test('a protected server rejects a bad token', () async {
+      final hosted = await _serveServer(
+        GameServer(numPlayers: 2, verifier: _StubVerifier()),
+      );
+      addTearDown(() => hosted.http.close(force: true));
+      final client = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'auth-bad',
+          playerName: 'Ana',
+          authToken: () async => 'bad-token',
+          maxRetries: 0,
+        ),
+      );
+      addTearDown(client.transport.dispose);
+      final error = _nextEvent<ServerError>(client);
+
+      await client.transport.connect();
+
+      expect((await error).message, equals('session rejected'));
+      expect(client.transport.seat, isNull);
+      expect(client.events.whereType<Joined>(), isEmpty);
+    });
+
+    test('a protected server seats a verified client', () async {
+      final hosted = await _serveServer(
+        GameServer(numPlayers: 2, verifier: _StubVerifier()),
+      );
+      addTearDown(() => hosted.http.close(force: true));
+      final client = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'auth-good',
+          playerName: 'Ana',
+          authToken: () async => 'good-token',
+        ),
+      );
+      addTearDown(client.transport.dispose);
+      final joined = _nextEvent<Joined>(client);
+      final lobby = _nextEvent<LobbyUpdate>(client);
+
+      await client.transport.connect();
+
+      expect((await joined).seat, equals(0));
+      expect((await lobby).roomCode, equals('auth-good'));
+      expect(client.transport.seat, equals(0));
+    });
+
+    test('an open server still accepts a tokenless client', () async {
+      final hosted = await _serveServer(GameServer());
+      addTearDown(() => hosted.http.close(force: true));
+      final client = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'auth-off',
+          playerName: 'Ana',
+        ),
+      );
+      addTearDown(client.transport.dispose);
+      final joined = _nextEvent<Joined>(client);
+
+      await client.transport.connect();
+
+      expect((await joined).seat, equals(0));
+      expect(client.transport.seat, equals(0));
+    });
+
+    test(
+      'a client id reclaims its seat while the room is still alive',
+      () async {
+        // A room dies with its last socket, so the reclaim below only works
+        // because Bia's connection keeps this room alive the whole time — Ana
+        // never sees an empty room, only her own dropped seat.
+        final hosted = await _serveServer(GameServer(numPlayers: 2));
+        addTearDown(() => hosted.http.close(force: true));
+        final ana = _Client(
+          WebSocketTransport(
+            endpoint: hosted.endpoint,
+            roomCode: 'reconnect',
+            playerName: 'Ana',
+            clientId: 'ana',
+          ),
+        );
+        addTearDown(ana.transport.dispose);
+        final anaJoined = _nextEvent<Joined>(ana);
+        await ana.transport.connect();
+        expect((await anaJoined).seat, equals(0));
+
+        final bia = _Client(
+          WebSocketTransport(
+            endpoint: hosted.endpoint,
+            roomCode: 'reconnect',
+            playerName: 'Bia',
+            clientId: 'bia',
+          ),
+        );
+        addTearDown(bia.transport.dispose);
+        final biaJoined = _nextEvent<Joined>(bia);
+        await bia.transport.connect();
+        expect((await biaJoined).seat, equals(1));
+
+        // Ana drops; Bia stays connected, so the room never empties.
+        await ana.transport.dispose();
+
+        final anaAgain = _Client(
+          WebSocketTransport(
+            endpoint: hosted.endpoint,
+            roomCode: 'reconnect',
+            playerName: 'Ana',
+            clientId: 'ana',
+          ),
+        );
+        addTearDown(anaAgain.transport.dispose);
+        final rejoined = _nextEvent<Joined>(anaAgain);
+        await anaAgain.transport.connect();
+
+        expect((await rejoined).seat, equals(0));
+        expect(anaAgain.transport.seat, equals(0));
+      },
     );
   });
 }
