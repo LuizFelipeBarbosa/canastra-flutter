@@ -26,6 +26,7 @@ import '../copy.dart';
 import '../cues.dart';
 import '../theme.dart';
 import '../widgets/controls.dart';
+import '../widgets/lobby_view.dart';
 import '../widgets/meld_box.dart';
 import '../widgets/playing_card.dart';
 import '../widgets/round_sheet.dart';
@@ -203,6 +204,17 @@ class _GameScreenState extends State<GameScreen> {
     }
     final view = c.view;
     if (view == null) {
+      if (c.inLobby) {
+        return LobbyView(
+          controller: c,
+          palette: p,
+          copy: l,
+          onLeave: () {
+            c.leave();
+            Navigator.maybePop(context);
+          },
+        );
+      }
       return _Message(text: '${l.deal}…', palette: p);
     }
 

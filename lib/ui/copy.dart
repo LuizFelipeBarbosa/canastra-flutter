@@ -164,6 +164,9 @@ class Copy {
   final String soundOn;
   final String soundOff;
 
+  /// Waiting for the rest of an online table to sit down and ready up.
+  final LobbyCopy lobby;
+
   /// Signing in, and everything that hangs off having an account.
   ///
   /// Grouped rather than flattened in here: accounts alone are some forty
@@ -266,6 +269,7 @@ class Copy {
     required this.best,
     required this.soundOn,
     required this.soundOff,
+    required this.lobby,
     required this.auth,
   });
 
@@ -422,6 +426,7 @@ class Copy {
     best: 'BEST',
     soundOn: 'SOUND ON',
     soundOff: 'SOUND OFF',
+    lobby: _enLobby,
     auth: _enAuth,
   );
 
@@ -550,9 +555,70 @@ class Copy {
     best: 'MELHOR',
     soundOn: 'SOM LIGADO',
     soundOff: 'SOM DESLIGADO',
+    lobby: _ptLobby,
     auth: _ptAuth,
   );
 }
+
+class LobbyCopy {
+  final String title;
+  final String codeLabel;
+  final String copyCode;
+  final String codeCopied;
+  final String openSeat;
+  final String ready;
+  final String unready;
+  final String waiting;
+  final String leave;
+  final String connected;
+  final String disconnected;
+  final String Function(String profile, int target) tableLine;
+
+  const LobbyCopy({
+    required this.title,
+    required this.codeLabel,
+    required this.copyCode,
+    required this.codeCopied,
+    required this.openSeat,
+    required this.ready,
+    required this.unready,
+    required this.waiting,
+    required this.leave,
+    required this.connected,
+    required this.disconnected,
+    required this.tableLine,
+  });
+}
+
+const _enLobby = LobbyCopy(
+  title: 'The table is set',
+  codeLabel: 'TABLE CODE',
+  copyCode: 'Copy code',
+  codeCopied: 'Code copied',
+  openSeat: 'Open seat',
+  ready: 'Ready',
+  unready: 'Not ready',
+  waiting: 'waiting for the table…',
+  leave: 'Leave table',
+  connected: 'Connected',
+  disconnected: 'Disconnected',
+  tableLine: _enLobbyTableLine,
+);
+
+const _ptLobby = LobbyCopy(
+  title: 'A mesa está posta',
+  codeLabel: 'CÓDIGO DA MESA',
+  copyCode: 'Copiar código',
+  codeCopied: 'Código copiado',
+  openSeat: 'Lugar aberto',
+  ready: 'Estou pronto',
+  unready: 'Ainda não',
+  waiting: 'esperando a mesa…',
+  leave: 'Sair da mesa',
+  connected: 'Conectado',
+  disconnected: 'Desconectado',
+  tableLine: _ptLobbyTableLine,
+);
 
 /// Everything the app says about accounts.
 ///
@@ -777,6 +843,10 @@ String _enBotPlaying(String who) => '$who is playing.';
 String _ptBotPlaying(String who) => '$who está jogando.';
 String _enWentOut(String who) => '$who went out';
 String _ptWentOut(String who) => '$who bateu';
+String _enLobbyTableLine(String profile, int target) =>
+    '$profile · first to $target';
+String _ptLobbyTableLine(String profile, int target) =>
+    '$profile · até $target';
 String _enSeatFallback(int seat) => 'Seat $seat';
 String _ptSeatFallback(int seat) => 'Assento $seat';
 String _enCountLeft(int count) => '$count left';

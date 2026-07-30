@@ -582,4 +582,45 @@ void main() {
     expect(controller.selection, isEmpty);
     expect(tester.takeException(), isNull);
   });
+
+  for (final (name, size) in const [
+    ('life size', _desktop),
+    ('a phone', _phone),
+  ]) {
+    testWidgets('the online lobby lays out at $name', (tester) async {
+      final cfg = loadProfile('buraco', numPlayers: 2);
+      final controller = GameController(
+        cfg: cfg,
+        transport: LocalTransport.singlePlayer(
+          cfg: cfg,
+          seed: 12,
+          botDelay: Duration.zero,
+        ),
+        autoReady: false,
+      );
+      final prefs = await _pumpAt(
+        tester,
+        size,
+        GameScreen(controller: controller),
+      );
+
+      expect(find.text('LOCAL'), findsOneWidget);
+      expect(find.text(prefs.copy.lobby.ready), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.text(prefs.copy.lobby.ready));
+      await tester.pump();
+      // Finish the table's opening deal so its periodic timer cannot outlive
+      // the widget test.
+      await tester.pump(const Duration(seconds: 2));
+
+      expect(controller.view, isNotNull);
+      if (size == _phone) {
+        expect(find.text(prefs.copy.rotatePrompt), findsOneWidget);
+      } else {
+        expect(find.text(prefs.copy.stock), findsOneWidget);
+      }
+      expect(tester.takeException(), isNull);
+    });
+  }
 }
