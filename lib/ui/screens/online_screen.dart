@@ -52,6 +52,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
   final _name = TextEditingController();
   String? _error;
   late int _players = widget.numPlayers;
+  bool _pushing = false;
 
   @override
   void dispose() {
@@ -60,16 +61,19 @@ class _OnlineScreenState extends State<OnlineScreen> {
     super.dispose();
   }
 
-  void _join() {
+  Future<void> _join() async {
+    if (_pushing) return;
+
+    final l = context.copy;
     final uri = Uri.tryParse(gameHost);
     if (uri == null ||
         !uri.hasScheme ||
         !(uri.isScheme('ws') || uri.isScheme('wss'))) {
-      setState(() => _error = 'This build has no usable host address.');
+      setState(() => _error = l.onlineInvalidHost);
       return;
     }
     if (_room.text.trim().isEmpty) {
-      setState(() => _error = 'Give the table a name so others can find it.');
+      setState(() => _error = l.onlineMissingTableName);
       return;
     }
     setState(() => _error = null);
@@ -78,22 +82,27 @@ class _OnlineScreenState extends State<OnlineScreen> {
       widget.profileId,
       numPlayers: _players,
     ).withMatchTarget(context.prefs.target);
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => GameScreen(
-          controller: GameController(
-            cfg: cfg,
-            transport: WebSocketTransport(
-              endpoint: uri,
-              roomCode: _room.text.trim(),
-              playerName: _name.text.trim().isEmpty
-                  ? 'Player'
-                  : _name.text.trim(),
+    _pushing = true;
+    try {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => GameScreen(
+            controller: GameController(
+              cfg: cfg,
+              transport: WebSocketTransport(
+                endpoint: uri,
+                roomCode: _room.text.trim(),
+                playerName: _name.text.trim().isEmpty
+                    ? l.onlineDefaultPlayer
+                    : _name.text.trim(),
+              ),
             ),
           ),
         ),
-      ),
-    );
+      );
+    } finally {
+      _pushing = false;
+    }
   }
 
   @override
@@ -135,22 +144,19 @@ class _OnlineScreenState extends State<OnlineScreen> {
                       style: T.display(34, tracking: -1.4, color: p.text),
                     ),
                     const SizedBox(height: 20),
-                    Text(
-                      'Everyone playing together joins the same table name. '
-                      'Pick one and share it — play starts once every seat is '
-                      'ready.',
-                      style: T.body(13, color: p.ash),
-                    ),
+                    Text(l.onlineExplainer, style: T.body(13, color: p.ash)),
                     const SizedBox(height: 20),
                     if (counts.length > 1) ...[
-                      Text('PLAYERS', style: mono(10, color: p.ashDim)),
+                      Text(l.onlinePlayers, style: mono(10, color: p.ashDim)),
                       const SizedBox(height: 8),
                       Row(
                         children: [
                           for (final n in counts) ...[
                             if (n != counts.first) const SizedBox(width: 8),
                             Segment(
-                              label: n == 2 ? '2 · HEAD TO HEAD' : '4 · TEAMS',
+                              label: n == 2
+                                  ? l.onlineTwoPlayers
+                                  : l.onlineFourPlayers,
                               selected: n == _players,
                               palette: p,
                               onTap: () => setState(() => _players = n),
@@ -160,12 +166,16 @@ class _OnlineScreenState extends State<OnlineScreen> {
                       ),
                       const SizedBox(height: 20),
                     ],
-                    _Field(label: 'TABLE NAME', controller: _room, palette: p),
+                    _Field(
+                      label: l.onlineTableName,
+                      controller: _room,
+                      palette: p,
+                    ),
                     const SizedBox(height: 14),
                     _Field(
-                      label: 'YOUR NAME',
+                      label: l.onlineYourName,
                       controller: _name,
-                      hint: 'How others see you',
+                      hint: l.onlinePlayerNameHint,
                       palette: p,
                     ),
                     if (_error != null) ...[
@@ -174,7 +184,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
                     ],
                     const SizedBox(height: 24),
                     MintButton(
-                      label: 'Join the table',
+                      label: l.onlineJoinTable,
                       palette: p,
                       onTap: _join,
                     ),

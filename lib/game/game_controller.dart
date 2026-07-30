@@ -13,6 +13,8 @@
 /// picked up — a half-played meld is never left silently.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../engine/cards.dart';
@@ -35,6 +37,12 @@ class GameController extends ChangeNotifier {
   String? _notice;
   bool _connecting = true;
   String? _fatal;
+  StreamSubscription<ServerEvent>? _eventSubscription;
+  bool _disposed = false;
+
+  /// Blocks duplicate submissions while `legalActions` is stale and the host's
+  /// answering view has not arrived yet.
+  bool _awaitingView = false;
 
   GameController({required this.cfg, required this.transport});
 
@@ -62,32 +70,48 @@ class GameController extends ChangeNotifier {
   bool get busy => _queue.isNotEmpty;
 
   Future<void> start() async {
-    transport.events.listen(
+    _eventSubscription = transport.events.listen(
       _onEvent,
       onError: (Object e) {
+        if (_disposed) return;
         _fatal = '$e';
         notifyListeners();
       },
     );
     try {
       await transport.connect();
+      if (_disposed) return;
       transport.send(const SetReady(ready: true));
     } on TransportException catch (e) {
+      if (_disposed) return;
       _fatal = e.message;
       notifyListeners();
     }
   }
 
   void _onEvent(ServerEvent event) {
+    if (_disposed) return;
     switch (event) {
       case TableUpdate(:final view):
+        _awaitingView = false;
         final previous = _view;
         _view = view;
         _moves = MoveIndex.build(cfg, view);
         _connecting = false;
 
-        // A new turn is a clean slate.
-        if (previous != null && previous.turnNumber != view.turnNumber) {
+        final tookMortoThisTurn =
+            previous != null &&
+            previous.turnNumber == view.turnNumber &&
+            view.side < previous.mortoTaken.length &&
+            view.side < view.mortoTaken.length &&
+            !previous.mortoTaken[view.side] &&
+            view.mortoTaken[view.side];
+
+        // A new turn is a clean slate. So is a direct morto pickup: the hand was
+        // replaced in place, and matching old selections by card type would
+        // attach them to cards the player never picked up.
+        if (previous != null &&
+            (previous.turnNumber != view.turnNumber || tookMortoThisTurn)) {
           _selection.clear();
           _queue = [];
           _refusal = null;
@@ -102,11 +126,13 @@ class GameController extends ChangeNotifier {
         _replan();
 
       case ActionRejected(:final reason):
+        _awaitingView = false;
         _notice = reason;
         // Whatever was queued was built on a state the host disagrees with.
         _queue = [];
 
       case ServerError(:final message):
+        _awaitingView = false;
         _notice = message;
         _queue = [];
 
@@ -147,6 +173,7 @@ class GameController extends ChangeNotifier {
       return;
     }
     _queue = _queue.sublist(1);
+    _awaitingView = true;
     transport.send(SubmitAction(actionId: next));
   }
 
@@ -163,6 +190,7 @@ class GameController extends ChangeNotifier {
   }
 
   void clearSelection() {
+    if (busy) return;
     if (_selection.isEmpty && _refusal == null) return;
     _selection.clear();
     _refusal = null;
@@ -182,7 +210,13 @@ class GameController extends ChangeNotifier {
 
   void _submitPlan(PlanResult Function(TableView view) build) {
     final view = _view;
-    if (view == null || !view.myTurn || busy || _selection.isEmpty) return;
+    if (view == null ||
+        !view.myTurn ||
+        busy ||
+        _awaitingView ||
+        _selection.isEmpty) {
+      return;
+    }
     switch (build(view)) {
       case PlanReady(:final plan):
         _refusal = null;
@@ -264,9 +298,7 @@ class GameController extends ChangeNotifier {
       return false;
     }
     if (!out.requireCanastra) return true;
-    final canastras = view.myMelds.where(
-      (m) => m.isCanastra && (!out.requireCleanCanastra || m.isClean),
-    );
+    final canastras = view.myMelds.where(_isQualifyingCanastra);
     return canastras.length >= out.goOutMinCanastras;
   }
 
@@ -280,19 +312,27 @@ class GameController extends ChangeNotifier {
       return Refusal.mortoFirst;
     }
     if (out.requireCanastra &&
-        view.myMelds.where((m) => m.isCanastra).length <
+        view.myMelds.where(_isQualifyingCanastra).length <
             out.goOutMinCanastras) {
       return Refusal.needCanastra;
     }
     return null;
   }
 
+  bool _isQualifyingCanastra(MeldView meld) =>
+      meld.isCanastra && (!cfg.goingOut.requireCleanCanastra || meld.isClean);
+
   void play(MoveOption move) => playId(move.actionId);
 
   void playId(int actionId) {
-    if (_view == null || !_view!.legalActions.contains(actionId)) return;
+    if (_awaitingView ||
+        _view == null ||
+        !_view!.legalActions.contains(actionId)) {
+      return;
+    }
     _notice = null;
     _refusal = null;
+    _awaitingView = true;
     transport.send(SubmitAction(actionId: actionId));
   }
 
@@ -308,6 +348,8 @@ class GameController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
+    _eventSubscription?.cancel();
     transport.dispose();
     super.dispose();
   }

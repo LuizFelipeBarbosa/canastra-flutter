@@ -58,15 +58,23 @@ class WebSocketTransport implements GameTransport {
     if (_disposed) throw TransportException('transport was disposed');
     if (_connected) return;
 
-    final WebSocketChannel channel;
+    WebSocketChannel? connectingChannel;
     try {
-      channel = WebSocketChannel.connect(endpoint);
+      final channel = WebSocketChannel.connect(endpoint);
+      connectingChannel = channel;
+      _channel = channel;
       await channel.ready;
     } catch (e) {
+      if (identical(_channel, connectingChannel)) _channel = null;
       throw TransportException('could not reach $endpoint: $e');
     }
+    final channel = connectingChannel;
+    if (_disposed) {
+      if (identical(_channel, channel)) _channel = null;
+      await channel.sink.close();
+      throw TransportException('transport was disposed');
+    }
 
-    _channel = channel;
     _connected = true;
     _retries = 0;
     _sub = channel.stream.listen(

@@ -66,6 +66,7 @@ class _GameScreenState extends State<GameScreen> {
   int _canastrasWas = 0;
 
   final SoundBoard _sound = SoundBoard();
+  final CardIdentityTracker _cardIdentities = CardIdentityTracker();
   bool _matchRecorded = false;
 
   /// Captured rather than read from `context` on demand: the match result is
@@ -89,6 +90,7 @@ class _GameScreenState extends State<GameScreen> {
   void dispose() {
     _dealer?.cancel();
     c.removeListener(_onChange);
+    c.dispose();
     super.dispose();
   }
 
@@ -96,7 +98,7 @@ class _GameScreenState extends State<GameScreen> {
     if (!mounted) return;
     final view = c.view;
     if (view != null) {
-      if (view.roundIndex != _roundShown) {
+      if (view.roundIndex != _roundShown || view.history.length < _historyWas) {
         _roundShown = view.roundIndex;
         _matchRecorded = false;
         _historyWas = view.history.length;
@@ -121,6 +123,7 @@ class _GameScreenState extends State<GameScreen> {
 
   void _startDeal() {
     _dealer?.cancel();
+    _cardIdentities.reset();
     _dealt = 0;
     if (Motion.reduced(context)) {
       _dealt = _dealTotal;
@@ -210,6 +213,7 @@ class _GameScreenState extends State<GameScreen> {
         words: _zoneWords(l),
       ),
     );
+    final cards = _cardIdentities.assign(layout.cards);
 
     return Scaffold(
       body: Stage(
@@ -218,7 +222,7 @@ class _GameScreenState extends State<GameScreen> {
           ..._meldBoxes(layout, p),
           ..._zones(layout, p),
           ..._rowLabels(view, l, p),
-          ..._cards(layout, p),
+          ..._cards(cards, p),
           _header(view, prefs, p, l),
           _opponents(view, l, p),
           _strip(view, l, p),
@@ -342,8 +346,8 @@ class _GameScreenState extends State<GameScreen> {
   /// hand overlaps a meld overlaps the felt. Everything except your own hand
   /// ignores taps, so clicking the pile reaches the pile rather than the card
   /// lying on it.
-  List<Widget> _cards(TableLayout layout, Palette p) {
-    final sorted = [...layout.cards]..sort((a, b) => a.z.compareTo(b.z));
+  List<Widget> _cards(List<CardSpot> cards, Palette p) {
+    final sorted = [...cards]..sort((a, b) => a.z.compareTo(b.z));
     return [
       for (final spot in sorted)
         AnimatedPositioned(
@@ -431,7 +435,7 @@ class _GameScreenState extends State<GameScreen> {
               ),
               const SizedBox(width: 6),
               Pill(
-                label: prefs.dark ? 'LIGHT' : 'DARK',
+                label: prefs.dark ? l.themeLight : l.themeDark,
                 palette: p,
                 round: true,
                 onTap: prefs.toggleTheme,
@@ -480,7 +484,7 @@ class _GameScreenState extends State<GameScreen> {
             _SeatChip(
               name: seat < view.playerNames.length
                   ? view.playerNames[seat]
-                  : 'Seat $seat',
+                  : l.seatFallback(seat),
               cards: view.handSizes[seat],
               toPlay: seat == view.currentPlayer && !view.roundOver,
               partner: seat == view.partnerSeat,

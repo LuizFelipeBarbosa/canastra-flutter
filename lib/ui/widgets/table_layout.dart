@@ -80,6 +80,19 @@ class CardSpot {
     this.inHand = false,
   });
 
+  CardSpot _withKey(String key) => CardSpot(
+    key: key,
+    card: card,
+    x: x,
+    y: y,
+    scale: scale,
+    z: z,
+    faceUp: faceUp,
+    asWild: asWild,
+    selected: selected,
+    inHand: inHand,
+  );
+
   CardSpot onTheStock() => CardSpot(
     key: key,
     card: card,
@@ -90,6 +103,139 @@ class CardSpot {
     faceUp: false,
   );
 }
+
+/// Rewrites [CardSpot] keys to stable per-card-copy identities so the same
+/// widget follows the same physical card as it moves between zones.
+class CardIdentityTracker {
+  final Map<CardId, List<_PreviousCardIdentity>> _previous = {};
+  final Map<CardId, int> _nextOrdinal = {};
+
+  void reset() {
+    _previous.clear();
+    _nextOrdinal.clear();
+  }
+
+  /// Call once per layout pass with the frame's spots in layout order.
+  ///
+  /// Positional keys remain useful as observations: an exact position is the
+  /// strongest evidence that a copy stayed put, while the key's prefix tells us
+  /// whether it merely shifted within a hand, pile, or individual meld. Only
+  /// after preserving those matches can a cross-zone move claim a remaining
+  /// identity, which is what lets a discarded card glide from hand to pile.
+  List<CardSpot> assign(List<CardSpot> spots) {
+    final currentByType = <CardId, List<_CurrentCardIdentity>>{};
+    for (var i = 0; i < spots.length; i++) {
+      final spot = spots[i];
+      if (_isBackPlaceholder(spot.key)) continue;
+
+      currentByType
+          .putIfAbsent(spot.card, () => [])
+          .add(
+            _CurrentCardIdentity(
+              spotIndex: i,
+              location: _CardLocation.fromKey(spot.key),
+            ),
+          );
+    }
+
+    final ordinals = List<int?>.filled(spots.length, null);
+    final next = <CardId, List<_PreviousCardIdentity>>{};
+    for (final entry in currentByType.entries) {
+      final previous = _previous[entry.key] ?? const [];
+      final claimed = List<bool>.filled(previous.length, false);
+
+      void matchPrevious(
+        bool Function(_CardLocation current, _CardLocation previous) matches,
+      ) {
+        for (final current in entry.value) {
+          if (ordinals[current.spotIndex] != null) continue;
+          for (var i = 0; i < previous.length; i++) {
+            if (claimed[i] ||
+                !matches(current.location, previous[i].location)) {
+              continue;
+            }
+            ordinals[current.spotIndex] = previous[i].ordinal;
+            claimed[i] = true;
+            break;
+          }
+        }
+      }
+
+      matchPrevious(
+        (current, previous) =>
+            current.zone == previous.zone && current.slot == previous.slot,
+      );
+      matchPrevious((current, previous) => current.zone == previous.zone);
+      matchPrevious((current, previous) => true);
+
+      var nextOrdinal = _nextOrdinal[entry.key] ?? 0;
+      for (final current in entry.value) {
+        if (ordinals[current.spotIndex] != null) continue;
+        ordinals[current.spotIndex] = nextOrdinal;
+        nextOrdinal++;
+      }
+      _nextOrdinal[entry.key] = nextOrdinal;
+
+      next[entry.key] = [
+        for (final current in entry.value)
+          _PreviousCardIdentity(
+            ordinal: ordinals[current.spotIndex]!,
+            location: current.location,
+          ),
+      ];
+    }
+
+    _previous
+      ..clear()
+      ..addAll(next);
+
+    return [
+      for (var i = 0; i < spots.length; i++)
+        if (ordinals[i] case final ordinal?)
+          spots[i]._withKey('card:${spots[i].card}:$ordinal')
+        else
+          spots[i],
+    ];
+  }
+}
+
+class _CurrentCardIdentity {
+  final int spotIndex;
+  final _CardLocation location;
+
+  const _CurrentCardIdentity({required this.spotIndex, required this.location});
+}
+
+class _PreviousCardIdentity {
+  final int ordinal;
+  final _CardLocation location;
+
+  const _PreviousCardIdentity({required this.ordinal, required this.location});
+}
+
+class _CardLocation {
+  final String zone;
+  final String slot;
+
+  const _CardLocation({required this.zone, required this.slot});
+
+  factory _CardLocation.fromKey(String key) {
+    final parts = key.split(':');
+    final zone = parts.first == 'meld' && parts.length >= 3
+        ? parts.take(3).join(':')
+        : parts.first;
+    return _CardLocation(zone: zone, slot: key);
+  }
+}
+
+/// Stock, morto, and opponent-hand backs carry no card type in the player's
+/// view. Letting their sentinel value consume a real ordinal would collide with
+/// the valid card id zero, while their existing positional keys are already the
+/// only identity the renderer can meaningfully preserve.
+bool _isBackPlaceholder(String key) =>
+    key.startsWith('stock:') ||
+    key.startsWith('morto:') ||
+    (key.startsWith('seat') && key.contains(':'));
 
 /// One of the named places in the middle of the table, or the play area.
 class ZoneSpot {
@@ -255,7 +401,7 @@ TableLayout layOutTable(LayoutInput input) {
             for (final m in view.melds)
               if (m.owner != view.side) m,
           ];
-    final step = _fittedStep(owned);
+    final step = _fittedStep(owned, available: mine ? 1010 : 1200);
     var x = 20.0;
     for (var slot = 0; slot < owned.length; slot++) {
       final meld = owned[slot];
@@ -347,13 +493,15 @@ TableLayout layOutTable(LayoutInput input) {
   }
 
   // --- the play area: whatever is left of your meld row ---
-  final playX = myMeldsEndX < 1030 ? myMeldsEndX : 1030.0;
+  const minPlayWidth = 190.0;
+  const maxPlayX = 1240.0 - minPlayWidth;
+  final playX = myMeldsEndX < maxPlayX ? myMeldsEndX : maxPlayX;
   zones.add(
     ZoneSpot(
       id: 'play',
       x: playX,
       y: kMyRowY,
-      width: (1220 - playX) < 190 ? 190 : 1220 - playX,
+      width: (1220 - playX) < minPlayWidth ? minPlayWidth : 1220 - playX,
       height: kMeldBoxHeight,
       label: words.playArea,
       foot: input.canMeld ? words.playReady : words.playIdle,
@@ -436,10 +584,13 @@ TableLayout layOutTable(LayoutInput input) {
 /// meld on the row slide closer together until the row fits. They stop at the
 /// point where a rank in the corner would start to be covered; past that, a table
 /// this crowded is allowed to overflow rather than become unreadable.
-double _fittedStep(List<MeldView> melds) {
+///
+/// The opponent can use the full felt, but the player's row passes a narrower
+/// [available] span so compression reserves the play area's tap target instead
+/// of letting an otherwise valid meld box extend underneath it.
+double _fittedStep(List<MeldView> melds, {double available = 1200}) {
   if (melds.length < 2) return _meldStep;
 
-  const available = 1200.0; // x = 20 to x = 1220
   const gap = 8.0;
   final frames = melds.length * (18 + _meldWidth) + gap * (melds.length - 1);
   final overlapping = melds.fold(0, (sum, m) => sum + m.size - 1);

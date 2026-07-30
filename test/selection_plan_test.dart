@@ -161,6 +161,40 @@ void main() {
       expect(meld.size, equals(3));
       expect(meld.isClean, isFalse);
     });
+
+    test('a natural two and an off-suit wild are not over-counted', () {
+      // The context-free wildcard table calls both twos wild. The meld planner
+      // knows that 2♣ is natural in the A-2-3♣ run and only 2♦ stands in.
+      final hand = [aceClubs, twoClubs, twoDiamonds];
+      final match = _tableWith(hand);
+      final plan = _expectReady(planNewMeld(match.cfg, _viewOf(match), hand));
+
+      expect(match.legalActionIdsNow(), contains(plan.steps.first));
+      _replay(match, plan);
+      final meld = match.round.melds.single;
+      expect(meld.size, equals(3));
+      expect(meld.isClean, isFalse);
+    });
+
+    test('a natural rummy run plans and replays without wilds', () {
+      final hand = [fiveClubs, sixClubs, sevenClubs];
+      final match = _tableWith(hand, profile: 'rummy');
+      final plan = _expectReady(planNewMeld(match.cfg, _viewOf(match), hand));
+
+      _replay(match, plan);
+      expect(match.round.melds.single.size, equals(3));
+      expect(match.round.melds.single.isClean, isTrue);
+    });
+
+    test('a biriba run with a wild plans and replays', () {
+      final hand = [fiveClubs, sevenClubs, twoDiamonds];
+      final match = _tableWith(hand, profile: 'biriba');
+      final plan = _expectReady(planNewMeld(match.cfg, _viewOf(match), hand));
+
+      _replay(match, plan);
+      expect(match.round.melds.single.size, equals(3));
+      expect(match.round.melds.single.isClean, isFalse);
+    });
   });
 
   group('refusals name the actual problem', () {
@@ -304,6 +338,78 @@ void main() {
       );
       _replay(match, plan);
       expect(match.round.mortoTaken[0], isTrue, reason: 'the morto arrives');
+    });
+
+    test('an exhausted untaken morto still names the morto obligation', () {
+      final match = withRunDown([eightClubs, nineClubs]);
+      final state = match.round;
+      state.hands[0]
+        ..clear()
+        ..[eightClubs] = 1
+        ..[nineClubs] = 1;
+      state.mortoTaken[0] = false;
+      state.morto[0] = null;
+
+      _expectRefused(
+        planExtendMeld(match.cfg, _viewOf(match), 0, [eightClubs, nineClubs]),
+        Refusal.mortoFirst,
+      );
+    });
+  });
+
+  group('Canasta pending pile card', () {
+    Match withKingsDown(List<CardId> thenHold) {
+      final match = _tableWith([
+        kingClubs,
+        kingDiamonds,
+        kingHearts,
+      ], profile: 'canasta');
+      match.round.initialMeldDone[0] = true;
+      final core = [kingClubs, kingDiamonds, kingHearts];
+      _replay(
+        match,
+        _expectReady(planNewMeld(match.cfg, _viewOf(match), core)),
+      );
+      _setHand(match, thenHold);
+      return match;
+    }
+
+    test('the pending card is the first add onto an open set', () {
+      final match = withKingsDown([kingHearts, kingSpades]);
+      // Ballast also uses K♠; keep exactly the selected copy so this tests the
+      // physical pending-card obligation rather than an interchangeable spare.
+      match.round.hands[0][kingSpades] = 1;
+      match.round.hands[0][aceClubs] = 1;
+      match.round.pendingPileCard = kingSpades;
+
+      final plan = _expectReady(
+        planExtendMeld(match.cfg, _viewOf(match), 0, [kingHearts, kingSpades]),
+      );
+      final first = decodeAction(plan.steps.first, match.cfg.meld.maxMeldSlots);
+      expect(first, isA<AddToMeld>());
+      expect((first as AddToMeld).ct, equals(kingSpades));
+
+      _replay(match, plan);
+      expect(match.round.pendingPileCard, isNull);
+      expect(match.round.melds.single.size, equals(5));
+    });
+
+    test('a fresh set consumes the pending physical copy', () {
+      final hand = [kingClubs, kingDiamonds, kingHearts, kingSpades];
+      final match = _tableWith(hand, profile: 'canasta');
+      match.round.initialMeldDone[0] = true;
+      // Remove the second K♠ supplied by ballast. If the client simulates the
+      // create without `prefer`, its queued K♠ add cannot replay after the host
+      // correctly consumes the one pending copy.
+      match.round.hands[0][kingSpades] = 1;
+      match.round.hands[0][aceClubs] = 1;
+      match.round.pendingPileCard = kingSpades;
+
+      final plan = _expectReady(planNewMeld(match.cfg, _viewOf(match), hand));
+      expect(plan.steps, hasLength(2));
+      _replay(match, plan);
+      expect(match.round.pendingPileCard, isNull);
+      expect(match.round.melds.single.size, equals(4));
     });
   });
 

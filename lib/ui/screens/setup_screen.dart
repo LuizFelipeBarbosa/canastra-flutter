@@ -18,8 +18,15 @@ import '../widgets/stage.dart';
 import 'game_screen.dart';
 import 'online_screen.dart';
 
-class SetupScreen extends StatelessWidget {
+class SetupScreen extends StatefulWidget {
   const SetupScreen({super.key});
+
+  @override
+  State<SetupScreen> createState() => _SetupScreenState();
+}
+
+class _SetupScreenState extends State<SetupScreen> {
+  bool _pushing = false;
 
   @override
   Widget build(BuildContext context) {
@@ -109,7 +116,7 @@ class SetupScreen extends StatelessWidget {
                           onTap: prefs.toggleSound,
                         ),
                         Segment(
-                          label: prefs.dark ? 'LIGHT' : 'DARK',
+                          label: prefs.dark ? l.themeLight : l.themeDark,
                           selected: false,
                           palette: p,
                           onTap: prefs.toggleTheme,
@@ -130,7 +137,7 @@ class SetupScreen extends StatelessWidget {
                       wide: true,
                       fontSize: 19,
                       padding: const EdgeInsets.symmetric(vertical: 19),
-                      onTap: () => _deal(context, prefs),
+                      onTap: () => _deal(prefs),
                     ),
                     const SizedBox(height: 14),
                     // The design has one flow, against the house opponent. Online
@@ -161,7 +168,9 @@ class SetupScreen extends StatelessWidget {
     );
   }
 
-  static void _deal(BuildContext context, AppPrefs prefs) {
+  Future<void> _deal(AppPrefs prefs) async {
+    if (_pushing) return;
+
     final profile = profileById(prefs.variant);
     final cfg = profile
         .build(numPlayers: profile.playerCounts.first)
@@ -170,20 +179,25 @@ class SetupScreen extends StatelessWidget {
     // to differ between games.
     final seed = DateTime.now().microsecondsSinceEpoch & 0x7fffffff;
 
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => GameScreen(
-          controller: GameController(
-            cfg: cfg,
-            transport: LocalTransport.singlePlayer(
+    _pushing = true;
+    try {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => GameScreen(
+            controller: GameController(
               cfg: cfg,
-              seed: seed,
-              botLevel: prefs.agentLevel,
+              transport: LocalTransport.singlePlayer(
+                cfg: cfg,
+                seed: seed,
+                botLevel: prefs.agentLevel,
+              ),
             ),
           ),
         ),
-      ),
-    );
+      );
+    } finally {
+      _pushing = false;
+    }
   }
 }
 

@@ -14,6 +14,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../app_scope.dart';
 import '../theme.dart';
 
 /// The one coordinate space the whole app is drawn in.
@@ -30,25 +31,48 @@ class Stage extends StatelessWidget {
   @override
   Widget build(BuildContext context) => ColoredBox(
     color: palette.shell,
-    child: Center(
-      child: FittedBox(
-        // Exactly min(w / 1240, h / 790, 1).
-        fit: BoxFit.scaleDown,
-        child: SizedBox(
-          width: kStage.width,
-          height: kStage.height,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: DecoratedBox(
-              decoration: BoxDecoration(gradient: groundGradient(palette)),
-              child: CustomPaint(
-                painter: AzulejoPainter(ink: palette.motifInk),
-                child: Stack(children: children),
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        final scale = math.min(
+          math.min(
+            constraints.maxWidth / kStage.width,
+            constraints.maxHeight / kStage.height,
+          ),
+          1,
+        );
+        if (constraints.maxHeight > constraints.maxWidth && scale < 0.5) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Text(
+                context.copy.rotatePrompt,
+                textAlign: TextAlign.center,
+                style: T.title(18, color: palette.ash),
+              ),
+            ),
+          );
+        }
+        return Center(
+          child: FittedBox(
+            // Exactly min(w / 1240, h / 790, 1).
+            fit: BoxFit.scaleDown,
+            child: SizedBox(
+              width: kStage.width,
+              height: kStage.height,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(gradient: groundGradient(palette)),
+                  child: CustomPaint(
+                    painter: AzulejoPainter(ink: palette.motifInk),
+                    child: Stack(children: children),
+                  ),
+                ),
               ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     ),
   );
 }

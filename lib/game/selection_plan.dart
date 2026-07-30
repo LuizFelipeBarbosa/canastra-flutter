@@ -103,9 +103,6 @@ PlanResult planNewMeld(
   TableView view,
   List<CardId> selection,
 ) {
-  final shape = _shapeRefusal(cfg, selection);
-  if (shape != null) return PlanRefused(shape);
-
   final slot = view.myMelds.length;
   final slots = cfg.meld.maxMeldSlots;
   final guard = _StrandGuard(cfg: cfg, view: view, replacing: -1);
@@ -139,6 +136,7 @@ PlanResult planNewMeld(
           slot,
           rank,
           wild,
+          prefer: view.pendingPileCard,
         ),
         // Unreachable: the guard above admits only the two create families.
         _ => throw MeldError('not a create action'),
@@ -153,6 +151,7 @@ PlanResult planNewMeld(
       created,
       guard: guard,
       handSize: view.hand.length - created.size,
+      pendingPileCard: view.pendingPileCard,
     );
     // A candidate only counts if it plays every card that was picked up.
     if (!drain.complete) {
@@ -176,7 +175,7 @@ PlanResult planNewMeld(
   // A shape the engine would take, blocked only by what it would leave you
   // holding, deserves the reason it was actually blocked for.
   if (stranded) return PlanRefused(guard.strandReason);
-  return const PlanRefused(Refusal.notAMeld);
+  return PlanRefused(_shapeRefusal(cfg, selection) ?? Refusal.notAMeld);
 }
 
 /// Add [selection] to the meld already in [slot].
@@ -198,6 +197,7 @@ PlanResult planExtendMeld(
     meldFromView(view.myMelds[slot]),
     guard: guard,
     handSize: view.hand.length,
+    pendingPileCard: view.pendingPileCard,
   );
   if (!drain.complete) {
     return PlanRefused(
@@ -291,7 +291,10 @@ class _StrandGuard {
   }
 
   /// Which of the design's two sentences fits this table.
-  Refusal get strandReason => cfg.goingOut.requireMortoTaken && _mortoComing
+  Refusal get strandReason =>
+      cfg.goingOut.requireMortoTaken &&
+          view.side < view.mortoTaken.length &&
+          !view.mortoTaken[view.side]
       ? Refusal.mortoFirst
       : Refusal.needCanastra;
 }
@@ -312,6 +315,7 @@ _Drain _drainOnto(
   Meld meld, {
   required _StrandGuard guard,
   required int handSize,
+  CardId? pendingPileCard,
 }) {
   final budget = Map.of(pool);
   final spent = <CardId, int>{};
@@ -322,8 +326,14 @@ _Drain _drainOnto(
   var progress = true;
   while (progress) {
     progress = false;
+    final candidates = budget.keys.toList()..sort();
+    if (pendingPileCard != null && budget.containsKey(pendingPileCard)) {
+      candidates
+        ..remove(pendingPileCard)
+        ..insert(0, pendingPileCard);
+    }
     // Low card first, so a run grows from one end in a single pass.
-    for (final ct in budget.keys.toList()..sort()) {
+    for (final ct in candidates) {
       if ((spent[ct] ?? 0) >= budget[ct]!) continue;
       final plan = planAdd(cfg, pool, meld, ct);
       if (plan == null) continue;
@@ -356,8 +366,11 @@ _Drain _drainOnto(
   return _Drain(added, complete, stranded: !complete && stranded);
 }
 
-/// The refusals that can be read off a selection without asking the engine
-/// anything — and that carry a more useful sentence than "no".
+/// A fallback refusal phrase for a selection no engine candidate could consume.
+///
+/// These context-free counts are deliberately consulted only after replaying
+/// every legal create. A two may be natural in its own run position, so this
+/// heuristic can describe a failure but must never decide legality.
 Refusal? _shapeRefusal(RulesConfig cfg, List<CardId> selection) {
   if (selection.length < cfg.meld.minMeldSize) return Refusal.tooShort;
   final wilds = _wildsIn(cfg, selection);
@@ -368,9 +381,6 @@ Refusal? _shapeRefusal(RulesConfig cfg, List<CardId> selection) {
   return null;
 }
 
-/// Counts cards that can only ever be wilds. A two in its own suit and position
-/// is a natural, so this is an upper bound the engine refines — which is the safe
-/// direction for a message that says "too many wilds".
 int _wildsIn(RulesConfig cfg, Iterable<CardId> cards) =>
     cards.where(cfg.isWildCard).length;
 

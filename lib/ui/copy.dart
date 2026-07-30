@@ -118,6 +118,28 @@ class Copy {
   /// Score-sheet line names, keyed by the engine's own label for the line.
   final Map<String, String> scoreLines;
 
+  // --- online setup ---
+  final String onlineExplainer;
+  final String onlinePlayers;
+  final String onlineTwoPlayers;
+  final String onlineFourPlayers;
+  final String onlineTableName;
+  final String onlineYourName;
+  final String onlinePlayerNameHint;
+  final String onlineJoinTable;
+  final String onlineInvalidHost;
+  final String onlineMissingTableName;
+  final String onlineDefaultPlayer;
+
+  // --- shared controls ---
+  final String themeLight;
+  final String themeDark;
+
+  // --- table fallbacks ---
+  /// Takes the zero-based seat index used by the game state.
+  final String Function(int seat) seatFallback;
+  final String rotatePrompt;
+
   // --- the streak counters ---
   final String streak;
   final String won;
@@ -192,6 +214,21 @@ class Copy {
     required this.nextRound,
     required this.newMatch,
     required this.scoreLines,
+    required this.onlineExplainer,
+    required this.onlinePlayers,
+    required this.onlineTwoPlayers,
+    required this.onlineFourPlayers,
+    required this.onlineTableName,
+    required this.onlineYourName,
+    required this.onlinePlayerNameHint,
+    required this.onlineJoinTable,
+    required this.onlineInvalidHost,
+    required this.onlineMissingTableName,
+    required this.onlineDefaultPlayer,
+    required this.themeLight,
+    required this.themeDark,
+    required this.seatFallback,
+    required this.rotatePrompt,
     required this.streak,
     required this.won,
     required this.played,
@@ -292,6 +329,23 @@ class Copy {
       'Cards left in hand': 'Cards left in hand',
       "Opponents' cards": "Opponents' cards",
     },
+    onlineExplainer:
+        'Everyone playing together joins the same table name. Pick one and '
+        'share it — play starts once every seat is ready.',
+    onlinePlayers: 'PLAYERS',
+    onlineTwoPlayers: '2 · HEAD TO HEAD',
+    onlineFourPlayers: '4 · TEAMS',
+    onlineTableName: 'TABLE NAME',
+    onlineYourName: 'YOUR NAME',
+    onlinePlayerNameHint: 'How others see you',
+    onlineJoinTable: 'Join the table',
+    onlineInvalidHost: 'This build has no usable host address.',
+    onlineMissingTableName: 'Give the table a name so others can find it.',
+    onlineDefaultPlayer: 'Player',
+    themeLight: 'LIGHT',
+    themeDark: 'DARK',
+    seatFallback: _enSeatFallback,
+    rotatePrompt: 'Turn your device sideways to see the table.',
     streak: 'STREAK ',
     won: 'WON',
     played: 'PLAYED',
@@ -379,6 +433,24 @@ class Copy {
       'Cards left in hand': 'Cartas na mão',
       "Opponents' cards": 'Cartas dos adversários',
     },
+    onlineExplainer:
+        'Todo mundo que vai jogar junto entra com o mesmo nome de mesa. '
+        'Escolha um e compartilhe — a partida começa quando todos estiverem '
+        'prontos.',
+    onlinePlayers: 'JOGADORES',
+    onlineTwoPlayers: '2 · UM CONTRA UM',
+    onlineFourPlayers: '4 · DUPLAS',
+    onlineTableName: 'NOME DA MESA',
+    onlineYourName: 'SEU NOME',
+    onlinePlayerNameHint: 'Como os outros veem você',
+    onlineJoinTable: 'Entrar na mesa',
+    onlineInvalidHost: 'Esta versão não tem um endereço de servidor válido.',
+    onlineMissingTableName: 'Dê um nome à mesa para os outros encontrarem.',
+    onlineDefaultPlayer: 'Jogador',
+    themeLight: 'CLARO',
+    themeDark: 'ESCURO',
+    seatFallback: _ptSeatFallback,
+    rotatePrompt: 'Gire o aparelho para ver a mesa.',
     streak: 'SEQUÊNCIA ',
     won: 'GANHAS',
     played: 'JOGADAS',
@@ -394,6 +466,8 @@ String _enBotPlaying(String who) => '$who is playing.';
 String _ptBotPlaying(String who) => '$who está jogando.';
 String _enWentOut(String who) => '$who went out';
 String _ptWentOut(String who) => '$who bateu';
+String _enSeatFallback(int seat) => 'Seat $seat';
+String _ptSeatFallback(int seat) => 'Assento $seat';
 
 /// How a variant is sold on the landing screen.
 ///
@@ -439,7 +513,7 @@ const Map<Lang, Map<String, VariantCopy>> kVariantCopy = {
     ),
     'biriba': VariantCopy(
       'PRIMO GREGO',
-      'Buraco com curingas no baralho e uma mão morta que virá monte novo.',
+      'Buraco com curingas no baralho e uma mão morta que vira monte novo.',
     ),
     'rummy': VariantCopy(
       'RÁPIDO E SIMPLES',

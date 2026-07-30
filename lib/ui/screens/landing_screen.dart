@@ -69,6 +69,7 @@ class _Header extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = prefs.palette;
+    final l = prefs.copy;
     return Row(
       children: [
         BrandMark(size: 52, palette: p),
@@ -82,7 +83,7 @@ class _Header extends StatelessWidget {
         ),
         const SizedBox(width: 8),
         Pill(
-          label: prefs.dark ? 'LIGHT' : 'DARK',
+          label: prefs.dark ? l.themeLight : l.themeDark,
           palette: p,
           onTap: prefs.toggleTheme,
         ),

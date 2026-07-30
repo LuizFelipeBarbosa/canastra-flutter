@@ -5,6 +5,7 @@ import 'ui/screens/landing_screen.dart';
 import 'ui/theme.dart';
 
 Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
   // Which table, which language and whether it makes a noise are all known before
   // the first frame, so the app never flashes the wrong one.
   final prefs = AppPrefs();

@@ -1,6 +1,6 @@
 /// Renders the screens to PNGs under `test/goldens/`.
 ///
-/// Run with `flutter test --update-goldens test/golden_test.dart` to refresh them
+/// Run with `flutter test --run-skipped --update-goldens test/golden_test.dart` to refresh them
 /// after a visual change, then look at the files. They are review aids first and
 /// regression guards second, so they are tagged and excluded from the default run —
 /// font rasterisation differs enough between machines that failing CI on a pixel
