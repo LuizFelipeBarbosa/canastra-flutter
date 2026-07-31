@@ -53,7 +53,12 @@ void main() {
     final seed = trace['seed'] as int;
 
     test('$profile ${numPlayers}p seed $seed matches the Python engine', () {
-      final cfg = loadProfile(profile, numPlayers: numPlayers);
+      // The Python reference predates the sole-pile rediscard ban, so the
+      // traces replay with the rule switched off.
+      final base = loadProfile(profile, numPlayers: numPlayers);
+      final cfg = base.withDiscardPile(
+        base.discardPile.copyWith(soleBuyRediscardBan: false),
+      );
       final stock = (trace['stock'] as List).cast<int>().toList();
       final state = dealRoundFromStock(cfg, stock);
 

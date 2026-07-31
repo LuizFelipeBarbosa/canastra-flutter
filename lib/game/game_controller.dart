@@ -370,7 +370,9 @@ class GameController extends ChangeNotifier {
     final move = discardMove;
     if (move == null) {
       if (_selection.length == 1 && myTurn) {
-        _refusal = goOutRefusal ?? Refusal.notAllowedYet;
+        _refusal = _selection.single == _view?.boughtSolePileCard
+            ? Refusal.justBought
+            : goOutRefusal ?? Refusal.notAllowedYet;
         notifyListeners();
       }
       return;

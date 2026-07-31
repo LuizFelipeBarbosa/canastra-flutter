@@ -102,6 +102,7 @@ TableView _tableView() {
     frozen: false,
     pileBlocked: false,
     pendingPileCard: null,
+    boughtSolePileCard: null,
     initialMeldDone: const [false, false],
     initialMeldMin: const [0, 0],
     stagedPoints: 0,

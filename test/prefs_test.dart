@@ -30,6 +30,8 @@ void main() {
     expect(prefs.lang, Lang.en);
     expect(prefs.target, 3000);
     expect(prefs.variant, 'buraco');
+    expect(prefs.players, 2);
+    expect(prefs.handOrder, HandOrder.suit);
     expect(prefs.played, 0);
   });
 
@@ -41,6 +43,8 @@ void main() {
     first.setLevel(2);
     first.setTarget(5000);
     first.setVariant('canasta');
+    first.setPlayers(4);
+    first.setHandOrder(HandOrder.rank);
 
     final second = await _reload();
     expect(second.dark, isFalse);
@@ -49,6 +53,14 @@ void main() {
     expect(second.level, 2);
     expect(second.target, 5000);
     expect(second.variant, 'canasta');
+    expect(second.players, 4);
+    expect(second.handOrder, HandOrder.rank);
+  });
+
+  test('a player count nobody offers falls back to the default', () async {
+    SharedPreferences.setMockInitialValues({'bl.prefs': 'players=3'});
+    final prefs = await _reload();
+    expect(prefs.players, 2);
   });
 
   test('the streak survives a reload', () async {

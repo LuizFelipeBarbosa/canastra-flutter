@@ -164,6 +164,10 @@ class DiscardPileConfig {
   final bool frozenNeedsTwoNaturals;
   final bool noImmediateRedrawDiscard;
 
+  /// Whole-pile draw rules: buying a single-card pile and discarding that same
+  /// card straight back is a stalling no-op, so it is banned.
+  final bool soleBuyRediscardBan;
+
   const DiscardPileConfig({
     this.visibility = visibilityFullOpen,
     this.drawRule = drawWholePile,
@@ -171,7 +175,29 @@ class DiscardPileConfig {
     this.freezeEnabled = false,
     this.frozenNeedsTwoNaturals = false,
     this.noImmediateRedrawDiscard = false,
+    this.soleBuyRediscardBan = false,
   });
+
+  /// Rebuilds the pile rules while preserving every field not overridden.
+  DiscardPileConfig copyWith({
+    String? visibility,
+    String? drawRule,
+    bool? initialUpcard,
+    bool? freezeEnabled,
+    bool? frozenNeedsTwoNaturals,
+    bool? noImmediateRedrawDiscard,
+    bool? soleBuyRediscardBan,
+  }) => DiscardPileConfig(
+    visibility: visibility ?? this.visibility,
+    drawRule: drawRule ?? this.drawRule,
+    initialUpcard: initialUpcard ?? this.initialUpcard,
+    freezeEnabled: freezeEnabled ?? this.freezeEnabled,
+    frozenNeedsTwoNaturals:
+        frozenNeedsTwoNaturals ?? this.frozenNeedsTwoNaturals,
+    noImmediateRedrawDiscard:
+        noImmediateRedrawDiscard ?? this.noImmediateRedrawDiscard,
+    soleBuyRediscardBan: soleBuyRediscardBan ?? this.soleBuyRediscardBan,
+  );
 }
 
 class GoingOutConfig {
@@ -334,6 +360,23 @@ class RulesConfig {
     initialMeld: initialMeld,
     specialThrees: specialThrees,
     scoring: scoring.copyWith(matchTarget: target),
+    turn: turn,
+  );
+
+  /// The same rules with a different discard-pile policy — the seam the parity
+  /// tests rebuild a profile through when a pile rule postdates the traces.
+  RulesConfig withDiscardPile(DiscardPileConfig discardPile) => RulesConfig(
+    name: name,
+    table: table,
+    deck: deck,
+    wildcard: wildcard,
+    meld: meld,
+    morto: morto,
+    discardPile: discardPile,
+    goingOut: goingOut,
+    initialMeld: initialMeld,
+    specialThrees: specialThrees,
+    scoring: scoring,
     turn: turn,
   );
 }

@@ -341,6 +341,23 @@ void main() {
     );
   });
 
+  test(
+    'discarding the just-bought sole pile card is refused as such',
+    () async {
+      final table = await _table(
+        rig: (host) {
+          _setPlayHand(host, [kingHearts, fiveClubs, ...ballast]);
+          host.match.round.boughtSolePileCard = kingHearts;
+        },
+      );
+      table.controller.toggleCard(kingHearts);
+
+      table.controller.discardSelection();
+      expect(table.controller.refusal, equals(Refusal.justBought));
+      expect(table.transport.submitCount, isZero);
+    },
+  );
+
   test('dirty canastras do not satisfy a clean-canastra requirement', () async {
     final base = loadProfile('buraco', numPlayers: 2);
     final cleanRequired = RulesConfig(

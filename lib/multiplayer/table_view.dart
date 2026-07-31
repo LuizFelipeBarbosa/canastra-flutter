@@ -179,6 +179,7 @@ class TableView {
   final bool frozen;
   final bool pileBlocked;
   final CardId? pendingPileCard;
+  final CardId? boughtSolePileCard;
   final List<bool> initialMeldDone;
   final List<int> initialMeldMin;
   final int stagedPoints;
@@ -226,6 +227,7 @@ class TableView {
     required this.frozen,
     required this.pileBlocked,
     required this.pendingPileCard,
+    required this.boughtSolePileCard,
     required this.initialMeldDone,
     required this.initialMeldMin,
     required this.stagedPoints,
@@ -276,6 +278,7 @@ class TableView {
     'frozen': frozen,
     'pileBlocked': pileBlocked,
     'pendingPileCard': pendingPileCard,
+    'boughtSolePileCard': boughtSolePileCard,
     'initialMeldDone': initialMeldDone,
     'initialMeldMin': initialMeldMin,
     'stagedPoints': stagedPoints,
@@ -321,6 +324,7 @@ class TableView {
     frozen: j['frozen'] as bool,
     pileBlocked: j['pileBlocked'] as bool,
     pendingPileCard: j['pendingPileCard'] as int?,
+    boughtSolePileCard: j['boughtSolePileCard'] as int?,
     initialMeldDone: (j['initialMeldDone'] as List).cast<bool>(),
     initialMeldMin: (j['initialMeldMin'] as List).cast<int>(),
     stagedPoints: j['stagedPoints'] as int,
@@ -444,6 +448,7 @@ TableView buildTableView(
     frozen: state.frozen,
     pileBlocked: state.pileBlockedForNext,
     pendingPileCard: state.pendingPileCard,
+    boughtSolePileCard: state.boughtSolePileCard,
     initialMeldDone: List.of(state.initialMeldDone),
     initialMeldMin: List.of(state.initialMeldMin),
     stagedPoints: state.stagedPoints,
@@ -503,6 +508,7 @@ TableView buildSpectatorView(
     frozen: state.frozen,
     pileBlocked: state.pileBlockedForNext,
     pendingPileCard: state.pendingPileCard,
+    boughtSolePileCard: state.boughtSolePileCard,
     initialMeldDone: List.of(state.initialMeldDone),
     initialMeldMin: List.of(state.initialMeldMin),
     stagedPoints: state.stagedPoints,

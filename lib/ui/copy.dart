@@ -35,6 +35,9 @@ class Copy {
   final String setupTitle;
   final String opponent;
   final String target;
+  final String handOrder;
+  final String orderBySuit;
+  final String orderByRank;
   final String deal;
   final String online;
 
@@ -113,6 +116,7 @@ class Copy {
   final String wnGoOut;
   final String wnMorto;
   final String wnNotAllowedYet;
+  final String wnJustBought;
 
   // --- what the opponent just did ---
   final String tookPile;
@@ -132,6 +136,11 @@ class Copy {
   final String matchLine;
   final String nextRound;
   final String newMatch;
+
+  // --- leaving the game ---
+  final String leaveTitle;
+  final String leaveConfirm;
+  final String leaveStay;
 
   /// Score-sheet line names, keyed by the engine's own label for the line.
   final Map<String, String> scoreLines;
@@ -195,6 +204,9 @@ class Copy {
     required this.setupTitle,
     required this.opponent,
     required this.target,
+    required this.handOrder,
+    required this.orderBySuit,
+    required this.orderByRank,
     required this.deal,
     required this.online,
     required this.levels,
@@ -247,6 +259,7 @@ class Copy {
     required this.wnGoOut,
     required this.wnMorto,
     required this.wnNotAllowedYet,
+    required this.wnJustBought,
     required this.tookPile,
     required this.discarded,
     required this.melded,
@@ -260,6 +273,9 @@ class Copy {
     required this.matchLine,
     required this.nextRound,
     required this.newMatch,
+    required this.leaveTitle,
+    required this.leaveConfirm,
+    required this.leaveStay,
     required this.scoreLines,
     required this.onlineExplainer,
     required this.onlinePlayers,
@@ -331,6 +347,9 @@ class Copy {
     setupTitle: 'Set the table',
     opponent: 'OPPONENT',
     target: 'PLAY TO',
+    handOrder: 'HAND ORDER',
+    orderBySuit: 'BY SUIT',
+    orderByRank: 'BY NUMBER',
     deal: 'Deal',
     online: 'Play online',
     levels: ['Loose', 'Steady', 'Sharp'],
@@ -400,6 +419,8 @@ class Copy {
     wnGoOut: 'You need one canastra and an empty hand to go out.',
     wnMorto: 'Your morto comes to your hand first.',
     wnNotAllowedYet: "The rules don't allow that right now.",
+    wnJustBought:
+        "You just bought that card — it can't go straight back on the pile.",
     tookPile: 'TOOK THE PILE',
     discarded: 'DISCARDED',
     melded: 'MELDED',
@@ -413,6 +434,9 @@ class Copy {
     matchLine: 'MATCH · FIRST TO ',
     nextRound: 'Deal the next round',
     newMatch: 'New match',
+    leaveTitle: 'Leave the game?',
+    leaveConfirm: 'Leave',
+    leaveStay: 'Keep playing',
     scoreLines: {
       'Melded cards': 'Melded cards',
       'Canastra bonuses': 'Canastra bonuses',
@@ -467,6 +491,9 @@ class Copy {
     setupTitle: 'Prepare a mesa',
     opponent: 'ADVERSÁRIO',
     target: 'JOGAR ATÉ',
+    handOrder: 'ORDEM DA MÃO',
+    orderBySuit: 'POR NAIPE',
+    orderByRank: 'POR NÚMERO',
     deal: 'Distribuir',
     online: 'Jogar online',
     levels: ['Solto', 'Firme', 'Afiado'],
@@ -535,6 +562,8 @@ class Copy {
     wnGoOut: 'Para bater você precisa de uma canastra e da mão vazia.',
     wnMorto: 'O morto vem para a sua mão primeiro.',
     wnNotAllowedYet: 'As regras não permitem isso agora.',
+    wnJustBought:
+        'Você acabou de comprar essa carta — ela não volta para o lixo agora.',
     tookPile: 'PEGOU O LIXO',
     discarded: 'DESCARTOU',
     melded: 'BAIXOU',
@@ -548,6 +577,9 @@ class Copy {
     matchLine: 'PARTIDA · ATÉ ',
     nextRound: 'Distribuir a próxima',
     newMatch: 'Nova partida',
+    leaveTitle: 'Sair do jogo?',
+    leaveConfirm: 'Sair',
+    leaveStay: 'Continuar jogando',
     scoreLines: {
       'Melded cards': 'Cartas baixadas',
       'Canastra bonuses': 'Bônus de canastra',

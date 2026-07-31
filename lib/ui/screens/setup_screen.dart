@@ -96,6 +96,45 @@ class _SetupScreenState extends State<SetupScreen> {
                 ),
                 const SizedBox(height: 20),
 
+                if (profile.playerCounts.length > 1) ...[
+                  ChoiceField(
+                    label: l.onlinePlayers,
+                    palette: p,
+                    children: [
+                      for (final n in profile.playerCounts)
+                        Segment(
+                          label: n == 2
+                              ? l.onlineTwoPlayers
+                              : l.onlineFourPlayers,
+                          selected: n == prefs.playersFor(profile),
+                          palette: p,
+                          onTap: () => prefs.setPlayers(n),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                ],
+
+                ChoiceField(
+                  label: l.handOrder,
+                  palette: p,
+                  children: [
+                    Segment(
+                      label: l.orderBySuit,
+                      selected: prefs.handOrder == HandOrder.suit,
+                      palette: p,
+                      onTap: () => prefs.setHandOrder(HandOrder.suit),
+                    ),
+                    Segment(
+                      label: l.orderByRank,
+                      selected: prefs.handOrder == HandOrder.rank,
+                      palette: p,
+                      onTap: () => prefs.setHandOrder(HandOrder.rank),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+
                 ChoiceRow(
                   children: [
                     Segment(
@@ -141,7 +180,7 @@ class _SetupScreenState extends State<SetupScreen> {
                       MaterialPageRoute<void>(
                         builder: (_) => OnlineScreen(
                           profileId: prefs.variant,
-                          numPlayers: profile.playerCounts.first,
+                          numPlayers: prefs.playersFor(profile),
                         ),
                       ),
                     ),
@@ -166,7 +205,7 @@ class _SetupScreenState extends State<SetupScreen> {
         : accountName;
     final profile = profileById(prefs.variant);
     final cfg = profile
-        .build(numPlayers: profile.playerCounts.first)
+        .build(numPlayers: prefs.playersFor(profile))
         .withMatchTarget(prefs.target);
     // A visible seed would let players compare deals; an invisible one just has
     // to differ between games.

@@ -67,6 +67,10 @@ void _applyDraw(RoundState state, GameAction action) {
     }
     final rule = state.cfg.discardPile.drawRule;
     if (rule == drawWholePile) {
+      if (state.cfg.discardPile.soleBuyRediscardBan &&
+          state.trash.length == 1) {
+        state.boughtSolePileCard = state.trash.single;
+      }
       for (final ct in state.trash) {
         hand[ct] = (hand[ct] ?? 0) + 1;
       }
@@ -313,6 +317,7 @@ void _endTurn(RoundState state) {
   state.phase = Phase.draw;
   state.turnNumber += 1;
   state.justDrawnFromPile = null;
+  state.boughtSolePileCard = null;
   // Staging is per-turn; a turn cannot end mid-staging.
   state.stagedPoints = 0;
 

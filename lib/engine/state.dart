@@ -62,6 +62,10 @@ class RoundState {
   /// Top-card draw rules only.
   CardId? justDrawnFromPile;
 
+  /// The lone card just bought as a whole pile, when the profile bans
+  /// rediscarding it. Transient: recomputed on replay, never serialized.
+  CardId? boughtSolePileCard;
+
   /// Canasta black-three; always false in Buraco.
   bool pileBlockedForNext;
 
@@ -94,6 +98,7 @@ class RoundState {
     this.phase = Phase.draw,
     this.turnNumber = 0,
     this.justDrawnFromPile,
+    this.boughtSolePileCard,
     this.pileBlockedForNext = false,
     this.frozen = false,
     List<bool>? initialMeldDone,

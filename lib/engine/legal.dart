@@ -97,6 +97,13 @@ bool discardAllowed(RoundState state, CardId ct) {
       ct == state.justDrawnFromPile) {
     return false;
   }
+  // The hand-type guard is a deadlock valve: when the bought type is the only
+  // type left in hand, the discard has to stay legal.
+  if (state.cfg.discardPile.soleBuyRediscardBan &&
+      ct == state.boughtSolePileCard &&
+      state.hands[player].length > 1) {
+    return false;
+  }
   if (state.handSize(player) == 1) {
     // Emptying discard.
     if (mortoAvailable(state, side)) return true; // batida indireta
