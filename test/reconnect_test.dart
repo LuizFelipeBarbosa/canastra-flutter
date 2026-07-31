@@ -215,6 +215,75 @@ void main() {
     await tester.pump();
   });
 
+  for (final surfaceSize in const [Size(1280, 820), Size(600, 200)]) {
+    testWidgets('the leave dialog stays operable while reconnecting at '
+        '${surfaceSize.width.toInt()}x${surfaceSize.height.toInt()}', (
+      tester,
+    ) async {
+      tester.view.physicalSize = surfaceSize;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      final transport = _ScriptedTransport();
+      final controller = GameController(
+        cfg: loadProfile('buraco', numPlayers: 2),
+        transport: transport,
+        autoReady: false,
+      );
+      addTearDown(() async {
+        await tester.pumpWidget(const SizedBox());
+        await tester.pump();
+      });
+      final prefs = AppPrefs();
+      late BuildContext homeContext;
+
+      await tester.pumpWidget(
+        AppScope(
+          prefs: prefs,
+          child: MaterialApp(
+            theme: buildTheme(prefs.palette, dark: prefs.dark),
+            home: MediaQuery(
+              data: const MediaQueryData(disableAnimations: true),
+              child: Builder(
+                builder: (context) {
+                  homeContext = context;
+                  return const Scaffold(body: SizedBox());
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+      Navigator.of(homeContext).push(
+        MaterialPageRoute<void>(
+          builder: (_) => GameScreen(controller: controller),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 2));
+
+      transport.emit(TableUpdate(view: _tableView()));
+      await tester.pump();
+
+      transport.setReconnecting(true);
+      // The signal crosses a stream, the controller's listener, and a setState
+      // before it is visible — one frame is not enough.
+      await tester.pump();
+      await tester.pump();
+      expect(controller.reconnecting, isTrue);
+
+      await tester.binding.handlePopRoute();
+      await tester.pump();
+      expect(find.text('Leave the game?'), findsOneWidget);
+
+      await tester.tap(find.text('Keep playing'));
+      await tester.pump();
+      expect(find.text('Leave the game?'), findsNothing);
+      expect(find.byType(GameScreen), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   group('WebSocketTransport retry delay', () {
     test('uses the longer retry budget by default', () async {
       final transport = WebSocketTransport(

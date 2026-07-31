@@ -358,6 +358,26 @@ void main() {
     },
   );
 
+  test(
+    'discarding the sole remaining bought card reports the going-out refusal',
+    () async {
+      final table = await _table(
+        rig: (host) {
+          _setPlayHand(host, [kingHearts]);
+          host.match.round
+            ..boughtSolePileCard = kingHearts
+            ..mortoTaken[0] = true;
+        },
+      );
+      table.controller.toggleCard(kingHearts);
+
+      table.controller.discardSelection();
+      expect(table.controller.refusal, equals(Refusal.needCanastra));
+      expect(table.controller.refusal, isNot(Refusal.justBought));
+      expect(table.transport.submitCount, isZero);
+    },
+  );
+
   test('dirty canastras do not satisfy a clean-canastra requirement', () async {
     final base = loadProfile('buraco', numPlayers: 2);
     final cleanRequired = RulesConfig(

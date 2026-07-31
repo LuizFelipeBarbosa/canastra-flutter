@@ -123,7 +123,7 @@ class AppPrefs extends ChangeNotifier {
           _variant = value;
         case 'players':
           final n = int.tryParse(value);
-          if (n != null && (n == 2 || n == 4)) _players = n;
+          if (n != null) _players = n;
         case 'handOrder':
           _handOrder = HandOrder.byName(value);
         case 'streak':

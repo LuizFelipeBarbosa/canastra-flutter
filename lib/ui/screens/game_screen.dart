@@ -302,12 +302,15 @@ class _GameScreenState extends State<GameScreen> {
           fit: StackFit.expand,
           children: [
             IgnorePointer(
-              ignoring: c.reconnecting,
+              // A reconnect must not trap the player inside the game.
+              ignoring: c.reconnecting && !_confirmLeave,
               child: Opacity(opacity: c.reconnecting ? 0.55 : 1, child: table),
             ),
             if (c.reconnecting)
-              Center(
-                child: Text(l.reconnecting, style: mono(10, color: p.mint)),
+              IgnorePointer(
+                child: Center(
+                  child: Text(l.reconnecting, style: mono(10, color: p.mint)),
+                ),
               ),
           ],
         ),
@@ -507,8 +510,8 @@ class _GameScreenState extends State<GameScreen> {
           ],
           Pill(
             label: prefs.handOrder == HandOrder.suit
-                ? l.orderByRank
-                : l.orderBySuit,
+                ? l.orderBySuit
+                : l.orderByRank,
             palette: p,
             round: true,
             onTap: prefs.toggleHandOrder,
@@ -818,37 +821,41 @@ class _ConfirmLeave extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = palette;
-    return ColoredBox(
-      color: p.scrim,
-      child: Center(
-        child: Container(
-          width: 380,
-          padding: const EdgeInsets.fromLTRB(32, 28, 32, 26),
-          decoration: BoxDecoration(
-            color: p.sheet,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: p.line),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                copy.leaveTitle,
-                style: T.display(24, tracking: -0.8, color: p.text),
-              ),
-              const SizedBox(height: 22),
-              MintButton(label: copy.leaveStay, palette: p, onTap: onStay),
-              const SizedBox(height: 16),
-              Center(
-                child: TextLink(
-                  label: copy.leaveConfirm,
-                  palette: p,
-                  color: p.pink,
-                  onTap: onLeave,
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {},
+      child: ColoredBox(
+        color: p.scrim,
+        child: Center(
+          child: Container(
+            width: 380,
+            padding: const EdgeInsets.fromLTRB(32, 28, 32, 26),
+            decoration: BoxDecoration(
+              color: p.sheet,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: p.line),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  copy.leaveTitle,
+                  style: T.display(24, tracking: -0.8, color: p.text),
                 ),
-              ),
-            ],
+                const SizedBox(height: 22),
+                MintButton(label: copy.leaveStay, palette: p, onTap: onStay),
+                const SizedBox(height: 16),
+                Center(
+                  child: TextLink(
+                    label: copy.leaveConfirm,
+                    palette: p,
+                    color: p.pink,
+                    onTap: onLeave,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
