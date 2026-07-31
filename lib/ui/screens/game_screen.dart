@@ -73,8 +73,13 @@ class _GameScreenState extends State<GameScreen> {
   bool _matchRecorded = false;
   bool _confirmLeave = false;
 
-  /// The meld being read, when a stack is too narrow to read on the felt.
-  MeldView? _inspecting;
+  /// Which meld is being read, when a stack is too narrow to read on the felt.
+  ///
+  /// The place rather than the cards: a meld held onto here by value would go on
+  /// showing the hand it had when it was tapped, and would outlive the round it
+  /// belonged to. Resolved against the live layout on every build instead, so
+  /// extending the meld updates the sheet and clearing the table closes it.
+  ({bool mine, int slot})? _inspecting;
 
   /// The toggles, opened out, when the header is too narrow to carry them.
   bool _settingsOpen = false;
@@ -275,6 +280,7 @@ class _GameScreenState extends State<GameScreen> {
           ),
         );
         final cards = _cardIdentities.assign(layout.cards);
+        final inspected = _inspectedIn(layout);
 
         return [
           ..._meldBoxes(layout, p),
@@ -285,15 +291,6 @@ class _GameScreenState extends State<GameScreen> {
           _opponents(m, view, l, p),
           if (!c.spectating) _strip(m, view, l, p),
           _whyNot(m, l, p),
-          if (view.roundOver || view.matchOver)
-            Positioned.fill(
-              child: RoundSheet(
-                view: view,
-                palette: p,
-                copy: l,
-                onContinue: view.matchOver ? c.rematch : c.nextRound,
-              ),
-            ),
           if (_settingsOpen)
             Positioned.fill(
               child: _SettingsSheet(
@@ -303,12 +300,23 @@ class _GameScreenState extends State<GameScreen> {
                 onClose: () => setState(() => _settingsOpen = false),
               ),
             ),
-          if (_inspecting case final meld?)
+          if (inspected case final meld?)
             Positioned.fill(
               child: _MeldSheet(
                 meld: meld,
                 palette: p,
                 onClose: () => setState(() => _inspecting = null),
+              ),
+            ),
+          // The end of a round outranks anything the player opened over the
+          // table, so it comes last and covers them rather than arriving behind.
+          if (view.roundOver || view.matchOver)
+            Positioned.fill(
+              child: RoundSheet(
+                view: view,
+                palette: p,
+                copy: l,
+                onContinue: view.matchOver ? c.rematch : c.nextRound,
               ),
             ),
           if (_confirmLeave)
@@ -392,11 +400,22 @@ class _GameScreenState extends State<GameScreen> {
           onTap: spot.open
               ? () => c.extendMeld(spot.slot)
               : spot.compact
-              ? () => setState(() => _inspecting = spot.meld)
+              ? () => setState(
+                  () => _inspecting = (mine: spot.mine, slot: spot.slot),
+                )
               : null,
         ),
       ),
   ];
+
+  MeldView? _inspectedIn(TableLayout layout) {
+    final at = _inspecting;
+    if (at == null) return null;
+    for (final spot in layout.melds) {
+      if (spot.mine == at.mine && spot.slot == at.slot) return spot.meld;
+    }
+    return null;
+  }
 
   List<Widget> _zones(TableLayout layout, Palette p) => [
     for (final zone in layout.zones)
@@ -512,7 +531,7 @@ class _GameScreenState extends State<GameScreen> {
     Palette p,
     Copy l,
   ) {
-    final narrow = m.meldStyle == MeldStyle.stacked;
+    final narrow = m.narrow;
     return Positioned(
       left: 0,
       right: 0,
@@ -525,7 +544,8 @@ class _GameScreenState extends State<GameScreen> {
             BackLink(
               // Narrow: the arrow alone. Every point here is a point the score
               // cannot have.
-              label: narrow ? '' : l.back,
+              label: l.back,
+              showLabel: !narrow,
               palette: p,
               onTap: () => Navigator.of(context).maybePop(),
             ),
@@ -566,7 +586,7 @@ class _GameScreenState extends State<GameScreen> {
             // A narrow table has room for the score and one way in to everything
             // else. The streak is on the landing screen too, and the four toggles
             // move into a sheet where they are also finally big enough to hit.
-            if (m.meldStyle == MeldStyle.stacked) ...[
+            if (narrow) ...[
               Pill(
                 label: l.settings,
                 palette: p,
@@ -653,7 +673,7 @@ class _GameScreenState extends State<GameScreen> {
     );
     // Three chips leave a narrow table nothing for the activity line, so there
     // it gets the row underneath instead of a sliver of this one.
-    final ownRow = m.meldStyle == MeldStyle.stacked;
+    final ownRow = m.narrow;
 
     // Bounded, so three opponents plus a long activity line on a four-handed
     // table run out of room rather than off the felt.
@@ -1020,7 +1040,7 @@ class _MeldSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = palette;
     final l = context.copy;
-    const scale = 0.575;
+    final scale = TableMetrics.landscape.meldScale;
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,

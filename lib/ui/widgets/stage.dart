@@ -67,6 +67,12 @@ extension StageContext on BuildContext {
   /// Which stage this screen is on, read from the window rather than from a
   /// [LayoutBuilder] — for the screens that need to drop a column on a phone
   /// without owning the constraints themselves.
+  ///
+  /// The window is only the right question where the screen fills it. [Stage]
+  /// and [Room] decide the same thing from their own constraints, and the two
+  /// answers agree only for a full-bleed [Scaffold] body — which is every
+  /// caller today. A screen laid out inside something smaller must ask a
+  /// [LayoutBuilder] instead, or it will be told it is on a stage it is not on.
   StageMetrics get stage =>
       StageMetrics.of(BoxConstraints.tight(MediaQuery.sizeOf(this)));
 }

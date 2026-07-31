@@ -230,11 +230,18 @@ class BackLink extends StatelessWidget {
   final Palette palette;
   final VoidCallback onTap;
 
+  /// Whether the word is drawn beside the arrow. A bar too narrow for both
+  /// leaves the arrow to speak for itself — but the label is still required,
+  /// because [Semantics] always speaks it and a nameless button is no way out
+  /// of a screen.
+  final bool showLabel;
+
   const BackLink({
     super.key,
     required this.label,
     required this.palette,
     required this.onTap,
+    this.showLabel = true,
   });
 
   @override
@@ -249,9 +256,7 @@ class BackLink extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.arrow_back, size: 12, color: tint),
-            // An empty label leaves the arrow to speak for itself, which is what
-            // a bar too narrow for both asks for. The word stays in [Semantics].
-            if (label.isNotEmpty) ...[
+            if (showLabel) ...[
               const SizedBox(width: 6),
               Text(label, style: mono(11, color: tint)),
             ],

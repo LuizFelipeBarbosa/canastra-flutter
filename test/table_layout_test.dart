@@ -28,6 +28,18 @@ Map<CardId, String> _keysByCard(Iterable<CardSpot> spots) => {
 
 String _count(int value) => '$value';
 
+/// The far edge of the felt, with a float's worth of slack: a row whose scale
+/// was solved to fill its span exactly lands on the margin, and does not land
+/// on it in binary.
+Matcher _withinFelt(TableMetrics m) =>
+    lessThanOrEqualTo(m.size.width - m.margin + 1e-9);
+
+/// Every card the layout drew into a meld, in the order it drew them.
+List<CardSpot> _meldedCards(TableLayout layout) => [
+  for (final spot in layout.cards)
+    if (spot.key.startsWith('meld:')) spot,
+];
+
 const _words = ZoneWords(
   stock: 'stock',
   pile: 'pile',
@@ -44,23 +56,31 @@ const _words = ZoneWords(
   cards: _count,
 );
 
+/// A table with a whole side's worth of melds down.
+///
+/// [owner] is the side that laid them: 0 is yours, and anything else is the
+/// opponent's row, which is laid out on its own terms and was for a long time
+/// never exercised here at all.
 TableLayout _crowdedTableLayout({
   List<CardId> hand = const [],
   List<CardId>? handOverride,
   TableMetrics metrics = TableMetrics.landscape,
   List<int> handSizes = const [0, 0],
   int numPlayers = 2,
+  int owner = 0,
+  int meldCount = 9,
+  int meldSize = 7,
 }) {
   final melds = [
-    for (var slot = 0; slot < 9; slot++)
+    for (var slot = 0; slot < meldCount; slot++)
       MeldView(
-        owner: 0,
+        owner: owner,
         isSequence: false,
         suit: null,
         rank: slot,
         startPos: null,
         cards: [
-          for (var copy = 0; copy < 7; copy++)
+          for (var copy = 0; copy < meldSize; copy++)
             cardId(slot, copy % Suit.values.length),
         ],
         wildIndices: const [],
@@ -361,6 +381,118 @@ void main() {
       expect(meld.x + meld.width, lessThanOrEqualTo(m.size.width - m.margin));
       expect(meld.y + meld.height, lessThanOrEqualTo(m.playY));
     }
+  });
+
+  // One to ten melds down, of three to fourteen cards each, on either side —
+  // the whole range a side can reach in a game, and the range the fit has to
+  // survive. The two stages give ground very differently once it is crowded, so
+  // each gets the test its own concessions can pass.
+  const counts = 10;
+  const sizes = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
+
+  test('a row of stacks stays on the felt at every size a side can meld', () {
+    const m = TableMetrics.portrait;
+    for (var count = 1; count <= counts; count++) {
+      for (final size in sizes) {
+        // The opponent is the harder of the two: their melds get one row and
+        // yours get two, so ten of theirs meet the felt side by side.
+        for (final owner in const [0, 1]) {
+          final layout = _crowdedTableLayout(
+            metrics: m,
+            owner: owner,
+            meldCount: count,
+            meldSize: size,
+          );
+          final where = 'side $owner, $count melds of $size';
+
+          expect(layout.melds.length, count, reason: where);
+          for (final meld in layout.melds) {
+            expect(meld.x, greaterThanOrEqualTo(m.margin), reason: where);
+            expect(meld.x + meld.width, _withinFelt(m), reason: where);
+          }
+          for (final spot in _meldedCards(layout)) {
+            expect(
+              spot.x + kCardWidth * spot.scale,
+              _withinFelt(m),
+              reason: where,
+            );
+            expect(
+              spot.scale,
+              greaterThanOrEqualTo(m.minMeldScale),
+              reason: where,
+            );
+          }
+        }
+      }
+    }
+  });
+
+  test('a spread row leaves the felt only once it is at its floor', () {
+    const m = TableMetrics.landscape;
+    // A wide table has only the one concession to make. Past the point where a
+    // rank in the corner would start to be covered it is documented to overflow
+    // rather than become unreadable, and six melds of fourteen still do — the
+    // felt holds five. What is checked here is that nothing leaves early:
+    // whatever overflows has spent its compression first, and no card on a
+    // spread row is ever drawn smaller than the design's size.
+    final floor = m.meldCardWidth * 0.26;
+    for (var count = 1; count <= counts; count++) {
+      for (final size in sizes) {
+        for (final owner in const [0, 1]) {
+          final layout = _crowdedTableLayout(
+            metrics: m,
+            owner: owner,
+            meldCount: count,
+            meldSize: size,
+          );
+          final where = 'side $owner, $count melds of $size';
+          final drawn = _meldedCards(layout);
+
+          for (final meld in layout.melds) {
+            expect(meld.x, greaterThanOrEqualTo(m.margin), reason: where);
+          }
+          for (final spot in drawn) {
+            expect(spot.scale, m.meldScale, reason: where);
+          }
+
+          final overflowed = layout.melds.any(
+            (meld) => meld.x + meld.width > m.size.width - m.margin + 1e-9,
+          );
+          if (overflowed) {
+            expect(drawn[1].x - drawn[0].x, moreOrLessEquals(floor));
+            continue;
+          }
+          for (final spot in drawn) {
+            expect(spot.x + kCardWidth * spot.scale, _withinFelt(m));
+          }
+        }
+      }
+    }
+  });
+
+  test('a stack is no wider at fourteen cards than at seven', () {
+    const m = TableMetrics.portrait;
+    List<double> widths(int size) => [
+      for (final meld in _crowdedTableLayout(
+        metrics: m,
+        meldCount: 5,
+        meldSize: size,
+      ).melds)
+        meld.width,
+    ];
+
+    expect(widths(14), widths(7));
+
+    // Every card in the stack is still its own spot, so melding one has
+    // somewhere to glide to. The ones past the thickness simply arrive
+    // underneath the card on top.
+    final drawn = _meldedCards(
+      _crowdedTableLayout(metrics: m, meldCount: 1, meldSize: 14),
+    );
+    expect(drawn.length, 14);
+    expect(drawn.map((spot) => spot.key).toSet().length, 14);
+    expect(drawn.last.x, drawn[m.meldStackDepth].x);
+    expect(drawn[m.meldStackDepth].x, greaterThan(drawn.first.x));
   });
 
   test('rank-major order groups ranks, ties by suit, jokers last', () {

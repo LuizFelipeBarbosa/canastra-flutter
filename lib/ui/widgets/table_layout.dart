@@ -67,6 +67,27 @@ class TableMetrics {
   /// How your melds are packed onto their row, or rows.
   final MeldStyle meldStyle;
 
+  /// Whether the chrome has to fold: the header's four toggles into one way in
+  /// to all of them, the back link down to its arrow, the activity line onto a
+  /// row of its own. Nothing to do with the melds — a stage can be too narrow
+  /// for a row of pills and still have room to spread them.
+  final bool narrow;
+
+  /// The air a meld box keeps around its cards. A spread meld is a named frame
+  /// and can wear the padding; a stack is barely wider than the one card it
+  /// shows, and every point spent on its border is a point off the card.
+  final double meldFrame;
+
+  /// How many cards' worth of thickness a stack shows before the rest of the
+  /// meld sits under its top card. Only read when the melds are
+  /// [MeldStyle.stacked]; a spread meld shows every card it has.
+  final int meldStackDepth;
+
+  /// The smallest a melded card may be drawn when a row of stacks will not fit
+  /// any other way. A spread row never reaches for it — on a wide table the
+  /// floor is the size itself, so the search cannot shrink anything.
+  final double minMeldScale;
+
   /// The row the play area sits on, and how tall it is. Only read when the
   /// melds are [MeldStyle.stacked]; a spread row shares its geometry.
   final double playY;
@@ -122,6 +143,10 @@ class TableMetrics {
     required this.meldScale,
     required this.meldOverlap,
     required this.meldStyle,
+    required this.narrow,
+    required this.meldFrame,
+    required this.meldStackDepth,
+    required this.minMeldScale,
     required this.playY,
     required this.playHeight,
     required this.theirRowY,
@@ -154,6 +179,10 @@ class TableMetrics {
     meldScale: 0.575,
     meldOverlap: 0.42,
     meldStyle: MeldStyle.spread,
+    narrow: false,
+    meldFrame: 18,
+    meldStackDepth: 3,
+    minMeldScale: 0.575,
     playY: 358,
     playHeight: 88.445,
     theirRowY: 116,
@@ -191,6 +220,10 @@ class TableMetrics {
     meldScale: 0.42,
     meldOverlap: 0.075,
     meldStyle: MeldStyle.stacked,
+    narrow: true,
+    meldFrame: 6,
+    meldStackDepth: 3,
+    minMeldScale: 0.25,
     playY: 550,
     playHeight: 56,
     theirRowY: 172,
@@ -220,13 +253,16 @@ class TableMetrics {
   double get meldCardWidth => kCardWidth * meldScale;
   double get meldCardHeight => kCardHeight * meldScale;
 
-  /// How far apart the cards in a meld sit before any compression.
-  double get meldStep => meldCardWidth * meldOverlap;
-
   /// A meld box is its cards plus room for its name underneath. A stack has
   /// only a count and a score to fit under it, so it needs less.
-  double get meldBoxHeight =>
-      meldCardHeight + (meldStyle == MeldStyle.spread ? 26 : 20);
+  ///
+  /// A row that had to shrink its cards to fit is shorter than the metric's
+  /// own, which is why the height is asked for at a scale rather than read off
+  /// [meldScale].
+  double meldBoxHeightAt(double scale) =>
+      kCardHeight * scale + (meldStyle == MeldStyle.spread ? 26 : 20);
+
+  double get meldBoxHeight => meldBoxHeightAt(meldScale);
 
   /// How far apart your two rows of melds sit, when there are two.
   double get meldRowPitch => meldBoxHeight + 6;
@@ -808,13 +844,16 @@ double _melds(LayoutInput input, List<MeldSpot> melds, List<CardSpot> cards) {
         from,
         end < owned.length ? end : owned.length,
       );
-      final step = _fittedStep(inRow, m, available: available);
+      final fit = _fitRow(inRow, m, available: available);
+      final cardWidth = kCardWidth * fit.scale;
+      final inset = m.meldFrame / 2;
       var x = m.margin;
 
       for (var i = 0; i < inRow.length; i++) {
         final slot = from + i;
         final meld = inRow[i];
-        final width = 18 + m.meldCardWidth + step * (meld.size - 1);
+        final width =
+            m.meldFrame + cardWidth + fit.step * _thickness(meld.size - 1, m);
         final y = (mine ? m.myRowY : m.theirRowY) + row * m.meldRowPitch;
         melds.add(
           MeldSpot(
@@ -824,7 +863,7 @@ double _melds(LayoutInput input, List<MeldSpot> melds, List<CardSpot> cards) {
             x: x,
             y: y,
             width: width,
-            height: m.meldBoxHeight,
+            height: m.meldBoxHeightAt(fit.scale),
             compact: m.meldStyle == MeldStyle.stacked,
             open: mine && input.openSlots.contains(slot),
           ),
@@ -834,16 +873,16 @@ double _melds(LayoutInput input, List<MeldSpot> melds, List<CardSpot> cards) {
             CardSpot(
               key: 'meld:$side:$slot:$card',
               card: meld.cards[card],
-              x: x + 9 + card * step,
+              x: x + inset + _thickness(card, m) * fit.step,
               y: y + 8,
-              scale: m.meldScale,
+              scale: fit.scale,
               z: 20 + card,
               faceUp: true,
               asWild: meld.wildIndices.contains(card),
             ),
           );
         }
-        x += width + 8;
+        x += width + _meldGap;
       }
       if (mine) myEndX = x;
     }
@@ -852,36 +891,122 @@ double _melds(LayoutInput input, List<MeldSpot> melds, List<CardSpot> cards) {
   return myEndX;
 }
 
-/// How far apart the cards in a meld sit, so a whole row of them fits the table.
+/// The air between one meld box on a row and the next.
+const double _meldGap = 8;
+
+/// How many cards' worth of offset sit to the left of the card at [index].
+///
+/// A spread meld shows every card it has, so the answer is the index itself. A
+/// stack shows a few cards' worth of thickness and lets the rest of the meld
+/// hide under its top card: the count is printed on the box, and tapping it
+/// opens the meld, so nothing is lost that the reader cannot get back.
+int _thickness(int index, TableMetrics m) =>
+    m.meldStyle == MeldStyle.spread || index < m.meldStackDepth
+    ? index
+    : m.meldStackDepth;
+
+/// How a row of melds is drawn once it has been made to fit.
+class _RowFit {
+  /// How far apart the cards in a meld sit.
+  final double step;
+
+  /// How much of life size those cards are drawn at.
+  final double scale;
+
+  const _RowFit({required this.step, required this.scale});
+}
+
+/// What a row of melds has to give up to fit the table.
 ///
 /// A side melding well can put nine melds down, and a row laid out at the full
 /// spacing would run off the felt and take the melds at the end with it. Rather
-/// than scroll — which would hide them just as effectively — the cards in every
-/// meld on the row slide closer together until the row fits. They stop at the
-/// point where a rank in the corner would start to be covered; past that, a table
-/// this crowded is allowed to overflow rather than become unreadable.
+/// than scroll — which would hide them just as effectively — the row gives
+/// ground in order: first the cards in every meld slide closer together, and
+/// only when that is spent do the cards themselves shrink. A spread row never
+/// reaches the second concession, because on a wide table the first one is
+/// always enough for a row that a wide table can hold at all.
 ///
 /// The opponent can use the full felt, but the player's row passes a narrower
 /// [available] span so compression reserves the play area's tap target instead
 /// of letting an otherwise valid meld box extend underneath it.
-double _fittedStep(
+_RowFit _fitRow(
   List<MeldView> melds,
   TableMetrics m, {
   required double available,
 }) {
-  final step = m.meldStep;
+  if (m.meldStyle == MeldStyle.spread) {
+    return _RowFit(
+      step: _fittedStep(melds, m, m.meldScale, available),
+      scale: m.meldScale,
+    );
+  }
+
+  final tightest = _fittedStep(melds, m, m.meldScale, available);
+  if (_rowWidth(melds, m, m.meldScale, tightest) <= available) {
+    return _RowFit(step: tightest, scale: m.meldScale);
+  }
+
+  // Ten stacks are wider than a phone before a single card is offset, so a row
+  // that has run out of thickness to give has to give card. The scale that
+  // fills the row exactly is the one where the frames, the gaps and every
+  // meld's card and thickness add up to the span; anything smaller than the
+  // floor is a row that would rather overflow than vanish.
+  final fixed = _meldGap * (melds.length - 1) + melds.length * m.meldFrame;
+  var perScale = 0.0;
+  for (final meld in melds) {
+    perScale += kCardWidth * (1 + m.meldOverlap * _thickness(meld.size - 1, m));
+  }
+  final scale = ((available - fixed) / perScale).clamp(
+    m.minMeldScale,
+    m.meldScale,
+  );
+  return _RowFit(step: _fittedStep(melds, m, scale, available), scale: scale);
+}
+
+/// How wide the row comes out at a given scale and step.
+double _rowWidth(
+  List<MeldView> melds,
+  TableMetrics m,
+  double scale,
+  double step,
+) {
+  var width = _meldGap * (melds.length - 1);
+  for (final meld in melds) {
+    width +=
+        m.meldFrame + kCardWidth * scale + step * _thickness(meld.size - 1, m);
+  }
+  return width;
+}
+
+/// How far apart the cards in a meld sit, once the row has been squeezed as far
+/// as it will go at [scale].
+///
+/// A spread row stops at the point where a rank in the corner would start to be
+/// covered. A stack has no rank to protect below its top card, so it may close
+/// up to a hairline — which is the headroom that lets a phone absorb a crowded
+/// row before it has to shrink anything.
+double _fittedStep(
+  List<MeldView> melds,
+  TableMetrics m,
+  double scale,
+  double available,
+) {
+  final cardWidth = kCardWidth * scale;
+  final step = cardWidth * m.meldOverlap;
   if (melds.length < 2) return step;
 
-  const gap = 8.0;
   final frames =
-      melds.length * (18 + m.meldCardWidth) + gap * (melds.length - 1);
-  final overlapping = melds.fold(0, (sum, meld) => sum + meld.size - 1);
+      melds.length * (m.meldFrame + cardWidth) + _meldGap * (melds.length - 1);
+  final overlapping = melds.fold(
+    0,
+    (sum, meld) => sum + _thickness(meld.size - 1, m),
+  );
   if (overlapping == 0) return step;
   if (frames + step * overlapping <= available) return step;
 
-  // A quarter of a card, or the natural step if that is already tighter — a
-  // stacked meld starts below the floor and must not be pushed back up to it.
-  final floor = _min(m.meldCardWidth * 0.26, step);
+  final floor = m.meldStyle == MeldStyle.spread
+      ? _min(cardWidth * 0.26, step)
+      : cardWidth * 0.03;
   final fitted = (available - frames) / overlapping;
   if (fitted < floor) return floor;
   return fitted > step ? step : fitted;

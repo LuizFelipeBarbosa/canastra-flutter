@@ -342,6 +342,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
                 _Columns(
                   target: 288,
                   spacing: 18,
+                  maxColumns: 3,
                   children: [
                     // Compact columns keep 30 friends visible at once on a
                     // display wide enough to hold them.
@@ -375,6 +376,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
       _Columns(
         target: 440,
         spacing: 20,
+        maxColumns: 3,
         children: [
           for (final request in requests)
             Row(
@@ -414,24 +416,29 @@ class _FriendsScreenState extends State<FriendsScreen> {
   }
 }
 
-/// As many equal columns of [target] width as the sheet can hold, and one on a
-/// phone. The list is the same either way; only how much of it fits on a line
-/// changes.
+/// As many equal columns of [target] width as the sheet can hold, never more
+/// than [maxColumns], and one on a phone. The list is the same either way; only
+/// how much of it fits on a line changes.
 class _Columns extends StatelessWidget {
   final double target;
   final double spacing;
+  final int maxColumns;
   final List<Widget> children;
 
   const _Columns({
     required this.target,
     required this.spacing,
+    required this.maxColumns,
     required this.children,
   });
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
-      final columns = (constraints.maxWidth / target).floor().clamp(1, 3);
+      final columns = (constraints.maxWidth / target).floor().clamp(
+        1,
+        maxColumns,
+      );
       final width = (constraints.maxWidth - spacing * (columns - 1)) / columns;
       return Wrap(
         spacing: spacing,

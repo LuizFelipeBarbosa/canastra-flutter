@@ -160,6 +160,8 @@ class _MeldBoxState extends State<MeldBox> with TickerProviderStateMixin {
                     const SizedBox(width: 6),
                     Text(
                       '${meld.points}',
+                      overflow: TextOverflow.ellipsis,
+                      softWrap: false,
                       style: mono(
                         widget.compact ? 8 : 9,
                         color: meld.isCanastra ? accent : p.ashDim,
