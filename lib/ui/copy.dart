@@ -46,6 +46,7 @@ class Copy {
   final String them;
   final String thinking;
   final String reconnecting;
+  final String watching;
   final String round;
 
   /// The words between the round number and the match target: "FIRST TO".
@@ -144,6 +145,7 @@ class Copy {
   final String onlineYourName;
   final String onlinePlayerNameHint;
   final String onlineJoinTable;
+  final String onlineWatchTable;
   final String onlineInvalidHost;
   final String onlineMissingTableName;
   final String onlineDefaultPlayer;
@@ -194,6 +196,7 @@ class Copy {
     required this.them,
     required this.thinking,
     required this.reconnecting,
+    required this.watching,
     required this.round,
     required this.firstTo,
     required this.stock,
@@ -260,6 +263,7 @@ class Copy {
     required this.onlineYourName,
     required this.onlinePlayerNameHint,
     required this.onlineJoinTable,
+    required this.onlineWatchTable,
     required this.onlineInvalidHost,
     required this.onlineMissingTableName,
     required this.onlineDefaultPlayer,
@@ -326,6 +330,7 @@ class Copy {
     them: 'THEM',
     thinking: 'THINKING',
     reconnecting: 'Reconnecting…',
+    watching: 'WATCHING',
     round: 'ROUND',
     firstTo: 'FIRST TO',
     stock: 'STOCK',
@@ -420,6 +425,7 @@ class Copy {
     onlineYourName: 'YOUR NAME',
     onlinePlayerNameHint: 'How others see you',
     onlineJoinTable: 'Join the table',
+    onlineWatchTable: 'Watch a table',
     onlineInvalidHost: 'This build has no usable host address.',
     onlineMissingTableName: 'Give the table a name so others can find it.',
     onlineDefaultPlayer: 'Player',
@@ -458,6 +464,7 @@ class Copy {
     them: 'ELES',
     thinking: 'PENSANDO',
     reconnecting: 'Reconectando…',
+    watching: 'ASSISTINDO',
     round: 'RODADA',
     firstTo: 'ATÉ',
     stock: 'MONTE',
@@ -552,6 +559,7 @@ class Copy {
     onlineYourName: 'SEU NOME',
     onlinePlayerNameHint: 'Como os outros veem você',
     onlineJoinTable: 'Entrar na mesa',
+    onlineWatchTable: 'Assistir uma mesa',
     onlineInvalidHost: 'Esta versão não tem um endereço de servidor válido.',
     onlineMissingTableName: 'Dê um nome à mesa para os outros encontrarem.',
     onlineDefaultPlayer: 'Jogador',
@@ -585,6 +593,7 @@ class LobbyCopy {
   final String connected;
   final String disconnected;
   final String Function(String profile, int target) tableLine;
+  final String Function(int count) spectators;
 
   const LobbyCopy({
     required this.title,
@@ -599,6 +608,7 @@ class LobbyCopy {
     required this.connected,
     required this.disconnected,
     required this.tableLine,
+    required this.spectators,
   });
 }
 
@@ -615,6 +625,7 @@ const _enLobby = LobbyCopy(
   connected: 'Connected',
   disconnected: 'Disconnected',
   tableLine: _enLobbyTableLine,
+  spectators: _enSpectators,
 );
 
 const _ptLobby = LobbyCopy(
@@ -630,6 +641,7 @@ const _ptLobby = LobbyCopy(
   connected: 'Conectado',
   disconnected: 'Desconectado',
   tableLine: _ptLobbyTableLine,
+  spectators: _ptSpectators,
 );
 
 /// Everything the app says about accounts.
@@ -859,6 +871,9 @@ String _enLobbyTableLine(String profile, int target) =>
     '$profile · first to $target';
 String _ptLobbyTableLine(String profile, int target) =>
     '$profile · até $target';
+String _enSpectators(int count) =>
+    '$count ${count == 1 ? 'spectator' : 'spectators'}';
+String _ptSpectators(int count) => '$count assistindo';
 String _enSeatFallback(int seat) => 'Seat $seat';
 String _ptSeatFallback(int seat) => 'Assento $seat';
 String _enCountLeft(int count) => '$count left';

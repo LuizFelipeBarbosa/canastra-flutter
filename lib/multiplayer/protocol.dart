@@ -79,6 +79,11 @@ sealed class ClientCommand {
           numPlayers: j['numPlayers'] as int?,
           matchTarget: j['matchTarget'] as int?,
         ),
+        'spectate' => SpectateRoom(
+          roomCode: j['roomCode'] as String,
+          authToken: j['authToken'] as String?,
+          clientId: j['clientId'] as String?,
+        ),
         'ready' => SetReady(ready: j['ready'] as bool),
         'action' => SubmitAction(actionId: j['actionId'] as int),
         'nextRound' => const RequestNextRound(),
@@ -130,6 +135,23 @@ class JoinRoom extends ClientCommand {
   };
 }
 
+/// Watch a table without taking a seat.
+class SpectateRoom extends ClientCommand {
+  final String roomCode;
+  final String? authToken;
+  final String? clientId;
+
+  const SpectateRoom({required this.roomCode, this.authToken, this.clientId});
+
+  @override
+  Map<String, dynamic> toJson() => {
+    'type': 'spectate',
+    'roomCode': roomCode,
+    if (authToken != null) 'authToken': authToken,
+    if (clientId != null) 'clientId': clientId,
+  };
+}
+
 class SetReady extends ClientCommand {
   final bool ready;
   const SetReady({required this.ready});
@@ -178,6 +200,7 @@ sealed class ServerEvent {
         'joined' => Joined(
           roomCode: j['roomCode'] as String,
           seat: j['seat'] as int,
+          spectator: j['spectator'] as bool? ?? false,
         ),
         'lobby' => LobbyUpdate(
           roomCode: j['roomCode'] as String,
@@ -189,6 +212,7 @@ sealed class ServerEvent {
           ],
           started: j['started'] as bool,
           matchTarget: j['matchTarget'] as int?,
+          spectators: j['spectators'] as int? ?? 0,
         ),
         'table' => TableUpdate(
           view: TableView.fromJson(j['view'] as Map<String, dynamic>),
@@ -206,13 +230,19 @@ sealed class ServerEvent {
 class Joined extends ServerEvent {
   final String roomCode;
   final int seat;
-  const Joined({required this.roomCode, required this.seat});
+  final bool spectator;
+  const Joined({
+    required this.roomCode,
+    required this.seat,
+    this.spectator = false,
+  });
 
   @override
   Map<String, dynamic> toJson() => {
     'type': 'joined',
     'roomCode': roomCode,
     'seat': seat,
+    if (spectator) 'spectator': true,
   };
 }
 
@@ -224,6 +254,7 @@ class LobbyUpdate extends ServerEvent {
   final List<SeatInfo> seats;
   final bool started;
   final int? matchTarget;
+  final int spectators;
 
   const LobbyUpdate({
     required this.roomCode,
@@ -232,6 +263,7 @@ class LobbyUpdate extends ServerEvent {
     required this.seats,
     required this.started,
     this.matchTarget,
+    this.spectators = 0,
   });
 
   @override
@@ -243,6 +275,7 @@ class LobbyUpdate extends ServerEvent {
     'seats': [for (final s in seats) s.toJson()],
     'started': started,
     if (matchTarget != null) 'matchTarget': matchTarget,
+    if (spectators > 0) 'spectators': spectators,
   };
 }
 

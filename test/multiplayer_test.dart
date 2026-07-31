@@ -387,6 +387,95 @@ void main() {
       );
     });
   });
+
+  group('spectator protocol additions', () {
+    test('SpectateRoom round-trips with and without authentication', () {
+      final commands = <SpectateRoom>[
+        const SpectateRoom(roomCode: 'OPEN', clientId: 'browser-1'),
+        const SpectateRoom(
+          roomCode: 'AUTH',
+          authToken: 'access-token',
+          clientId: 'browser-2',
+        ),
+      ];
+
+      for (final command in commands) {
+        final wire = jsonDecode(jsonEncode(command.toJson()));
+        final restored = ClientCommand.fromJson(wire as Map<String, dynamic>);
+        expect(restored, isA<SpectateRoom>());
+        expect(restored.toJson(), equals(command.toJson()));
+      }
+      expect(commands.first.toJson(), isNot(contains('authToken')));
+    });
+
+    test('Joined emits spectator only when true and round-trips it', () {
+      const joined = Joined(roomCode: 'WATCH', seat: -1, spectator: true);
+      final wire = jsonDecode(jsonEncode(joined.toJson()));
+      final restored = ServerEvent.fromJson(wire as Map<String, dynamic>);
+
+      expect(restored, isA<Joined>());
+      expect((restored as Joined).spectator, isTrue);
+      expect(restored.toJson(), equals(joined.toJson()));
+      expect(
+        const Joined(roomCode: 'PLAY', seat: 0).toJson(),
+        isNot(contains('spectator')),
+      );
+    });
+
+    test('LobbyUpdate emits a positive spectator count and round-trips it', () {
+      const update = LobbyUpdate(
+        roomCode: 'WATCH',
+        profile: 'buraco',
+        numPlayers: 2,
+        seats: [],
+        started: true,
+        spectators: 2,
+      );
+      final wire = jsonDecode(jsonEncode(update.toJson()));
+      final restored = ServerEvent.fromJson(wire as Map<String, dynamic>);
+
+      expect(restored, isA<LobbyUpdate>());
+      expect((restored as LobbyUpdate).spectators, equals(2));
+      expect(restored.toJson(), equals(update.toJson()));
+    });
+  });
+
+  test('a spectator view contains public counts but no private hand', () {
+    final host = _botTable('buraco', 2, seed: 131);
+    addTearDown(host.dispose);
+    host.start();
+    host.runBotsSynchronously(maxActions: 6);
+    expect(host.match.actionLog, isNotEmpty);
+    expect(host.match.round.roundOver, isFalse);
+
+    final names = [for (final seat in host.seats) seat.name];
+    final spectator = buildSpectatorView(host.match, playerNames: names);
+    final seated = buildTableView(host.match, 0, playerNames: names);
+    final state = host.match.round;
+
+    expect(spectator.seat, equals(-1));
+    expect(spectator.side, equals(host.cfg.table.numSides));
+    expect(spectator.hand, isEmpty);
+    expect(spectator.toJson()['hand'], isEmpty);
+    expect(spectator.legalActions, isEmpty);
+    expect(spectator.handSizes, [
+      for (var seat = 0; seat < host.cfg.table.numPlayers; seat++)
+        state.handSize(seat),
+    ]);
+    expect(spectator.stockCount, equals(state.stock.length));
+    expect(spectator.mortoSizes, [
+      for (final packet in state.morto) packet?.length ?? 0,
+    ]);
+
+    expect(
+      spectator.melds.map((meld) => meld.toJson()),
+      equals(seated.melds.map((meld) => meld.toJson())),
+    );
+    expect(spectator.trash, equals(seated.trash));
+    expect(spectator.redThrees, equals(seated.redThrees));
+    expect(spectator.publicScores, equals(seated.publicScores));
+    expect(spectator.matchScores, equals(seated.matchScores));
+  });
 }
 
 Map<CardId, int> _counts(List<CardId> cards) {

@@ -94,7 +94,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
     }
   }
 
-  Future<void> _join() async {
+  Future<void> _join({bool spectate = false}) async {
     if (_pushing) return;
 
     final l = context.copy;
@@ -128,6 +128,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
         playerName: _name.text.trim().isEmpty
             ? l.onlineDefaultPlayer
             : _name.text.trim(),
+        spectate: spectate,
         profileId: widget.profileId,
         numPlayers: _players,
         matchTarget: target,
@@ -209,6 +210,15 @@ class _OnlineScreenState extends State<OnlineScreen> {
                 ],
                 const SizedBox(height: 24),
                 MintButton(label: l.onlineJoinTable, palette: p, onTap: _join),
+                const SizedBox(height: 14),
+                Center(
+                  child: TextLink(
+                    label: l.onlineWatchTable,
+                    palette: p,
+                    color: p.ashDim,
+                    onTap: () => _join(spectate: true),
+                  ),
+                ),
                 // Creating needs an account: the server mints the code against
                 // the signed-in owner. A signed-out player can still join any
                 // table whose name or code they were given.

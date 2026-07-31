@@ -5,7 +5,8 @@
 /// allowed to know — its own hand, all melds, the open discard pile, and public
 /// sizes and flags. Other players' hand contents, the stock order and the morto
 /// contents are unreachable by construction: [buildTableView] never reads those
-/// fields beyond their length.
+/// fields beyond their length, and [buildSpectatorView] never reads any hand
+/// contents at all.
 ///
 /// The UI and the bots both consume only this, so a bot can never peek and a
 /// screen can never accidentally render a card the player should not see.
@@ -143,7 +144,10 @@ class RoundResultView {
 
 class TableView {
   // --- who am I ---
+  /// `-1` marks a spectator and cannot collide with any real zero-based seat.
   final int seat;
+
+  /// Spectators use `numSides`, an upper-bound sentinel safe for guarded access.
   final int side;
   final int numPlayers;
   final int numSides;
@@ -458,6 +462,62 @@ TableView buildTableView(
     legalActions: state.currentPlayer == seat
         ? match.legalActionIdsNow()
         : const [],
+    history: match.history,
+  );
+}
+
+/// Build the public-only view available to a spectator.
+///
+/// This is deliberately a sibling of [buildTableView], not a redacted player
+/// view: no hand or legal-action contents are constructed and then discarded.
+TableView buildSpectatorView(
+  Match match, {
+  required List<String> playerNames,
+  int matchNumber = 0,
+}) {
+  final cfg = match.cfg;
+  final state = match.round;
+  final table = cfg.table;
+
+  return TableView(
+    seat: -1,
+    side: table.numSides,
+    numPlayers: table.numPlayers,
+    numSides: table.numSides,
+    partnerSeat: null,
+    playerNames: playerNames,
+    profile: cfg.name,
+    matchTarget: cfg.scoring.matchTarget,
+    canastraMinSize: cfg.meld.canastraMinSize,
+    hand: const [],
+    handSizes: [for (var p = 0; p < table.numPlayers; p++) state.handSize(p)],
+    melds: [for (final m in state.melds) _meldView(cfg, m)],
+    trash: List.of(state.trash),
+    stockCount: state.stock.length,
+    mortoTaken: List.of(state.mortoTaken),
+    mortoSizes: [for (final packet in state.morto) packet?.length ?? 0],
+    redThrees: [for (final tray in state.redThrees) List.of(tray)],
+    currentPlayer: state.currentPlayer,
+    phase: state.phase.name,
+    turnNumber: state.turnNumber,
+    frozen: state.frozen,
+    pileBlocked: state.pileBlockedForNext,
+    pendingPileCard: state.pendingPileCard,
+    initialMeldDone: List.of(state.initialMeldDone),
+    initialMeldMin: List.of(state.initialMeldMin),
+    stagedPoints: state.stagedPoints,
+    publicScores: _publicSideScores(state),
+    matchScores: match.matchScores,
+    matchNumber: matchNumber,
+    roundOver: state.roundOver,
+    matchOver: match.matchOver,
+    wentOutSide: state.wentOutSide,
+    winnerSide: match.winnerSide,
+    roundIndex: match.roundIndex,
+    roundResult: state.roundOver && match.lastRoundResult != null
+        ? _resultView(match.lastRoundResult!)
+        : null,
+    legalActions: const [],
     history: match.history,
   );
 }

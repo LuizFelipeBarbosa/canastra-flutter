@@ -19,6 +19,9 @@ import 'table_view.dart';
 /// An event and its addressee; [seat] of null means broadcast.
 typedef HostMessage = ({int? seat, ServerEvent event});
 
+/// Outbound addressee used for one public-only view shared by all spectators.
+const int spectatorHostSeat = -1;
+
 class MatchHost {
   final String roomCode;
   final RulesConfig cfg;
@@ -38,6 +41,7 @@ class MatchHost {
 
   Match _match;
   int _matchNumber = 0;
+  int _spectatorCount = 0;
   bool _started = false;
   bool _disposed = false;
   int _botGeneration = 0;
@@ -68,6 +72,7 @@ class MatchHost {
   List<SeatInfo> get seats => List.unmodifiable(_seats);
   Match get match => _match;
   bool get started => _started;
+  int get spectatorCount => _spectatorCount;
 
   /// Everyone who is not a bot has readied up (bots are always ready).
   bool get everyoneReady =>
@@ -83,6 +88,9 @@ class MatchHost {
         _emit(seat, Joined(roomCode: roomCode, seat: seat));
         _broadcastLobby();
         if (_started) _pushTable(seat);
+
+      case SpectateRoom():
+        _emit(seat, const ServerError(message: 'spectators only watch'));
 
       case SetReady(:final ready):
         _updateSeat(seat, (s) => s.copyWith(ready: ready));
@@ -281,6 +289,12 @@ class MatchHost {
     _outbound.add((seat: seat, event: event));
   }
 
+  void updateSpectatorCount(int count) {
+    if (_disposed || count == _spectatorCount) return;
+    _spectatorCount = count;
+    _broadcastLobby();
+  }
+
   void _broadcastLobby() => _emit(
     null,
     LobbyUpdate(
@@ -290,6 +304,7 @@ class MatchHost {
       seats: seats,
       started: _started,
       matchTarget: cfg.scoring.matchTarget,
+      spectators: _spectatorCount,
     ),
   );
 
@@ -305,10 +320,27 @@ class MatchHost {
     ),
   );
 
+  /// MatchHost already owns the engine state, so it constructs one sentinel
+  /// view here instead of leaking [Match] through the socket-facing room.
+  void pushSpectatorTable() {
+    if (_spectatorCount == 0) return;
+    _emit(
+      spectatorHostSeat,
+      TableUpdate(
+        view: buildSpectatorView(
+          _match,
+          playerNames: _playerNames,
+          matchNumber: _matchNumber,
+        ),
+      ),
+    );
+  }
+
   void _broadcastTable() {
     for (final s in _seats) {
       _pushTable(s.seat);
     }
+    pushSpectatorTable();
   }
 
   void dispose() {

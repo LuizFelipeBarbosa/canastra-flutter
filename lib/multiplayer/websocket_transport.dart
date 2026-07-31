@@ -26,6 +26,7 @@ class WebSocketTransport implements GameTransport, ConnectionStateTransport {
   final String roomCode;
   final String playerName;
   final int? preferredSeat;
+  final bool spectate;
 
   /// Supplies a fresh Supabase access token for each connection attempt.
   final Future<String?> Function()? authToken;
@@ -61,6 +62,7 @@ class WebSocketTransport implements GameTransport, ConnectionStateTransport {
     required this.roomCode,
     required this.playerName,
     this.preferredSeat,
+    this.spectate = false,
     this.authToken,
     this.clientId,
     this.profileId,
@@ -134,18 +136,28 @@ class WebSocketTransport implements GameTransport, ConnectionStateTransport {
         },
       );
 
-      send(
-        JoinRoom(
-          roomCode: roomCode,
-          playerName: playerName,
-          preferredSeat: _seat ?? preferredSeat,
-          authToken: token,
-          clientId: clientId,
-          profileId: profileId,
-          numPlayers: numPlayers,
-          matchTarget: matchTarget,
-        ),
-      );
+      if (spectate) {
+        send(
+          SpectateRoom(
+            roomCode: roomCode,
+            authToken: token,
+            clientId: clientId,
+          ),
+        );
+      } else {
+        send(
+          JoinRoom(
+            roomCode: roomCode,
+            playerName: playerName,
+            preferredSeat: _seat ?? preferredSeat,
+            authToken: token,
+            clientId: clientId,
+            profileId: profileId,
+            numPlayers: numPlayers,
+            matchTarget: matchTarget,
+          ),
+        );
+      }
     } finally {
       _connecting = false;
     }
@@ -157,7 +169,7 @@ class WebSocketTransport implements GameTransport, ConnectionStateTransport {
       final event = ServerEvent.fromJson(
         jsonDecode(raw) as Map<String, dynamic>,
       );
-      if (event is Joined) _seat = event.seat;
+      if (event is Joined) _seat = event.spectator ? null : event.seat;
       _events.add(event);
     } on FormatException catch (e) {
       // A message this client version does not understand is not fatal — a

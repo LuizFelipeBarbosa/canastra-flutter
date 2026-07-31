@@ -34,6 +34,7 @@ class GameController extends ChangeNotifier {
   TableView? _view;
   LobbyUpdate? _lobby;
   int? _seat;
+  bool _spectating = false;
   MoveIndex _moves = MoveIndex.empty;
   final List<CardId> _selection = [];
   List<int> _queue = [];
@@ -62,6 +63,7 @@ class GameController extends ChangeNotifier {
   TableView? get view => _view;
   LobbyUpdate? get lobby => _lobby;
   int? get seat => _seat ?? transport.seat;
+  bool get spectating => _spectating;
   bool get inLobby => _lobby != null && !_lobby!.started && _view == null;
 
   bool get myReady {
@@ -180,8 +182,9 @@ class GameController extends ChangeNotifier {
         _notice = message;
         _queue = [];
 
-      case Joined(:final seat):
-        _seat = seat;
+      case Joined(:final seat, :final spectator):
+        _spectating = spectator;
+        _seat = spectator ? null : seat;
         _connecting = false;
 
       case LobbyUpdate():
@@ -268,6 +271,7 @@ class GameController extends ChangeNotifier {
 
   /// Pick a card up, or put it back down.
   void toggleCard(CardId card) {
+    if (_blockSpectatorAction()) return;
     if (!myTurn || busy) return;
     _notice = null;
     _refusal = null;
@@ -277,6 +281,7 @@ class GameController extends ChangeNotifier {
   }
 
   void clearSelection() {
+    if (_blockSpectatorAction()) return;
     if (busy) return;
     if (_selection.isEmpty && _refusal == null) return;
     _selection.clear();
@@ -288,12 +293,16 @@ class GameController extends ChangeNotifier {
   // --- playing ------------------------------------------------------------
 
   /// Lay the selection down as a new meld.
-  void meldSelection() =>
-      _submitPlan((view) => planNewMeld(_cfg, view, _selection));
+  void meldSelection() {
+    if (_blockSpectatorAction()) return;
+    _submitPlan((view) => planNewMeld(_cfg, view, _selection));
+  }
 
   /// Add the selection to one of your side's melds.
-  void extendMeld(int slot) =>
-      _submitPlan((view) => planExtendMeld(_cfg, view, slot, _selection));
+  void extendMeld(int slot) {
+    if (_blockSpectatorAction()) return;
+    _submitPlan((view) => planExtendMeld(_cfg, view, slot, _selection));
+  }
 
   void _submitPlan(PlanResult Function(TableView view) build) {
     final view = _view;
@@ -357,6 +366,7 @@ class GameController extends ChangeNotifier {
 
   /// Throw the one selected card, ending your turn.
   void discardSelection() {
+    if (_blockSpectatorAction()) return;
     final move = discardMove;
     if (move == null) {
       if (_selection.length == 1 && myTurn) {
@@ -413,6 +423,7 @@ class GameController extends ChangeNotifier {
   void play(MoveOption move) => playId(move.actionId);
 
   void playId(int actionId) {
+    if (_blockSpectatorAction()) return;
     if (_awaitingView ||
         _view == null ||
         !_view!.legalActions.contains(actionId)) {
@@ -425,13 +436,29 @@ class GameController extends ChangeNotifier {
     }
   }
 
-  void setReady(bool ready) => _send(SetReady(ready: ready));
+  void setReady(bool ready) {
+    if (_blockSpectatorAction()) return;
+    _send(SetReady(ready: ready));
+  }
 
   void leave() => _send(const LeaveRoom());
 
-  void nextRound() => _send(const RequestNextRound());
+  void nextRound() {
+    if (_blockSpectatorAction()) return;
+    _send(const RequestNextRound());
+  }
 
-  void rematch() => _send(const RequestRematch());
+  void rematch() {
+    if (_blockSpectatorAction()) return;
+    _send(const RequestRematch());
+  }
+
+  bool _blockSpectatorAction() {
+    if (!spectating) return false;
+    _notice = 'Spectators can only watch.';
+    notifyListeners();
+    return true;
+  }
 
   bool _send(ClientCommand command) {
     if (_disposed) return false;

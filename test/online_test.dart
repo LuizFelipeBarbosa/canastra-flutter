@@ -886,6 +886,258 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 250));
     });
   });
+
+  group('spectators', () {
+    test('a spectator holds no seat and receives live table updates', () async {
+      final hosted = await _serveServer(
+        GameServer(numPlayers: 2, botTakeoverAfter: null, roomGraceAfter: null),
+      );
+      addTearDown(() => hosted.http.close(force: true));
+      final a = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'live-gallery',
+          playerName: 'Ana',
+        ),
+      );
+      final b = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'live-gallery',
+          playerName: 'Bruno',
+        ),
+      );
+      addTearDown(a.transport.dispose);
+      addTearDown(b.transport.dispose);
+
+      await a.transport.connect();
+      await b.transport.connect();
+      a.transport.send(const SetReady(ready: true));
+      b.transport.send(const SetReady(ready: true));
+      final dealt = await a.waitForTable((view) => view.hand.isNotEmpty);
+      await b.waitForTable((view) => view.hand.isNotEmpty);
+      final seatsBefore = a.events.whereType<LobbyUpdate>().last.seats.length;
+
+      final spectator = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'live-gallery',
+          playerName: 'Viewer',
+          spectate: true,
+        ),
+      );
+      addTearDown(spectator.transport.dispose);
+      final joined = _nextEvent<Joined>(spectator);
+      final lobby = _nextLobbyWhere(
+        spectator,
+        (update) => update.spectators == 1,
+      );
+
+      await spectator.transport.connect();
+
+      final spectatorJoined = await joined;
+      expect(spectatorJoined.spectator, isTrue);
+      expect(spectatorJoined.seat, equals(-1));
+      expect(spectator.transport.seat, isNull);
+      final spectatorLobby = await lobby;
+      expect(spectatorLobby.seats, hasLength(seatsBefore));
+      expect(spectatorLobby.spectators, equals(1));
+
+      final firstView = await spectator.waitForTable(
+        (view) => view.stockCount == dealt.stockCount,
+      );
+      expect(firstView.hand, isEmpty);
+      expect(firstView.legalActions, isEmpty);
+
+      a.transport.send(SubmitAction(actionId: dealt.legalActions.first));
+      final updated = await spectator.waitForTable(
+        (view) =>
+            view.phase != firstView.phase ||
+            view.stockCount != firstView.stockCount ||
+            view.turnNumber != firstView.turnNumber,
+      );
+      expect(updated.hand, isEmpty);
+      expect(updated.legalActions, isEmpty);
+    });
+
+    test('a spectator action is rejected without changing the match', () async {
+      final hosted = await _serveServer(
+        GameServer(numPlayers: 2, botTakeoverAfter: null, roomGraceAfter: null),
+      );
+      addTearDown(() => hosted.http.close(force: true));
+      final a = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'look-only',
+          playerName: 'Ana',
+        ),
+      );
+      final b = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'look-only',
+          playerName: 'Bruno',
+        ),
+      );
+      final spectator = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'look-only',
+          playerName: 'Viewer',
+          spectate: true,
+        ),
+      );
+      addTearDown(a.transport.dispose);
+      addTearDown(b.transport.dispose);
+      addTearDown(spectator.transport.dispose);
+
+      await a.transport.connect();
+      await b.transport.connect();
+      a.transport.send(const SetReady(ready: true));
+      b.transport.send(const SetReady(ready: true));
+      await Future.wait([
+        a.waitForTable((view) => view.hand.isNotEmpty),
+        b.waitForTable((view) => view.hand.isNotEmpty),
+      ]);
+      await spectator.transport.connect();
+      await spectator.waitForTable((view) => view.hand.isEmpty);
+
+      final before = a.table!.toJson();
+      final error = _nextEvent<ServerError>(spectator);
+      spectator.transport.send(const SubmitAction(actionId: 0));
+
+      expect((await error).message, equals('spectators only watch'));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(a.table!.toJson(), equals(before));
+    });
+
+    test('a ninth spectator is refused by the per-room cap', () async {
+      final hosted = await _serveServer(
+        GameServer(numPlayers: 2, botTakeoverAfter: null, roomGraceAfter: null),
+      );
+      addTearDown(() => hosted.http.close(force: true));
+      final player = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'full-gallery',
+          playerName: 'Ana',
+        ),
+      );
+      addTearDown(player.transport.dispose);
+      final playerJoined = _nextEvent<Joined>(player);
+      await player.transport.connect();
+      await playerJoined;
+
+      final spectators = <_Client>[];
+      for (var i = 0; i < 8; i++) {
+        final spectator = _Client(
+          WebSocketTransport(
+            endpoint: hosted.endpoint,
+            roomCode: 'full-gallery',
+            playerName: 'Viewer $i',
+            spectate: true,
+          ),
+        );
+        spectators.add(spectator);
+        addTearDown(spectator.transport.dispose);
+        final joined = _nextEvent<Joined>(spectator);
+        await spectator.transport.connect();
+        expect((await joined).spectator, isTrue);
+      }
+
+      final ninth = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'full-gallery',
+          playerName: 'Viewer 9',
+          spectate: true,
+          maxRetries: 0,
+        ),
+      );
+      addTearDown(ninth.transport.dispose);
+      final error = _nextEvent<ServerError>(ninth);
+
+      await ninth.transport.connect();
+
+      expect((await error).message, equals('the gallery is full'));
+      expect(ninth.transport.seat, isNull);
+      expect(ninth.events.whereType<Joined>(), isEmpty);
+      expect(
+        spectators.expand((client) => client.events.whereType<Joined>()).length,
+        equals(8),
+      );
+    });
+
+    test('spectators do not keep an empty room alive past grace', () async {
+      final hosted = await _serveServer(
+        GameServer(
+          numPlayers: 2,
+          botTakeoverAfter: null,
+          roomGraceAfter: const Duration(milliseconds: 120),
+        ),
+      );
+      addTearDown(() => hosted.http.close(force: true));
+      final a = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'gallery-grace',
+          playerName: 'Ana',
+          maxRetries: 0,
+        ),
+      );
+      final b = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'gallery-grace',
+          playerName: 'Bruno',
+          maxRetries: 0,
+        ),
+      );
+      final spectator = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'gallery-grace',
+          playerName: 'Viewer',
+          spectate: true,
+          maxRetries: 0,
+        ),
+      );
+      addTearDown(a.transport.dispose);
+      addTearDown(b.transport.dispose);
+      addTearDown(spectator.transport.dispose);
+
+      await a.transport.connect();
+      await b.transport.connect();
+      final spectatorJoined = _nextEvent<Joined>(spectator);
+      await spectator.transport.connect();
+      expect((await spectatorJoined).spectator, isTrue);
+
+      final disconnected = _nextEvent<ServerError>(spectator);
+      await a.transport.dispose();
+      await b.transport.dispose();
+      expect(
+        (await disconnected).message,
+        equals('lost connection to the host'),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+
+      final lateSpectator = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'gallery-grace',
+          playerName: 'Late viewer',
+          spectate: true,
+          maxRetries: 0,
+        ),
+      );
+      addTearDown(lateSpectator.transport.dispose);
+      final noTable = _nextEvent<ServerError>(lateSpectator);
+
+      await lateSpectator.transport.connect();
+
+      expect((await noTable).message, equals('no such table'));
+    });
+  });
 }
 
 Future<LobbyUpdate> _nextLobbyWhere(

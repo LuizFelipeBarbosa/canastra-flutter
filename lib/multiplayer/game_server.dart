@@ -27,12 +27,13 @@ import 'package:shelf/shelf.dart';
 import 'package:shelf_web_socket/shelf_web_socket.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
-enum _ConnState { idle, authorizing, seated }
+enum _ConnState { idle, authorizing, seated, spectating }
 
 class _Room {
   final String code;
   final MatchHost host;
   final Map<int, WebSocketChannel> clients = {};
+  final Set<WebSocketChannel> spectators = {};
   final Map<int, String> seatOwners = {};
   final Map<int, Timer> botTakeover = {};
   Timer? roomGrace;
@@ -43,6 +44,13 @@ class _Room {
       final payload = jsonEncode(msg.event.toJson());
       if (msg.seat == null) {
         for (final c in clients.values) {
+          c.sink.add(payload);
+        }
+        for (final c in spectators) {
+          c.sink.add(payload);
+        }
+      } else if (msg.seat == spectatorHostSeat) {
+        for (final c in spectators) {
           c.sink.add(payload);
         }
       } else {
@@ -81,15 +89,23 @@ class _Room {
       timer.cancel();
     }
     botTakeover.clear();
+    final spectatorSockets = spectators.toList();
+    spectators.clear();
     await _sub.cancel();
     host.dispose();
     for (final c in clients.values) {
+      await c.sink.close();
+    }
+    for (final c in spectatorSockets) {
       await c.sink.close();
     }
   }
 }
 
 class GameServer {
+  static const int _maxSpectatorsPerRoom = 8;
+  static const int _maxSpectatorsTotal = 64;
+
   final String profileId;
   final int numPlayers;
 
@@ -126,6 +142,7 @@ class GameServer {
   final Duration? roomGraceAfter;
 
   final Map<String, _Room> _rooms = {};
+  var _spectatorCount = 0;
   var _nextSeed = 1;
 
   GameServer({
@@ -164,11 +181,87 @@ class GameServer {
         }
 
         if (state == _ConnState.authorizing) {
-          if (cmd is! JoinRoom) {
+          if (cmd is! JoinRoom && cmd is! SpectateRoom) {
             channel.sink.add(
               jsonEncode(const ServerError(message: 'still joining').toJson()),
             );
           }
+          return;
+        }
+
+        if (state == _ConnState.spectating) {
+          if (cmd is LeaveRoom) {
+            await channel.sink.close();
+          } else {
+            channel.sink.add(
+              jsonEncode(
+                const ServerError(message: 'spectators only watch').toJson(),
+              ),
+            );
+          }
+          return;
+        }
+
+        if (cmd is SpectateRoom) {
+          if (state == _ConnState.seated) return;
+          state = _ConnState.authorizing;
+          final spectate = cmd;
+          final tokenVerifier = verifier;
+          if (tokenVerifier != null) {
+            final token = spectate.authToken;
+            if (token == null) {
+              channel.sink.add(
+                jsonEncode(
+                  const ServerError(message: 'sign in to play').toJson(),
+                ),
+              );
+              await channel.sink.close();
+              return;
+            }
+            final user = await tokenVerifier.verify(token);
+            if (user == null) {
+              channel.sink.add(
+                jsonEncode(
+                  const ServerError(message: 'session rejected').toJson(),
+                ),
+              );
+              await channel.sink.close();
+              return;
+            }
+          }
+          if (connectionClosed) return;
+
+          final target = _rooms[spectate.roomCode];
+          if (target == null) {
+            state = _ConnState.idle;
+            channel.sink.add(
+              jsonEncode(const ServerError(message: 'no such table').toJson()),
+            );
+            return;
+          }
+          if (target.spectators.length >= _maxSpectatorsPerRoom ||
+              _spectatorCount >= _maxSpectatorsTotal) {
+            state = _ConnState.idle;
+            channel.sink.add(
+              jsonEncode(
+                const ServerError(message: 'the gallery is full').toJson(),
+              ),
+            );
+            return;
+          }
+
+          room = target;
+          target.spectators.add(channel);
+          _spectatorCount++;
+          state = _ConnState.spectating;
+          channel.sink.add(
+            jsonEncode(
+              Joined(roomCode: target.code, seat: -1, spectator: true).toJson(),
+            ),
+          );
+          target.host.updateSpectatorCount(target.spectators.length);
+          if (target.host.started) target.host.pushSpectatorTable();
+          stdout.writeln('[${target.code}] spectator joined');
           return;
         }
 
@@ -302,8 +395,19 @@ class GameServer {
       onDone: () async {
         connectionClosed = true;
         final r = room;
+        if (r == null) return;
+
+        if (state == _ConnState.spectating) {
+          if (r.spectators.remove(channel)) {
+            _spectatorCount--;
+            r.host.updateSpectatorCount(r.spectators.length);
+            stdout.writeln('[${r.code}] spectator disconnected');
+          }
+          return;
+        }
+
         final s = seat;
-        if (r == null || s == null) return;
+        if (s == null) return;
         r.clients.remove(s);
         r.host.handle(s, const LeaveRoom());
         stdout.writeln('[${r.code}] seat $s disconnected');
@@ -320,22 +424,30 @@ class GameServer {
           final graceDelay = roomGraceAfter;
           if (graceDelay == null) {
             _rooms.remove(r.code);
-            await r.close();
+            await _closeRoom(r);
             stdout.writeln('[${r.code}] room closed');
           } else {
             r.roomGrace?.cancel();
             r.roomGrace = Timer(graceDelay, () {
               r.roomGrace = null;
+              // Watchers never pin a dead table in memory: only occupied
+              // player seats decide whether the room is still alive.
               if (r.clients.isNotEmpty || !identical(_rooms[r.code], r)) {
                 return;
               }
               _rooms.remove(r.code);
-              unawaited(r.close());
+              unawaited(_closeRoom(r));
               stdout.writeln('[${r.code}] room closed after grace');
             });
           }
         }
       },
     );
+  }
+
+  Future<void> _closeRoom(_Room room) async {
+    _spectatorCount -= room.spectators.length;
+    assert(_spectatorCount >= 0);
+    await room.close();
   }
 }
