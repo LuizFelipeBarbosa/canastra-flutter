@@ -35,6 +35,7 @@ class AppPrefs extends ChangeNotifier {
   int _won = 0;
   int _played = 0;
   int _best = 0;
+  bool _legacySent = false;
 
   bool get dark => _dark;
   Lang get lang => _lang;
@@ -49,6 +50,7 @@ class AppPrefs extends ChangeNotifier {
   int get won => _won;
   int get played => _played;
   int get best => _best;
+  bool get legacySent => _legacySent;
 
   Palette get palette => _dark ? Palette.dark : Palette.light;
   Copy get copy => Copy.of(_lang);
@@ -74,8 +76,8 @@ class AppPrefs extends ChangeNotifier {
   }
 
   void _readFrom(String raw) {
-    // A flat `key=value;` string rather than JSON: there are ten scalars, and a
-    // codec would be more code than the thing it encodes.
+    // A flat `key=value;` string rather than JSON: there are eleven scalars,
+    // and a codec would be more code than the thing it encodes.
     for (final pair in raw.split(';')) {
       final eq = pair.indexOf('=');
       if (eq <= 0) continue;
@@ -102,6 +104,8 @@ class AppPrefs extends ChangeNotifier {
           _played = int.tryParse(value) ?? 0;
         case 'best':
           _best = int.tryParse(value) ?? 0;
+        case 'legacySent':
+          _legacySent = value == '1';
       }
     }
   }
@@ -120,6 +124,7 @@ class AppPrefs extends ChangeNotifier {
         'won=$_won',
         'played=$_played',
         'best=$_best',
+        'legacySent=${_legacySent ? '1' : '0'}',
       ].join(';'),
     );
   }
@@ -136,6 +141,7 @@ class AppPrefs extends ChangeNotifier {
   void setLevel(int level) => _set(() => _level = level);
   void setTarget(int target) => _set(() => _target = target);
   void setVariant(String id) => _set(() => _variant = id);
+  void markLegacySent() => _set(() => _legacySent = true);
 
   /// Record a finished match. Only a win extends the streak; anything else ends
   /// it, which is what makes the number worth looking at.

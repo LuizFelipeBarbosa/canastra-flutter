@@ -11,9 +11,11 @@ import 'package:flutter/material.dart';
 import '../../engine/profiles.dart';
 import '../../game/game_controller.dart';
 import '../../multiplayer/local_transport.dart';
+import '../account_scope.dart';
 import '../app_scope.dart';
 import '../theme.dart';
 import '../widgets/controls.dart';
+import '../widgets/sheet.dart';
 import '../widgets/stage.dart';
 import 'game_screen.dart';
 import 'online_screen.dart';
@@ -40,127 +42,112 @@ class _SetupScreenState extends State<SetupScreen> {
         palette: p,
         children: [
           Positioned.fill(
-            child: Center(
-              child: Container(
-                width: 520,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 40,
-                  vertical: 36,
-                ),
-                decoration: BoxDecoration(
-                  color: p.sheet,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: p.line),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
+            child: SheetCard(
+              palette: p,
+              children: [
+                Row(
                   children: [
-                    Row(
-                      children: [
-                        BackLink(
-                          label: l.back,
-                          palette: p,
-                          onTap: () => Navigator.of(context).maybePop(),
-                        ),
-                        const Spacer(),
-                        Text(
-                          profile.label,
-                          style: mono(10, color: p.mint, tracking: 1.6),
-                        ),
-                      ],
+                    BackLink(
+                      label: l.back,
+                      palette: p,
+                      onTap: () => Navigator.of(context).maybePop(),
                     ),
-                    const SizedBox(height: 20),
+                    const Spacer(),
                     Text(
-                      l.setupTitle,
-                      style: T.display(34, tracking: -1.4, color: p.text),
-                    ),
-                    const SizedBox(height: 20),
-
-                    _Field(
-                      label: l.opponent,
-                      palette: p,
-                      children: [
-                        for (var i = 0; i < l.levels.length; i++)
-                          Segment(
-                            label: l.levels[i],
-                            selected: i == prefs.level,
-                            palette: p,
-                            onTap: () => prefs.setLevel(i),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
-
-                    _Field(
-                      label: l.target,
-                      palette: p,
-                      children: [
-                        for (final t in kTargets)
-                          Segment(
-                            label: '$t',
-                            selected: t == prefs.target,
-                            palette: p,
-                            onTap: () => prefs.setTarget(t),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
-
-                    _Row(
-                      children: [
-                        Segment(
-                          label: prefs.sound ? l.soundOn : l.soundOff,
-                          selected: prefs.sound,
-                          palette: p,
-                          onTap: prefs.toggleSound,
-                        ),
-                        Segment(
-                          label: prefs.dark ? l.themeLight : l.themeDark,
-                          selected: false,
-                          palette: p,
-                          onTap: prefs.toggleTheme,
-                        ),
-                        Segment(
-                          label: prefs.lang.toggleLabel,
-                          selected: false,
-                          palette: p,
-                          onTap: prefs.toggleLang,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
-
-                    GoldButton(
-                      label: l.deal,
-                      palette: p,
-                      wide: true,
-                      fontSize: 19,
-                      padding: const EdgeInsets.symmetric(vertical: 19),
-                      onTap: () => _deal(prefs),
-                    ),
-                    const SizedBox(height: 14),
-                    // The design has one flow, against the house opponent. Online
-                    // play — and with it the four-handed and pass-and-play
-                    // tables — keeps a way in rather than being taken out.
-                    Center(
-                      child: TextLink(
-                        label: l.online,
-                        palette: p,
-                        color: p.ashDim,
-                        onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => OnlineScreen(
-                              profileId: prefs.variant,
-                              numPlayers: profile.playerCounts.first,
-                            ),
-                          ),
-                        ),
-                      ),
+                      profile.label,
+                      style: mono(10, color: p.mint, tracking: 1.6),
                     ),
                   ],
                 ),
-              ),
+                const SizedBox(height: 20),
+                Text(
+                  l.setupTitle,
+                  style: T.display(34, tracking: -1.4, color: p.text),
+                ),
+                const SizedBox(height: 20),
+
+                ChoiceField(
+                  label: l.opponent,
+                  palette: p,
+                  children: [
+                    for (var i = 0; i < l.levels.length; i++)
+                      Segment(
+                        label: l.levels[i],
+                        selected: i == prefs.level,
+                        palette: p,
+                        onTap: () => prefs.setLevel(i),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+
+                ChoiceField(
+                  label: l.target,
+                  palette: p,
+                  children: [
+                    for (final t in kTargets)
+                      Segment(
+                        label: '$t',
+                        selected: t == prefs.target,
+                        palette: p,
+                        onTap: () => prefs.setTarget(t),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+
+                ChoiceRow(
+                  children: [
+                    Segment(
+                      label: prefs.sound ? l.soundOn : l.soundOff,
+                      selected: prefs.sound,
+                      palette: p,
+                      onTap: prefs.toggleSound,
+                    ),
+                    Segment(
+                      label: prefs.dark ? l.themeLight : l.themeDark,
+                      selected: false,
+                      palette: p,
+                      onTap: prefs.toggleTheme,
+                    ),
+                    Segment(
+                      label: prefs.lang.toggleLabel,
+                      selected: false,
+                      palette: p,
+                      onTap: prefs.toggleLang,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+
+                GoldButton(
+                  label: l.deal,
+                  palette: p,
+                  wide: true,
+                  fontSize: 19,
+                  padding: const EdgeInsets.symmetric(vertical: 19),
+                  onTap: () => _deal(prefs),
+                ),
+                const SizedBox(height: 14),
+                // The design has one flow, against the house opponent. Online
+                // play — and with it the four-handed and pass-and-play
+                // tables — keeps a way in rather than being taken out.
+                Center(
+                  child: TextLink(
+                    label: l.online,
+                    palette: p,
+                    color: p.ashDim,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => OnlineScreen(
+                          profileId: prefs.variant,
+                          numPlayers: profile.playerCounts.first,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -171,6 +158,12 @@ class _SetupScreenState extends State<SetupScreen> {
   Future<void> _deal(AppPrefs prefs) async {
     if (_pushing) return;
 
+    final accountName = context.account.signedIn
+        ? context.account.displayName?.trim()
+        : null;
+    final playerName = accountName == null || accountName.isEmpty
+        ? 'You'
+        : accountName;
     final profile = profileById(prefs.variant);
     final cfg = profile
         .build(numPlayers: profile.playerCounts.first)
@@ -184,6 +177,7 @@ class _SetupScreenState extends State<SetupScreen> {
         cfg: cfg,
         seed: seed,
         botLevel: prefs.agentLevel,
+        playerName: playerName,
       ),
     );
 
@@ -198,43 +192,4 @@ class _SetupScreenState extends State<SetupScreen> {
       _pushing = false;
     }
   }
-}
-
-/// A labelled row of choices.
-class _Field extends StatelessWidget {
-  final String label;
-  final Palette palette;
-  final List<Widget> children;
-
-  const _Field({
-    required this.label,
-    required this.palette,
-    required this.children,
-  });
-
-  @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Text(label, style: mono(10, color: palette.ashDim)),
-      const SizedBox(height: 8),
-      _Row(children: children),
-    ],
-  );
-}
-
-/// Segments sit 8px apart, always.
-class _Row extends StatelessWidget {
-  final List<Widget> children;
-  const _Row({required this.children});
-
-  @override
-  Widget build(BuildContext context) => Row(
-    children: [
-      for (var i = 0; i < children.length; i++) ...[
-        if (i > 0) const SizedBox(width: 8),
-        children[i],
-      ],
-    ],
-  );
 }

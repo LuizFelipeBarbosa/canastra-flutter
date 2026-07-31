@@ -33,3 +33,8 @@ build/
 
 # Golden diff artifacts
 test/failures/
+
+# Vendored agent skills. skills-lock.json is the manifest; restore with
+# `npx skills experimental_install` rather than tracking the clones.
+.agents/
+.claude/skills/

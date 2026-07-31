@@ -11,27 +11,22 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../../account/account.dart';
 import '../../engine/profiles.dart';
+import '../../env.dart';
 import '../../game/game_controller.dart';
 import '../../multiplayer/websocket_transport.dart';
+import '../account_scope.dart';
 import '../app_scope.dart';
 import '../theme.dart';
 import '../widgets/controls.dart';
+import '../widgets/sheet.dart';
 import '../widgets/stage.dart';
+import 'friends_screen.dart';
 import 'game_screen.dart';
-
-/// Where this build looks for its host.
-///
-/// Baked in at compile time rather than typed by the player:
-/// `flutter build web --dart-define=GAME_HOST=wss://your-host`. The default is
-/// what `dart run bin/server.dart` gives you during development.
-///
-/// A build served over https must use `wss://` — browsers refuse a plaintext
-/// socket from a secure page.
-const gameHost = String.fromEnvironment(
-  'GAME_HOST',
-  defaultValue: 'ws://localhost:8080',
-);
+import 'history_screen.dart';
+import 'leaderboard_screen.dart';
+import 'queue_screen.dart';
 
 class OnlineScreen extends StatefulWidget {
   final String profileId;
@@ -53,6 +48,19 @@ class _OnlineScreenState extends State<OnlineScreen> {
   String? _error;
   late int _players = widget.numPlayers;
   bool _pushing = false;
+  bool _creating = false;
+  bool _prefilled = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_prefilled) return;
+    _prefilled = true;
+
+    final account = context.account;
+    final name = account.signedIn ? account.displayName?.trim() : null;
+    if (name != null && name.isNotEmpty) _name.text = name;
+  }
 
   @override
   void dispose() {
@@ -61,7 +69,36 @@ class _OnlineScreenState extends State<OnlineScreen> {
     super.dispose();
   }
 
-  Future<void> _join() async {
+  /// Ask the backend for a fresh table and drop its code into the field, so
+  /// creating and joining share one path: the code the server minted is the
+  /// room code the host sees.
+  Future<void> _create() async {
+    if (_pushing || _creating) return;
+
+    final account = context.account;
+    final target = context.prefs.target;
+    setState(() {
+      _creating = true;
+      _error = null;
+    });
+    try {
+      final code = await account.createRoom(
+        profileId: widget.profileId,
+        numPlayers: _players,
+        matchTarget: target,
+      );
+      if (!mounted) return;
+      _room.text = code;
+      await _join();
+    } on AccountException {
+      if (!mounted) return;
+      setState(() => _error = context.copy.auth.somethingBroke);
+    } finally {
+      if (mounted) setState(() => _creating = false);
+    }
+  }
+
+  Future<void> _join({bool spectate = false}) async {
     if (_pushing) return;
 
     final l = context.copy;
@@ -78,18 +115,27 @@ class _OnlineScreenState extends State<OnlineScreen> {
     }
     setState(() => _error = null);
 
+    final target = context.prefs.target;
     final cfg = loadProfile(
       widget.profileId,
       numPlayers: _players,
-    ).withMatchTarget(context.prefs.target);
+    ).withMatchTarget(target);
+    // The declared rules only matter when this join creates the room — an
+    // existing room ignores them and the lobby reports the real ones, which
+    // the controller adopts. Online tables always wait in the lobby.
     final controller = GameController(
       cfg: cfg,
+      autoReady: false,
       transport: WebSocketTransport(
         endpoint: uri,
         roomCode: _room.text.trim(),
         playerName: _name.text.trim().isEmpty
             ? l.onlineDefaultPlayer
             : _name.text.trim(),
+        spectate: spectate,
+        profileId: widget.profileId,
+        numPlayers: _players,
+        matchTarget: target,
       ),
     );
     _pushing = true;
@@ -104,6 +150,45 @@ class _OnlineScreenState extends State<OnlineScreen> {
     }
   }
 
+  void _findMatch() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => QueueScreen(
+          ladderId: '${widget.profileId}:$_players:ranked',
+          profileId: widget.profileId,
+          numPlayers: _players,
+        ),
+      ),
+    );
+  }
+
+  void _leaderboard() {
+    final profile = profileById(widget.profileId);
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => LeaderboardScreen(
+          ladderId: '${widget.profileId}:$_players:ranked',
+          ladderLabel: '${profile.label} · $_players',
+        ),
+      ),
+    );
+  }
+
+  void _history() {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => const HistoryScreen()));
+  }
+
+  void _friends() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            FriendsScreen(profileId: widget.profileId, numPlayers: _players),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final prefs = context.prefs;
@@ -116,132 +201,135 @@ class _OnlineScreenState extends State<OnlineScreen> {
         palette: p,
         children: [
           Positioned.fill(
-            child: Center(
-              child: Container(
-                width: 520,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 40,
-                  vertical: 36,
+            child: SheetCard(
+              palette: p,
+              children: [
+                BackLink(
+                  label: l.back,
+                  palette: p,
+                  onTap: () => Navigator.of(context).maybePop(),
                 ),
-                decoration: BoxDecoration(
-                  color: p.sheet,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: p.line),
+                const SizedBox(height: 20),
+                Text(
+                  l.online,
+                  style: T.display(34, tracking: -1.4, color: p.text),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    BackLink(
-                      label: l.back,
-                      palette: p,
-                      onTap: () => Navigator.of(context).maybePop(),
-                    ),
-                    const SizedBox(height: 20),
-                    Text(
-                      l.online,
-                      style: T.display(34, tracking: -1.4, color: p.text),
-                    ),
-                    const SizedBox(height: 20),
-                    Text(l.onlineExplainer, style: T.body(13, color: p.ash)),
-                    const SizedBox(height: 20),
-                    if (counts.length > 1) ...[
-                      Text(l.onlinePlayers, style: mono(10, color: p.ashDim)),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          for (final n in counts) ...[
-                            if (n != counts.first) const SizedBox(width: 8),
-                            Segment(
-                              label: n == 2
-                                  ? l.onlineTwoPlayers
-                                  : l.onlineFourPlayers,
-                              selected: n == _players,
-                              palette: p,
-                              onTap: () => setState(() => _players = n),
-                            ),
-                          ],
-                        ],
-                      ),
-                      const SizedBox(height: 20),
+                const SizedBox(height: 20),
+                Text(l.onlineExplainer, style: T.body(13, color: p.ash)),
+                const SizedBox(height: 20),
+                if (counts.length > 1) ...[
+                  ChoiceField(
+                    label: l.onlinePlayers,
+                    palette: p,
+                    children: [
+                      for (final n in counts)
+                        Segment(
+                          label: n == 2
+                              ? l.onlineTwoPlayers
+                              : l.onlineFourPlayers,
+                          selected: n == _players,
+                          palette: p,
+                          onTap: () => setState(() => _players = n),
+                        ),
                     ],
-                    _Field(
-                      label: l.onlineTableName,
-                      controller: _room,
-                      palette: p,
-                    ),
-                    const SizedBox(height: 14),
-                    _Field(
-                      label: l.onlineYourName,
-                      controller: _name,
-                      hint: l.onlinePlayerNameHint,
-                      palette: p,
-                    ),
-                    if (_error != null) ...[
-                      const SizedBox(height: 14),
-                      Text(_error!, style: T.body(13, color: p.pink)),
-                    ],
-                    const SizedBox(height: 24),
-                    MintButton(
-                      label: l.onlineJoinTable,
-                      palette: p,
-                      onTap: _join,
-                    ),
-                  ],
+                  ),
+                  const SizedBox(height: 20),
+                ],
+                TextEntry(
+                  label: l.onlineTableName,
+                  controller: _room,
+                  palette: p,
                 ),
-              ),
+                const SizedBox(height: 14),
+                TextEntry(
+                  label: l.onlineYourName,
+                  controller: _name,
+                  hint: l.onlinePlayerNameHint,
+                  palette: p,
+                ),
+                if (_error != null) ...[
+                  const SizedBox(height: 14),
+                  Text(_error!, style: T.body(13, color: p.pink)),
+                ],
+                const SizedBox(height: 24),
+                MintButton(label: l.onlineJoinTable, palette: p, onTap: _join),
+                // Ranked play requires a permanent account. Guests and
+                // signed-out players get no client entry point, and the enqueue
+                // RPC independently enforces the same rule server-side.
+                if (context.account.state is Player) ...[
+                  const SizedBox(height: 14),
+                  Center(
+                    child: TextLink(
+                      label: l.ranked.findMatch,
+                      palette: p,
+                      color: p.ashDim,
+                      onTap: _findMatch,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Center(
+                    child: TextLink(
+                      label: l.ranked.leaderboard,
+                      palette: p,
+                      color: p.ashDim,
+                      onTap: _leaderboard,
+                    ),
+                  ),
+                ],
+                // Guests play recorded casual matches too, so history belongs
+                // to every signed-in identity rather than ranked players only.
+                if (context.account.signedIn) ...[
+                  const SizedBox(height: 14),
+                  Center(
+                    child: TextLink(
+                      label: l.ranked.history,
+                      palette: p,
+                      color: p.ashDim,
+                      onTap: _history,
+                    ),
+                  ),
+                ],
+                // Guests can receive requests, but only permanent accounts
+                // may send them, so the social entry point is Player-only.
+                if (context.account.state is Player) ...[
+                  const SizedBox(height: 14),
+                  Center(
+                    child: TextLink(
+                      label: l.social.friends,
+                      palette: p,
+                      color: p.ashDim,
+                      onTap: _friends,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 14),
+                Center(
+                  child: TextLink(
+                    label: l.onlineWatchTable,
+                    palette: p,
+                    color: p.ashDim,
+                    onTap: () => _join(spectate: true),
+                  ),
+                ),
+                // Creating needs an account: the server mints the code against
+                // the signed-in owner. A signed-out player can still join any
+                // table whose name or code they were given.
+                if (hasBackend && context.account.signedIn) ...[
+                  const SizedBox(height: 14),
+                  Center(
+                    child: TextLink(
+                      label: _creating ? l.onlineCreating : l.onlineCreateTable,
+                      palette: p,
+                      color: p.ashDim,
+                      onTap: _create,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
         ],
       ),
-    );
-  }
-}
-
-class _Field extends StatelessWidget {
-  final String label;
-  final TextEditingController controller;
-  final String? hint;
-  final Palette palette;
-
-  const _Field({
-    required this.label,
-    required this.controller,
-    required this.palette,
-    this.hint,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final p = palette;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: mono(10, color: p.ashDim)),
-        const SizedBox(height: 8),
-        TextField(
-          controller: controller,
-          style: T.body(15, color: p.text),
-          decoration: InputDecoration(
-            filled: true,
-            hintText: hint,
-            hintStyle: T.body(15, color: p.ashDim),
-            fillColor: p.panel,
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 14,
-              vertical: 14,
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide: BorderSide(color: p.line),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide: BorderSide(color: p.mint, width: 2),
-            ),
-          ),
-        ),
-      ],
     );
   }
 }

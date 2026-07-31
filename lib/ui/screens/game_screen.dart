@@ -26,6 +26,7 @@ import '../copy.dart';
 import '../cues.dart';
 import '../theme.dart';
 import '../widgets/controls.dart';
+import '../widgets/lobby_view.dart';
 import '../widgets/meld_box.dart';
 import '../widgets/playing_card.dart';
 import '../widgets/round_sheet.dart';
@@ -186,7 +187,7 @@ class _GameScreenState extends State<GameScreen> {
 
   /// The streak only moves when a match ends, and only once.
   void _recordMatchOnce(TableView view) {
-    if (!view.matchOver || _matchRecorded) return;
+    if (c.spectating || !view.matchOver || _matchRecorded) return;
     _matchRecorded = true;
     _prefs.recordMatch(won: view.winnerSide == view.side);
   }
@@ -203,6 +204,37 @@ class _GameScreenState extends State<GameScreen> {
     }
     final view = c.view;
     if (view == null) {
+      if (c.inLobby) {
+        final lobbyView = LobbyView(
+          controller: c,
+          palette: p,
+          copy: l,
+          onLeave: () {
+            c.leave();
+            Navigator.maybePop(context);
+          },
+        );
+        final spectators = c.lobby!.spectators;
+        if (spectators == 0) return lobbyView;
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            lobbyView,
+            SafeArea(
+              child: Align(
+                alignment: Alignment.topRight,
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Text(
+                    l.lobby.spectators(spectators),
+                    style: mono(10, color: p.ashDim),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      }
       return _Message(text: '${l.deal}…', palette: p);
     }
 
@@ -222,26 +254,40 @@ class _GameScreenState extends State<GameScreen> {
     );
     final cards = _cardIdentities.assign(layout.cards);
 
+    final table = Stage(
+      palette: p,
+      children: [
+        ..._meldBoxes(layout, p),
+        ..._zones(layout, p),
+        ..._rowLabels(view, l, p),
+        ..._cards(cards, p),
+        _header(view, prefs, p, l),
+        _opponents(view, l, p),
+        if (!c.spectating) _strip(view, l, p),
+        _whyNot(l, p),
+        if (view.roundOver || view.matchOver)
+          Positioned.fill(
+            child: RoundSheet(
+              view: view,
+              palette: p,
+              copy: l,
+              onContinue: view.matchOver ? c.rematch : c.nextRound,
+            ),
+          ),
+      ],
+    );
+
     return Scaffold(
-      body: Stage(
-        palette: p,
+      body: Stack(
+        fit: StackFit.expand,
         children: [
-          ..._meldBoxes(layout, p),
-          ..._zones(layout, p),
-          ..._rowLabels(view, l, p),
-          ..._cards(cards, p),
-          _header(view, prefs, p, l),
-          _opponents(view, l, p),
-          _strip(view, l, p),
-          _whyNot(l, p),
-          if (view.roundOver || view.matchOver)
-            Positioned.fill(
-              child: RoundSheet(
-                view: view,
-                palette: p,
-                copy: l,
-                onContinue: view.matchOver ? c.rematch : c.nextRound,
-              ),
+          IgnorePointer(
+            ignoring: c.reconnecting,
+            child: Opacity(opacity: c.reconnecting ? 0.55 : 1, child: table),
+          ),
+          if (c.reconnecting)
+            Center(
+              child: Text(l.reconnecting, style: mono(10, color: p.mint)),
             ),
         ],
       ),
@@ -357,122 +403,125 @@ class _GameScreenState extends State<GameScreen> {
     final sorted = [...cards]..sort((a, b) => a.z.compareTo(b.z));
     return [
       for (final spot in sorted)
-        AnimatedPositioned(
-          key: ValueKey(spot.key),
-          duration: Motion.of(context, Motion.glide),
-          curve: Motion.glideCurve,
-          left: spot.x,
-          top: spot.y,
-          child: AnimatedScale(
+        if (!c.spectating || !spot.inHand)
+          AnimatedPositioned(
+            key: ValueKey(spot.key),
             duration: Motion.of(context, Motion.glide),
             curve: Motion.glideCurve,
-            scale: spot.scale,
-            alignment: Alignment.topLeft,
-            child: spot.inHand
-                ? Hoverable(
-                    onTap: () => c.toggleCard(spot.card),
-                    builder: (_) => PlayingCard(
-                      card: spot.card,
-                      palette: p,
-                      selected: spot.selected,
+            left: spot.x,
+            top: spot.y,
+            child: AnimatedScale(
+              duration: Motion.of(context, Motion.glide),
+              curve: Motion.glideCurve,
+              scale: spot.scale,
+              alignment: Alignment.topLeft,
+              child: spot.inHand
+                  ? Hoverable(
+                      onTap: () => c.toggleCard(spot.card),
+                      builder: (_) => PlayingCard(
+                        card: spot.card,
+                        palette: p,
+                        selected: spot.selected,
+                      ),
+                    )
+                  : IgnorePointer(
+                      child: PlayingCard(
+                        card: spot.card,
+                        palette: p,
+                        faceDown: !spot.faceUp,
+                        asWild: spot.asWild,
+                      ),
                     ),
-                  )
-                : IgnorePointer(
-                    child: PlayingCard(
-                      card: spot.card,
-                      palette: p,
-                      faceDown: !spot.faceUp,
-                      asWild: spot.asWild,
-                    ),
-                  ),
+            ),
           ),
-        ),
     ];
   }
 
   // --- chrome --------------------------------------------------------------
 
-  Widget _header(TableView view, AppPrefs prefs, Palette p, Copy l) =>
-      Positioned(
-        left: 0,
-        right: 0,
-        top: 0,
-        height: 58,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Row(
+  Widget _header(
+    TableView view,
+    AppPrefs prefs,
+    Palette p,
+    Copy l,
+  ) => Positioned(
+    left: 0,
+    right: 0,
+    top: 0,
+    height: 58,
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Row(
+        children: [
+          Hoverable(
+            onTap: () => Navigator.of(context).maybePop(),
+            builder: (_) => BrandMark(size: 30, palette: p, ring: 6),
+          ),
+          const SizedBox(width: 14),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Hoverable(
-                onTap: () => Navigator.of(context).maybePop(),
-                builder: (_) => BrandMark(size: 30, palette: p, ring: 6),
+              if (c.spectating) Text(l.watching, style: mono(8, color: p.mint)),
+              Text(
+                view.profile.toUpperCase(),
+                style: T.display(14, tracking: -0.4, color: p.text),
               ),
-              const SizedBox(width: 14),
-              Column(
+              Text(
+                l.roundLine(view.roundIndex + 1, view.matchTarget),
+                style: mono(9, color: p.ashDim, height: 1.4),
+              ),
+            ],
+          ),
+          const Spacer(),
+          if (prefs.streak > 0) ...[
+            _StreakBadge(streak: prefs.streak, palette: p, copy: l),
+            const SizedBox(width: 14),
+          ],
+          Pill(
+            label: prefs.sound ? l.soundOn : l.soundOff,
+            palette: p,
+            round: true,
+            color: prefs.sound ? p.mint : p.ashDim,
+            onTap: prefs.toggleSound,
+          ),
+          const SizedBox(width: 6),
+          Pill(
+            label: prefs.lang.toggleLabel,
+            palette: p,
+            round: true,
+            onTap: prefs.toggleLang,
+          ),
+          const SizedBox(width: 6),
+          Pill(
+            label: prefs.dark ? l.themeLight : l.themeDark,
+            palette: p,
+            round: true,
+            onTap: prefs.toggleTheme,
+          ),
+          const SizedBox(width: 12),
+          for (var side = 0; side < view.matchScores.length; side++)
+            Padding(
+              padding: const EdgeInsets.only(left: 12),
+              child: Column(
                 mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
-                    view.profile.toUpperCase(),
-                    style: T.display(14, tracking: -0.4, color: p.text),
+                    side == view.side ? l.you : l.them,
+                    style: mono(9, color: p.ashDim),
                   ),
                   Text(
-                    l.roundLine(view.roundIndex + 1, view.matchTarget),
-                    style: mono(9, color: p.ashDim, height: 1.4),
+                    '${view.matchScores[side]}',
+                    style: mono(17, color: side == view.side ? p.mint : p.ash),
                   ),
                 ],
               ),
-              const Spacer(),
-              if (prefs.streak > 0) ...[
-                _StreakBadge(streak: prefs.streak, palette: p, copy: l),
-                const SizedBox(width: 14),
-              ],
-              Pill(
-                label: prefs.sound ? l.soundOn : l.soundOff,
-                palette: p,
-                round: true,
-                color: prefs.sound ? p.mint : p.ashDim,
-                onTap: prefs.toggleSound,
-              ),
-              const SizedBox(width: 6),
-              Pill(
-                label: prefs.lang.toggleLabel,
-                palette: p,
-                round: true,
-                onTap: prefs.toggleLang,
-              ),
-              const SizedBox(width: 6),
-              Pill(
-                label: prefs.dark ? l.themeLight : l.themeDark,
-                palette: p,
-                round: true,
-                onTap: prefs.toggleTheme,
-              ),
-              const SizedBox(width: 12),
-              for (var side = 0; side < view.matchScores.length; side++)
-                Padding(
-                  padding: const EdgeInsets.only(left: 12),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(
-                        side == view.side ? l.you : l.them,
-                        style: mono(9, color: p.ashDim),
-                      ),
-                      Text(
-                        '${view.matchScores[side]}',
-                        style: mono(
-                          17,
-                          color: side == view.side ? p.mint : p.ash,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-            ],
-          ),
-        ),
-      );
+            ),
+        ],
+      ),
+    ),
+  );
 
   Widget _opponents(TableView view, Copy l, Palette p) {
     final seats = [

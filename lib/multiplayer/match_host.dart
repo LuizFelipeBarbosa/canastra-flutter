@@ -8,6 +8,7 @@
 library;
 
 import 'dart:async';
+import 'dart:math';
 
 import '../ai/agent.dart';
 import '../engine/config.dart';
@@ -19,10 +20,51 @@ import 'table_view.dart';
 /// An event and its addressee; [seat] of null means broadcast.
 typedef HostMessage = ({int? seat, ServerEvent event});
 
+typedef RoundOverCallback =
+    void Function(
+      RoundResult result,
+      Match match, {
+      required String matchId,
+      required DateTime startedAt,
+    });
+
+typedef MatchOverCallback =
+    void Function(
+      Match match, {
+      required String matchId,
+      required DateTime startedAt,
+    });
+
+/// Outbound addressee used for one public-only view shared by all spectators.
+const int spectatorHostSeat = -1;
+
+final _uuidRandom = Random.secure();
+
+/// Mint a time-ordered UUIDv7 using the current millisecond and secure entropy.
+String uuidV7() {
+  final bytes = List<int>.generate(16, (_) => _uuidRandom.nextInt(256));
+  var milliseconds = DateTime.now().millisecondsSinceEpoch;
+  for (var i = 5; i >= 0; i--) {
+    bytes[i] = milliseconds & 0xff;
+    milliseconds >>= 8;
+  }
+  bytes[6] = 0x70 | (bytes[6] & 0x0f);
+  bytes[8] = 0x80 | (bytes[8] & 0x3f);
+
+  final hex = bytes
+      .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+      .join();
+  return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
+      '${hex.substring(12, 16)}-${hex.substring(16, 20)}-'
+      '${hex.substring(20)}';
+}
+
 class MatchHost {
   final String roomCode;
   final RulesConfig cfg;
   final int seed;
+  final RoundOverCallback? onRoundOver;
+  final MatchOverCallback? onMatchOver;
 
   /// How long a bot "thinks" before moving, ~600ms in the app so the table
   /// reads as a sequence of moves rather than one jump.
@@ -38,9 +80,12 @@ class MatchHost {
 
   Match _match;
   int _matchNumber = 0;
+  int _spectatorCount = 0;
   bool _started = false;
   bool _disposed = false;
   int _botGeneration = 0;
+  String _matchId;
+  DateTime _startedAt;
 
   MatchHost({
     required this.roomCode,
@@ -49,8 +94,12 @@ class MatchHost {
     required List<SeatInfo> seats,
     AgentLevel botLevel = AgentLevel.normal,
     this.botDelay = const Duration(milliseconds: 600),
+    this.onRoundOver,
+    this.onMatchOver,
   }) : _seats = List.of(seats),
-       _match = Match(cfg: cfg, seed: seed) {
+       _match = Match(cfg: cfg, seed: seed),
+       _matchId = uuidV7(),
+       _startedAt = DateTime.now().toUtc() {
     if (seats.length != cfg.table.numPlayers) {
       throw ArgumentError(
         'expected ${cfg.table.numPlayers} seats, got ${seats.length}',
@@ -68,6 +117,8 @@ class MatchHost {
   List<SeatInfo> get seats => List.unmodifiable(_seats);
   Match get match => _match;
   bool get started => _started;
+  int get spectatorCount => _spectatorCount;
+  String get matchId => _matchId;
 
   /// Everyone who is not a bot has readied up (bots are always ready).
   bool get everyoneReady =>
@@ -83,6 +134,9 @@ class MatchHost {
         _emit(seat, Joined(roomCode: roomCode, seat: seat));
         _broadcastLobby();
         if (_started) _pushTable(seat);
+
+      case SpectateRoom():
+        _emit(seat, const ServerError(message: 'spectators only watch'));
 
       case SetReady(:final ready):
         _updateSeat(seat, (s) => s.copyWith(ready: ready));
@@ -138,8 +192,9 @@ class MatchHost {
   }
 
   void _applyAndBroadcast(int seat, int actionId) {
+    final RoundResult? result;
     try {
-      _match.applyId(actionId);
+      result = _match.applyId(actionId);
     } on IllegalAction catch (e) {
       _emit(seat, ActionRejected(actionId: actionId, reason: e.message));
       _pushTable(seat);
@@ -153,6 +208,18 @@ class MatchHost {
       return;
     }
     _broadcastTable();
+
+    if (result != null) {
+      onRoundOver?.call(
+        result,
+        _match,
+        matchId: _matchId,
+        startedAt: _startedAt,
+      );
+      if (_match.matchOver) {
+        onMatchOver?.call(_match, matchId: _matchId, startedAt: _startedAt);
+      }
+    }
 
     if (_match.round.roundOver) {
       // Nobody human is watching, so keep the match moving on its own.
@@ -179,12 +246,45 @@ class MatchHost {
     if (!_match.matchOver) return;
     _botGeneration++;
     _matchNumber++;
-    _match = Match(cfg: cfg, seed: seed + 1013 * (_match.roundIndex + 1));
+    final rematchSeed = seed + 1013 * (_match.roundIndex + 1);
+    _match = Match(cfg: cfg, seed: rematchSeed);
+    _matchId = uuidV7();
+    _startedAt = DateTime.now().toUtc();
     _broadcastTable();
     _scheduleBot();
   }
 
   // --- bots ------------------------------------------------------------------
+
+  /// Hand the seat to an [Agent] so the table keeps moving without its human.
+  void takeOverWithBot(int seat, {AgentLevel level = AgentLevel.normal}) {
+    if (_disposed || _agents.containsKey(seat)) return;
+    if (!_seats.any((candidate) => candidate.seat == seat)) return;
+
+    _agents[seat] = Agent.forLevel(level, seed: seed + 977 * seat);
+    _updateSeat(
+      seat,
+      (current) => current.copyWith(kind: SeatKind.bot, ready: true),
+    );
+    _broadcastLobby();
+    _scheduleBot();
+  }
+
+  /// Give the seat back to its returning human.
+  void handBackSeat(int seat) {
+    if (_disposed || !_agents.containsKey(seat)) return;
+
+    _agents.remove(seat);
+    _botGeneration++;
+    _updateSeat(
+      seat,
+      (current) => current.copyWith(kind: SeatKind.remote, connected: true),
+    );
+    _broadcastLobby();
+    // The host-wide generation bump also invalidates pending moves for every
+    // other bot, so they must all be re-armed after this seat changes hands.
+    _scheduleBot();
+  }
 
   /// If the seat to act is a bot, play its move after [botDelay].
   ///
@@ -251,6 +351,12 @@ class MatchHost {
     _outbound.add((seat: seat, event: event));
   }
 
+  void updateSpectatorCount(int count) {
+    if (_disposed || count == _spectatorCount) return;
+    _spectatorCount = count;
+    _broadcastLobby();
+  }
+
   void _broadcastLobby() => _emit(
     null,
     LobbyUpdate(
@@ -259,6 +365,8 @@ class MatchHost {
       numPlayers: cfg.table.numPlayers,
       seats: seats,
       started: _started,
+      matchTarget: cfg.scoring.matchTarget,
+      spectators: _spectatorCount,
     ),
   );
 
@@ -274,10 +382,27 @@ class MatchHost {
     ),
   );
 
+  /// MatchHost already owns the engine state, so it constructs one sentinel
+  /// view here instead of leaking [Match] through the socket-facing room.
+  void pushSpectatorTable() {
+    if (_spectatorCount == 0) return;
+    _emit(
+      spectatorHostSeat,
+      TableUpdate(
+        view: buildSpectatorView(
+          _match,
+          playerNames: _playerNames,
+          matchNumber: _matchNumber,
+        ),
+      ),
+    );
+  }
+
   void _broadcastTable() {
     for (final s in _seats) {
       _pushTable(s.seat);
     }
+    pushSpectatorTable();
   }
 
   void dispose() {

@@ -9,6 +9,9 @@
 /// area. Those are what can still overflow, so those are what is pumped here.
 library;
 
+import 'package:canastra/account/account.dart';
+import 'package:canastra/account/auth_backend.dart';
+import 'package:canastra/account/fake_auth_backend.dart';
 import 'package:canastra/ai/agent.dart';
 import 'package:canastra/engine/cards.dart';
 import 'package:canastra/engine/profiles.dart';
@@ -16,11 +19,20 @@ import 'package:canastra/game/game_controller.dart';
 import 'package:canastra/game/move_index.dart';
 import 'package:canastra/multiplayer/local_transport.dart';
 import 'package:canastra/multiplayer/table_view.dart';
+import 'package:canastra/ui/account_scope.dart';
 import 'package:canastra/ui/app_scope.dart';
 import 'package:canastra/ui/copy.dart';
+import 'package:canastra/ui/screens/friends_screen.dart';
 import 'package:canastra/ui/screens/game_screen.dart';
+import 'package:canastra/ui/screens/history_screen.dart';
 import 'package:canastra/ui/screens/landing_screen.dart';
+import 'package:canastra/ui/screens/leaderboard_screen.dart';
+import 'package:canastra/ui/screens/online_screen.dart';
+import 'package:canastra/ui/screens/otp_screen.dart';
+import 'package:canastra/ui/screens/profile_screen.dart';
+import 'package:canastra/ui/screens/queue_screen.dart';
 import 'package:canastra/ui/screens/setup_screen.dart';
+import 'package:canastra/ui/screens/sign_in_screen.dart';
 import 'package:canastra/ui/theme.dart';
 import 'package:canastra/ui/widgets/meld_box.dart';
 import 'package:canastra/ui/widgets/playing_card.dart';
@@ -38,6 +50,7 @@ Future<AppPrefs> _pumpAt(
   Size size,
   Widget child, {
   bool dark = true,
+  Account? account,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1.0;
@@ -48,11 +61,14 @@ Future<AppPrefs> _pumpAt(
   await tester.pumpWidget(
     AppScope(
       prefs: prefs,
-      child: ListenableBuilder(
-        listenable: prefs,
-        builder: (context, _) => MaterialApp(
-          theme: buildTheme(prefs.palette, dark: prefs.dark),
-          home: child,
+      child: AccountScope(
+        account: account ?? Account(backend: FakeAuthBackend()),
+        child: ListenableBuilder(
+          listenable: prefs,
+          builder: (context, _) => MaterialApp(
+            theme: buildTheme(prefs.palette, dark: prefs.dark),
+            home: child,
+          ),
         ),
       ),
     ),
@@ -258,6 +274,62 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+
+  testWidgets('the landing header offers sign in', (tester) async {
+    await _pumpAt(tester, _desktop, const LandingScreen());
+
+    expect(find.text('SIGN IN'), findsOneWidget);
+  });
+
+  testWidgets('sign in as guest lands back with a guest pill', (tester) async {
+    final account = Account(backend: FakeAuthBackend());
+    await _pumpAt(tester, _desktop, const LandingScreen(), account: account);
+
+    await tester.tap(find.text('SIGN IN'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(Copy.of(Lang.en).auth.playAsGuest));
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(find.text('GUEST'), findsOneWidget);
+  });
+
+  for (final (screenName, screen) in const [
+    ('sign in', SignInScreen()),
+    ('code', OtpScreen(email: 'a@b.com')),
+    ('profile', ProfileScreen()),
+  ]) {
+    for (final (sizeName, size) in const [
+      ('life size', _desktop),
+      ('a phone', _phone),
+    ]) {
+      testWidgets('the $screenName screen lays out at $sizeName', (
+        tester,
+      ) async {
+        await _pumpAt(tester, size, screen);
+
+        expect(tester.takeException(), isNull);
+      });
+    }
+  }
+
+  testWidgets('the code screen rejects a wrong code', (tester) async {
+    final account = Account(backend: FakeAuthBackend());
+    await account.sendOtp('a@b.com');
+    await _pumpAt(
+      tester,
+      _desktop,
+      const OtpScreen(email: 'a@b.com'),
+      account: account,
+    );
+
+    await tester.enterText(find.byType(TextField), '111111');
+    await tester.tap(find.text(Copy.of(Lang.en).auth.verify));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text(Copy.of(Lang.en).auth.badCode), findsOneWidget);
+  });
 
   testWidgets('popping the game screen disposes its session', (tester) async {
     final controller = await _dealt(
@@ -516,4 +588,254 @@ void main() {
     expect(controller.selection, isEmpty);
     expect(tester.takeException(), isNull);
   });
+
+  for (final (name, size) in const [
+    ('life size', _desktop),
+    ('a phone', _phone),
+  ]) {
+    testWidgets('the online lobby lays out at $name', (tester) async {
+      final cfg = loadProfile('buraco', numPlayers: 2);
+      final controller = GameController(
+        cfg: cfg,
+        transport: LocalTransport.singlePlayer(
+          cfg: cfg,
+          seed: 12,
+          botDelay: Duration.zero,
+        ),
+        autoReady: false,
+      );
+      final prefs = await _pumpAt(
+        tester,
+        size,
+        GameScreen(controller: controller),
+      );
+
+      expect(find.text('LOCAL'), findsOneWidget);
+      expect(find.text(prefs.copy.lobby.ready), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.text(prefs.copy.lobby.ready));
+      await tester.pump();
+      // Finish the table's opening deal so its periodic timer cannot outlive
+      // the widget test.
+      await tester.pump(const Duration(seconds: 2));
+
+      expect(controller.view, isNotNull);
+      if (size == _phone) {
+        expect(find.text(prefs.copy.rotatePrompt), findsOneWidget);
+      } else {
+        expect(find.text(prefs.copy.stock), findsOneWidget);
+      }
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  for (final (name, size) in const [
+    ('life size', _desktop),
+    ('a phone', _phone),
+  ]) {
+    testWidgets('the ranked queue lays out at $name', (tester) async {
+      await _pumpAt(
+        tester,
+        size,
+        const QueueScreen(
+          ladderId: 'buraco:2:ranked',
+          profileId: 'buraco',
+          numPlayers: 2,
+        ),
+      );
+
+      expect(tester.takeException(), isNull);
+      // Queue owns periodic timers, so dispose it inside the test body.
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    });
+
+    testWidgets('the leaderboard lays out at $name', (tester) async {
+      await _pumpAt(
+        tester,
+        size,
+        const LeaderboardScreen(
+          ladderId: 'buraco:2:ranked',
+          ladderLabel: 'Buraco · 2',
+        ),
+      );
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('ranked links appear only for players', (tester) async {
+    final playerBackend = FakeAuthBackend();
+    final player = Account(backend: playerBackend);
+    await player.signInWithPassword('ana@example.com', 'password');
+    final guestBackend = FakeAuthBackend();
+    final guest = Account(backend: guestBackend);
+    await guest.signInAnonymously();
+    final signedOutBackend = FakeAuthBackend();
+    final signedOut = Account(backend: signedOutBackend);
+    addTearDown(() async {
+      player.dispose();
+      guest.dispose();
+      signedOut.dispose();
+      await playerBackend.close();
+      await guestBackend.close();
+      await signedOutBackend.close();
+    });
+
+    await _pumpAt(
+      tester,
+      _desktop,
+      const OnlineScreen(profileId: 'buraco', numPlayers: 2),
+      account: player,
+    );
+    expect(find.text(Copy.of(Lang.en).ranked.findMatch), findsOneWidget);
+    expect(find.text(Copy.of(Lang.en).ranked.leaderboard), findsOneWidget);
+
+    await _pumpAt(
+      tester,
+      _desktop,
+      const OnlineScreen(profileId: 'buraco', numPlayers: 2),
+      account: guest,
+    );
+    expect(find.text(Copy.of(Lang.en).ranked.findMatch), findsNothing);
+    expect(find.text(Copy.of(Lang.en).ranked.leaderboard), findsNothing);
+
+    await _pumpAt(
+      tester,
+      _desktop,
+      const OnlineScreen(profileId: 'buraco', numPlayers: 2),
+      account: signedOut,
+    );
+    expect(find.text(Copy.of(Lang.en).ranked.findMatch), findsNothing);
+    expect(find.text(Copy.of(Lang.en).ranked.leaderboard), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final (name, size) in const [
+    ('life size', _desktop),
+    ('a phone', _phone),
+  ]) {
+    testWidgets('the friends screen lays out at $name', (tester) async {
+      final backend = FakeAuthBackend()
+        ..friendEntries = List.generate(
+          29,
+          (index) => FriendEntry(
+            userId: 'friend-$index',
+            displayName: 'Friend $index',
+            username: 'friend$index',
+            online: index.isEven,
+            status: index % 5 == 0 ? 'in_game' : '',
+          ),
+        )
+        ..friendRequestEntries = const [
+          FriendRequestEntry(
+            id: 1,
+            userId: 'incoming-1',
+            displayName: 'Incoming One',
+            incoming: true,
+          ),
+          FriendRequestEntry(
+            id: 2,
+            userId: 'incoming-2',
+            displayName: 'Incoming Two',
+            incoming: true,
+          ),
+          FriendRequestEntry(
+            id: 3,
+            userId: 'outgoing-1',
+            displayName: 'Outgoing One',
+            incoming: false,
+          ),
+        ];
+      final account = Account(backend: backend);
+      addTearDown(() async {
+        account.dispose();
+        await backend.close();
+      });
+
+      await _pumpAt(tester, size, const FriendsScreen(), account: account);
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('friends link appears only for players', (tester) async {
+    final playerBackend = FakeAuthBackend();
+    final player = Account(backend: playerBackend);
+    await player.signInWithPassword('ana@example.com', 'password');
+    final guestBackend = FakeAuthBackend();
+    final guest = Account(backend: guestBackend);
+    await guest.signInAnonymously();
+    final signedOutBackend = FakeAuthBackend();
+    final signedOut = Account(backend: signedOutBackend);
+    addTearDown(() async {
+      player.dispose();
+      guest.dispose();
+      signedOut.dispose();
+      await playerBackend.close();
+      await guestBackend.close();
+      await signedOutBackend.close();
+    });
+
+    await _pumpAt(
+      tester,
+      _desktop,
+      const OnlineScreen(profileId: 'buraco', numPlayers: 2),
+      account: player,
+    );
+    expect(find.text(Copy.of(Lang.en).social.friends), findsOneWidget);
+
+    await _pumpAt(
+      tester,
+      _desktop,
+      const OnlineScreen(profileId: 'buraco', numPlayers: 2),
+      account: guest,
+    );
+    expect(find.text(Copy.of(Lang.en).social.friends), findsNothing);
+
+    await _pumpAt(
+      tester,
+      _desktop,
+      const OnlineScreen(profileId: 'buraco', numPlayers: 2),
+      account: signedOut,
+    );
+    expect(find.text(Copy.of(Lang.en).social.friends), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final (name, size) in const [
+    ('life size', _desktop),
+    ('a phone', _phone),
+  ]) {
+    testWidgets('the history screen lays out at $name', (tester) async {
+      final backend = FakeAuthBackend()
+        ..historyEntries = List.generate(
+          10,
+          (index) => MatchHistoryEntry(
+            matchId: 'match-$index',
+            profileId: index.isEven ? 'buraco' : 'canasta',
+            numPlayers: index.isEven ? 2 : 4,
+            result: index % 3 == 0 ? 'win' : 'loss',
+            finalScores: [3000 + index, 1700 + index],
+            mySide: index.isEven ? 0 : 1,
+            ratingDelta: index.isEven ? 20 : -12,
+            isRanked: true,
+            endedAt: DateTime.now().subtract(Duration(hours: index + 1)),
+          ),
+        );
+      final account = Account(backend: backend);
+      addTearDown(() async {
+        account.dispose();
+        await backend.close();
+      });
+
+      await _pumpAt(tester, size, const HistoryScreen(), account: account);
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+    });
+  }
 }

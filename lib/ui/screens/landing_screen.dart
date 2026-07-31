@@ -9,12 +9,16 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../../account/account.dart';
 import '../../engine/profiles.dart';
+import '../account_scope.dart';
 import '../app_scope.dart';
 import '../copy.dart';
 import '../theme.dart';
 import '../widgets/controls.dart';
 import '../widgets/stage.dart';
+import 'profile_screen.dart';
+import 'sign_in_screen.dart';
 import 'setup_screen.dart';
 
 class LandingScreen extends StatelessWidget {
@@ -68,14 +72,34 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final account = context.account;
     final p = prefs.palette;
     final l = prefs.copy;
+    final accountLabel = switch (account.state) {
+      Restoring() || SignedOut() => l.auth.signIn,
+      Guest() => l.auth.guest,
+      Player() => _playerLabel(account.displayName, l.auth.account),
+    };
+
     return Row(
       children: [
         BrandMark(size: 52, palette: p),
         const SizedBox(width: 16),
         BrandWord(palette: p),
         const Spacer(),
+        Pill(
+          label: accountLabel,
+          palette: p,
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => switch (account.state) {
+                Restoring() || SignedOut() => const SignInScreen(),
+                Guest() || Player() => const ProfileScreen(),
+              },
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
         Pill(
           label: prefs.lang.toggleLabel,
           palette: p,
@@ -90,6 +114,14 @@ class _Header extends StatelessWidget {
       ],
     );
   }
+}
+
+String _playerLabel(String? displayName, String fallback) {
+  final name = displayName?.trim();
+  if (name == null || name.isEmpty) return fallback;
+
+  final upper = name.toUpperCase();
+  return upper.length <= 12 ? upper : upper.substring(0, 12);
 }
 
 class _Pitch extends StatelessWidget {

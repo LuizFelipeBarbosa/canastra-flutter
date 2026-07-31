@@ -45,6 +45,8 @@ class Copy {
   final String you;
   final String them;
   final String thinking;
+  final String reconnecting;
+  final String watching;
   final String round;
 
   /// The words between the round number and the match target: "FIRST TO".
@@ -143,9 +145,12 @@ class Copy {
   final String onlineYourName;
   final String onlinePlayerNameHint;
   final String onlineJoinTable;
+  final String onlineWatchTable;
   final String onlineInvalidHost;
   final String onlineMissingTableName;
   final String onlineDefaultPlayer;
+  final String onlineCreateTable;
+  final String onlineCreating;
 
   // --- shared controls ---
   final String themeLight;
@@ -164,6 +169,22 @@ class Copy {
   final String soundOn;
   final String soundOff;
 
+  /// Waiting for the rest of an online table to sit down and ready up.
+  final LobbyCopy lobby;
+
+  /// Ranked matchmaking and the ladder it feeds.
+  final RankedCopy ranked;
+
+  /// Friends, requests, presence and room invitations.
+  final SocialCopy social;
+
+  /// Signing in, and everything that hangs off having an account.
+  ///
+  /// Grouped rather than flattened in here: accounts alone are some forty
+  /// strings, and a hundred-and-thirty-parameter constructor is a place
+  /// mistakes hide. Read as `l.auth.sendCode`.
+  final AuthCopy auth;
+
   const Copy({
     required this.kicker,
     required this.headline,
@@ -180,6 +201,8 @@ class Copy {
     required this.you,
     required this.them,
     required this.thinking,
+    required this.reconnecting,
+    required this.watching,
     required this.round,
     required this.firstTo,
     required this.stock,
@@ -246,9 +269,12 @@ class Copy {
     required this.onlineYourName,
     required this.onlinePlayerNameHint,
     required this.onlineJoinTable,
+    required this.onlineWatchTable,
     required this.onlineInvalidHost,
     required this.onlineMissingTableName,
     required this.onlineDefaultPlayer,
+    required this.onlineCreateTable,
+    required this.onlineCreating,
     required this.themeLight,
     required this.themeDark,
     required this.seatFallback,
@@ -259,6 +285,10 @@ class Copy {
     required this.best,
     required this.soundOn,
     required this.soundOff,
+    required this.lobby,
+    required this.ranked,
+    required this.social,
+    required this.auth,
   });
 
   static Copy of(Lang lang) => lang == Lang.pt ? _pt : _en;
@@ -307,6 +337,8 @@ class Copy {
     you: 'YOU',
     them: 'THEM',
     thinking: 'THINKING',
+    reconnecting: 'Reconnecting…',
+    watching: 'WATCHING',
     round: 'ROUND',
     firstTo: 'FIRST TO',
     stock: 'STOCK',
@@ -401,9 +433,12 @@ class Copy {
     onlineYourName: 'YOUR NAME',
     onlinePlayerNameHint: 'How others see you',
     onlineJoinTable: 'Join the table',
+    onlineWatchTable: 'Watch a table',
     onlineInvalidHost: 'This build has no usable host address.',
     onlineMissingTableName: 'Give the table a name so others can find it.',
     onlineDefaultPlayer: 'Player',
+    onlineCreateTable: 'Create a table',
+    onlineCreating: 'Setting the table…',
     themeLight: 'LIGHT',
     themeDark: 'DARK',
     seatFallback: _enSeatFallback,
@@ -414,6 +449,10 @@ class Copy {
     best: 'BEST',
     soundOn: 'SOUND ON',
     soundOff: 'SOUND OFF',
+    lobby: _enLobby,
+    ranked: _enRanked,
+    social: _enSocial,
+    auth: _enAuth,
   );
 
   static const _pt = Copy(
@@ -434,6 +473,8 @@ class Copy {
     you: 'VOCÊ',
     them: 'ELES',
     thinking: 'PENSANDO',
+    reconnecting: 'Reconectando…',
+    watching: 'ASSISTINDO',
     round: 'RODADA',
     firstTo: 'ATÉ',
     stock: 'MONTE',
@@ -528,9 +569,12 @@ class Copy {
     onlineYourName: 'SEU NOME',
     onlinePlayerNameHint: 'Como os outros veem você',
     onlineJoinTable: 'Entrar na mesa',
+    onlineWatchTable: 'Assistir uma mesa',
     onlineInvalidHost: 'Esta versão não tem um endereço de servidor válido.',
     onlineMissingTableName: 'Dê um nome à mesa para os outros encontrarem.',
     onlineDefaultPlayer: 'Jogador',
+    onlineCreateTable: 'Criar uma mesa',
+    onlineCreating: 'Preparando a mesa…',
     themeLight: 'CLARO',
     themeDark: 'ESCURO',
     seatFallback: _ptSeatFallback,
@@ -541,15 +585,459 @@ class Copy {
     best: 'MELHOR',
     soundOn: 'SOM LIGADO',
     soundOff: 'SOM DESLIGADO',
+    lobby: _ptLobby,
+    ranked: _ptRanked,
+    social: _ptSocial,
+    auth: _ptAuth,
   );
 }
 
+class LobbyCopy {
+  final String title;
+  final String codeLabel;
+  final String copyCode;
+  final String codeCopied;
+  final String openSeat;
+  final String ready;
+  final String unready;
+  final String waiting;
+  final String leave;
+  final String connected;
+  final String disconnected;
+  final String Function(String profile, int target) tableLine;
+  final String Function(int count) spectators;
+
+  const LobbyCopy({
+    required this.title,
+    required this.codeLabel,
+    required this.copyCode,
+    required this.codeCopied,
+    required this.openSeat,
+    required this.ready,
+    required this.unready,
+    required this.waiting,
+    required this.leave,
+    required this.connected,
+    required this.disconnected,
+    required this.tableLine,
+    required this.spectators,
+  });
+}
+
+const _enLobby = LobbyCopy(
+  title: 'The table is set',
+  codeLabel: 'TABLE CODE',
+  copyCode: 'Copy code',
+  codeCopied: 'Code copied',
+  openSeat: 'Open seat',
+  ready: 'Ready',
+  unready: 'Not ready',
+  waiting: 'waiting for the table…',
+  leave: 'Leave table',
+  connected: 'Connected',
+  disconnected: 'Disconnected',
+  tableLine: _enLobbyTableLine,
+  spectators: _enSpectators,
+);
+
+const _ptLobby = LobbyCopy(
+  title: 'A mesa está posta',
+  codeLabel: 'CÓDIGO DA MESA',
+  copyCode: 'Copiar código',
+  codeCopied: 'Código copiado',
+  openSeat: 'Lugar aberto',
+  ready: 'Estou pronto',
+  unready: 'Ainda não',
+  waiting: 'esperando a mesa…',
+  leave: 'Sair da mesa',
+  connected: 'Conectado',
+  disconnected: 'Desconectado',
+  tableLine: _ptLobbyTableLine,
+  spectators: _ptSpectators,
+);
+
+class RankedCopy {
+  final String findMatch;
+  final String searching;
+  final String cancel;
+  final String leaderboard;
+  final String history;
+  final String noHistory;
+  final String won;
+  final String lost;
+  final String draw;
+  final String Function(int rank, int percentile) yourRank;
+  final String rating;
+  final String wins;
+  final String losses;
+  final String unranked;
+  final String matchFound;
+
+  const RankedCopy({
+    required this.findMatch,
+    required this.searching,
+    required this.cancel,
+    required this.leaderboard,
+    required this.history,
+    required this.noHistory,
+    required this.won,
+    required this.lost,
+    required this.draw,
+    required this.yourRank,
+    required this.rating,
+    required this.wins,
+    required this.losses,
+    required this.unranked,
+    required this.matchFound,
+  });
+}
+
+const _enRanked = RankedCopy(
+  findMatch: 'Find a match',
+  searching: 'Looking for an opponent',
+  cancel: 'Cancel',
+  leaderboard: 'Leaderboard',
+  history: 'Match history',
+  noHistory: 'Nothing recorded yet. Play online!',
+  won: 'WON',
+  lost: 'LOST',
+  draw: 'DRAW',
+  yourRank: _enYourRank,
+  rating: 'RATING',
+  wins: 'W',
+  losses: 'L',
+  unranked: 'Play 10 ranked matches to be listed.',
+  matchFound: 'Match found!',
+);
+
+const _ptRanked = RankedCopy(
+  findMatch: 'Procurar partida',
+  searching: 'Procurando adversário',
+  cancel: 'Cancelar',
+  leaderboard: 'Ranking',
+  history: 'Histórico',
+  noHistory: 'Nada registrado ainda. Jogue online!',
+  won: 'GANHOU',
+  lost: 'PERDEU',
+  draw: 'EMPATE',
+  yourRank: _ptYourRank,
+  rating: 'RATING',
+  wins: 'V',
+  losses: 'D',
+  unranked: 'Jogue 10 partidas ranqueadas para entrar no ranking.',
+  matchFound: 'Achou!',
+);
+
+class SocialCopy {
+  final String friends;
+  final String add;
+  final String usernameHint;
+  final String incoming;
+  final String outgoing;
+  final String accept;
+  final String decline;
+  final String cancel;
+  final String block;
+  final String online;
+  final String inLobby;
+  final String inGame;
+  final String noFriends;
+  final String Function(String name) invitedBy;
+  final String join;
+  final String noSuchPlayer;
+
+  const SocialCopy({
+    required this.friends,
+    required this.add,
+    required this.usernameHint,
+    required this.incoming,
+    required this.outgoing,
+    required this.accept,
+    required this.decline,
+    required this.cancel,
+    required this.block,
+    required this.online,
+    required this.inLobby,
+    required this.inGame,
+    required this.noFriends,
+    required this.invitedBy,
+    required this.join,
+    required this.noSuchPlayer,
+  });
+}
+
+const _enSocial = SocialCopy(
+  friends: 'Friends',
+  add: 'Add',
+  usernameHint: 'their username',
+  incoming: 'WANTS TO PLAY',
+  outgoing: 'INVITED',
+  accept: 'Accept',
+  decline: 'Decline',
+  cancel: 'Cancel',
+  block: 'Block',
+  online: 'Online',
+  inLobby: 'at a table',
+  inGame: 'playing',
+  noFriends: 'Nobody yet. Ask for a username.',
+  invitedBy: _enInvitedBy,
+  join: 'Join',
+  noSuchPlayer: 'No player by that name.',
+);
+
+const _ptSocial = SocialCopy(
+  friends: 'Amigos',
+  add: 'Adicionar',
+  usernameHint: 'o nome de usuário',
+  incoming: 'QUER JOGAR',
+  outgoing: 'CONVIDADOS',
+  accept: 'Aceitar',
+  decline: 'Recusar',
+  cancel: 'Cancelar',
+  block: 'Bloquear',
+  online: 'Online',
+  inLobby: 'na mesa',
+  inGame: 'jogando',
+  noFriends: 'Ninguém ainda. Peça um nome de usuário.',
+  invitedBy: _ptInvitedBy,
+  join: 'Entrar',
+  noSuchPlayer: 'Não achei ninguém com esse nome.',
+);
+
+/// Everything the app says about accounts.
+///
+/// A guest is a real account that happens to have no way back into it — so the
+/// copy never calls it "your account", and never promises more than the browser
+/// it lives in can keep.
+class AuthCopy {
+  // --- the account pill and the sign-in screen ---
+  final String signIn;
+  final String signOut;
+  final String account;
+  final String guest;
+  final String title;
+  final String blurb;
+  final String playAsGuest;
+  final String withGoogle;
+  final String withApple;
+  final String or;
+
+  // --- email ---
+  final String emailLabel;
+  final String emailHint;
+  final String sendCode;
+  final String usePassword;
+  final String passwordLabel;
+  final String passwordHint;
+  final String forgotPassword;
+  final String createAccount;
+
+  // --- the one-time code ---
+  final String codeTitle;
+
+  /// Takes the address the code went to.
+  final String Function(String email) codeSentTo;
+  final String codeLabel;
+  final String verify;
+  final String resend;
+  final String changeEmail;
+
+  // --- the profile ---
+  final String profileTitle;
+  final String displayNameLabel;
+  final String displayNameHint;
+  final String save;
+  final String saved;
+
+  // --- guest, and leaving guest behind ---
+  final String guestBanner;
+  final String guestWarning;
+  final String keepMyGames;
+  final String upgradeTitle;
+  final String upgradeBlurb;
+
+  // --- what went wrong ---
+  final String badEmail;
+  final String badCode;
+  final String expiredCode;
+  final String weakPassword;
+  final String wrongPassword;
+  final String accountExists;
+  final String offline;
+  final String somethingBroke;
+
+  const AuthCopy({
+    required this.signIn,
+    required this.signOut,
+    required this.account,
+    required this.guest,
+    required this.title,
+    required this.blurb,
+    required this.playAsGuest,
+    required this.withGoogle,
+    required this.withApple,
+    required this.or,
+    required this.emailLabel,
+    required this.emailHint,
+    required this.sendCode,
+    required this.usePassword,
+    required this.passwordLabel,
+    required this.passwordHint,
+    required this.forgotPassword,
+    required this.createAccount,
+    required this.codeTitle,
+    required this.codeSentTo,
+    required this.codeLabel,
+    required this.verify,
+    required this.resend,
+    required this.changeEmail,
+    required this.profileTitle,
+    required this.displayNameLabel,
+    required this.displayNameHint,
+    required this.save,
+    required this.saved,
+    required this.guestBanner,
+    required this.guestWarning,
+    required this.keepMyGames,
+    required this.upgradeTitle,
+    required this.upgradeBlurb,
+    required this.badEmail,
+    required this.badCode,
+    required this.expiredCode,
+    required this.weakPassword,
+    required this.wrongPassword,
+    required this.accountExists,
+    required this.offline,
+    required this.somethingBroke,
+  });
+}
+
+const _enAuth = AuthCopy(
+  signIn: 'SIGN IN',
+  signOut: 'Sign out',
+  account: 'ACCOUNT',
+  guest: 'GUEST',
+  title: 'Keep your table',
+  blurb:
+      'An account carries your streak, your record and your friends from one '
+      'device to the next. You can also just sit down and play.',
+  playAsGuest: 'Play as guest',
+  withGoogle: 'Continue with Google',
+  withApple: 'Continue with Apple',
+  or: 'or',
+  emailLabel: 'EMAIL',
+  emailHint: 'you@example.com',
+  sendCode: 'Send me a code',
+  usePassword: 'Use a password instead',
+  passwordLabel: 'PASSWORD',
+  passwordHint: 'At least eight characters',
+  forgotPassword: 'Forgot your password?',
+  createAccount: 'Create account',
+  codeTitle: 'Check your email',
+  codeSentTo: _enCodeSentTo,
+  codeLabel: 'SIX-DIGIT CODE',
+  verify: 'Sign in',
+  resend: 'Send another',
+  changeEmail: 'Use a different address',
+  profileTitle: 'Your account',
+  displayNameLabel: 'NAME AT THE TABLE',
+  displayNameHint: 'How others see you',
+  save: 'Save',
+  saved: 'Saved',
+  guestBanner: 'You are playing as a guest.',
+  guestWarning:
+      'A guest game lives in this browser only. Clear your browsing data and it '
+      'is gone for good — there is no way to get it back.',
+  keepMyGames: 'Keep my games',
+  upgradeTitle: 'Keep your games',
+  upgradeBlurb:
+      'Add an email and everything you have played so far comes with you — same '
+      'record, same streak, same friends, on any device.',
+  badEmail: 'That does not look like an email address.',
+  badCode: 'That code is not right. Check it and try again.',
+  expiredCode: 'That code has expired. Ask for another.',
+  weakPassword: 'Use at least eight characters.',
+  wrongPassword: 'That email and password do not match.',
+  accountExists:
+      'An account with that email already exists. Signing into it will leave '
+      'this guest game behind.',
+  offline: 'No connection. You can still play offline.',
+  somethingBroke: 'That did not work. Try again in a moment.',
+);
+
+const _ptAuth = AuthCopy(
+  signIn: 'ENTRAR',
+  signOut: 'Sair',
+  account: 'CONTA',
+  guest: 'VISITANTE',
+  title: 'Guarde a sua mesa',
+  blurb:
+      'Com uma conta a sua sequência, o seu retrospecto e os seus parceiros vão '
+      'com você para qualquer aparelho. Ou senta e joga, do mesmo jeito.',
+  playAsGuest: 'Jogar como visitante',
+  withGoogle: 'Continuar com o Google',
+  withApple: 'Continuar com a Apple',
+  or: 'ou',
+  emailLabel: 'E-MAIL',
+  emailHint: 'voce@exemplo.com',
+  sendCode: 'Me manda um código',
+  usePassword: 'Usar senha',
+  passwordLabel: 'SENHA',
+  passwordHint: 'No mínimo oito caracteres',
+  forgotPassword: 'Esqueceu a senha?',
+  createAccount: 'Criar conta',
+  codeTitle: 'Olhe o seu e-mail',
+  codeSentTo: _ptCodeSentTo,
+  codeLabel: 'CÓDIGO DE SEIS DÍGITOS',
+  verify: 'Entrar',
+  resend: 'Mandar outro',
+  changeEmail: 'Usar outro endereço',
+  profileTitle: 'Sua conta',
+  displayNameLabel: 'NOME NA MESA',
+  displayNameHint: 'Como os outros veem você',
+  save: 'Salvar',
+  saved: 'Salvo',
+  guestBanner: 'Você está jogando como visitante.',
+  guestWarning:
+      'Um jogo de visitante fica só neste navegador. Se limpar os dados de '
+      'navegação, acabou — não tem como recuperar.',
+  keepMyGames: 'Guardar meus jogos',
+  upgradeTitle: 'Guarde os seus jogos',
+  upgradeBlurb:
+      'Coloque um e-mail e tudo que você já jogou vai junto — mesmo retrospecto, '
+      'mesma sequência, mesmos parceiros, em qualquer aparelho.',
+  badEmail: 'Isso não parece um endereço de e-mail.',
+  badCode: 'Esse código não confere. Veja de novo e tente outra vez.',
+  expiredCode: 'Esse código venceu. Peça outro.',
+  weakPassword: 'Use no mínimo oito caracteres.',
+  wrongPassword: 'Esse e-mail e essa senha não batem.',
+  accountExists:
+      'Já existe uma conta com esse e-mail. Se entrar nela, este jogo de '
+      'visitante fica para trás.',
+  offline: 'Sem conexão. Dá para jogar offline do mesmo jeito.',
+  somethingBroke: 'Não deu certo. Tente de novo daqui a pouco.',
+);
+
 // Torn out as top-level functions because a const constructor cannot hold a
 // closure.
+String _enCodeSentTo(String email) => 'We sent a six-digit code to $email.';
+String _ptCodeSentTo(String email) =>
+    'Mandamos um código de seis dígitos para $email.';
+String _enYourRank(int rank, int percentile) => '#$rank - top $percentile%';
+String _ptYourRank(int rank, int percentile) => '#$rank - top $percentile%';
+String _enInvitedBy(String name) => '$name invited you';
+String _ptInvitedBy(String name) => '$name chamou você';
 String _enBotPlaying(String who) => '$who is playing.';
 String _ptBotPlaying(String who) => '$who está jogando.';
 String _enWentOut(String who) => '$who went out';
 String _ptWentOut(String who) => '$who bateu';
+String _enLobbyTableLine(String profile, int target) =>
+    '$profile · first to $target';
+String _ptLobbyTableLine(String profile, int target) =>
+    '$profile · até $target';
+String _enSpectators(int count) =>
+    '$count ${count == 1 ? 'spectator' : 'spectators'}';
+String _ptSpectators(int count) => '$count assistindo';
 String _enSeatFallback(int seat) => 'Seat $seat';
 String _ptSeatFallback(int seat) => 'Assento $seat';
 String _enCountLeft(int count) => '$count left';

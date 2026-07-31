@@ -11,6 +11,13 @@
   # refuses a plaintext socket from this https page. Matches the Fly app name
   # in fly.toml; change both together.
   GAME_HOST = "wss://canastra-flutter.fly.dev"
+  # Accounts and stats. Optional — a build without these still plays offline and
+  # keeps a local streak, it just cannot sign anyone in.
+  SUPABASE_URL = "https://urqrmvbenrdehsurvosb.supabase.co"
+  # SUPABASE_ANON_KEY is public by design: row-level security decides who may
+  # read what, not possession of this key. Rotating it needs a rebuild, because
+  # it is compiled into the bundle.
+  SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVycXJtdmJlbnJkZWhzdXJ2b3NiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUzODgxOTksImV4cCI6MjEwMDk2NDE5OX0.fl4-u81CzaP0xPpDEHVnYRquNMoL10x4ScX0qZsZPIM"
 
 # Flutter web is a single page; let it handle every route itself.
 [[redirects]]

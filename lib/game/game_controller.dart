@@ -20,33 +20,61 @@ import 'package:flutter/foundation.dart';
 import '../engine/cards.dart';
 import '../engine/config.dart';
 import '../multiplayer/protocol.dart';
+import '../multiplayer/room_rules.dart';
 import '../multiplayer/table_view.dart';
 import '../multiplayer/transport.dart';
 import 'move_index.dart';
 import 'selection_plan.dart';
 
 class GameController extends ChangeNotifier {
-  final RulesConfig cfg;
+  RulesConfig _cfg;
   final GameTransport transport;
+  final bool autoReady;
 
   TableView? _view;
+  LobbyUpdate? _lobby;
+  int? _seat;
+  bool _spectating = false;
   MoveIndex _moves = MoveIndex.empty;
   final List<CardId> _selection = [];
   List<int> _queue = [];
   Refusal? _refusal;
   String? _notice;
   bool _connecting = true;
+  bool _reconnecting = false;
   String? _fatal;
   StreamSubscription<ServerEvent>? _eventSubscription;
+  StreamSubscription<bool>? _connectionSubscription;
   bool _disposed = false;
 
   /// Blocks duplicate submissions while `legalActions` is stale and the host's
   /// answering view has not arrived yet.
   bool _awaitingView = false;
 
-  GameController({required this.cfg, required this.transport});
+  GameController({
+    required RulesConfig cfg,
+    required GameTransport transport,
+    bool autoReady = true,
+  }) : this._(cfg, transport, autoReady);
 
+  GameController._(this._cfg, this.transport, this.autoReady);
+
+  RulesConfig get cfg => _cfg;
   TableView? get view => _view;
+  LobbyUpdate? get lobby => _lobby;
+  int? get seat => _seat ?? transport.seat;
+  bool get spectating => _spectating;
+  bool get inLobby => _lobby != null && !_lobby!.started && _view == null;
+
+  bool get myReady {
+    final mySeat = seat;
+    if (mySeat == null) return false;
+    for (final info in _lobby?.seats ?? const <SeatInfo>[]) {
+      if (info.seat == mySeat) return info.ready;
+    }
+    return false;
+  }
+
   MoveIndex get moves => _moves;
 
   /// The cards you have picked up, in the order you picked them.
@@ -59,6 +87,8 @@ class GameController extends ChangeNotifier {
   String? get notice => _notice;
 
   bool get connecting => _connecting;
+
+  bool get reconnecting => _reconnecting;
 
   /// Set when the game cannot continue; the screen shows this instead.
   String? get fatalError => _fatal;
@@ -78,10 +108,22 @@ class GameController extends ChangeNotifier {
         notifyListeners();
       },
     );
+    _connectionSubscription = transport.connectionChanges.listen((value) {
+      if (_disposed) return;
+      _reconnecting = value;
+      notifyListeners();
+    });
     try {
       await transport.connect();
       if (_disposed) return;
-      transport.send(const SetReady(ready: true));
+      if (autoReady) {
+        _send(const SetReady(ready: true));
+      } else if (transport.seat != null) {
+        // Local transports already occupy a seat and do not send JoinRoom.
+        // Re-stating the initial value asks their host for the same lobby
+        // snapshot an online JoinRoom produces, without readying the player.
+        _send(const SetReady(ready: false));
+      }
     } on TransportException catch (e) {
       if (_disposed) return;
       _fatal = e.message;
@@ -100,7 +142,7 @@ class GameController extends ChangeNotifier {
         _awaitingView = false;
         final previous = _view;
         _view = view;
-        _moves = MoveIndex.build(cfg, view);
+        _moves = MoveIndex.build(_cfg, view);
         _connecting = false;
 
         final tookMortoThisTurn =
@@ -140,11 +182,52 @@ class GameController extends ChangeNotifier {
         _notice = message;
         _queue = [];
 
-      case Joined():
+      case Joined(:final seat, :final spectator):
+        _spectating = spectator;
+        _seat = spectator ? null : seat;
+        _connecting = false;
+
       case LobbyUpdate():
-        break;
+        _lobby = event;
+        _connecting = false;
+        _applyLobbyRules(event);
     }
     notifyListeners();
+  }
+
+  void _applyLobbyRules(LobbyUpdate lobby) {
+    final target = lobby.matchTarget ?? _cfg.scoring.matchTarget;
+    if (lobby.profile == _cfg.name &&
+        lobby.numPlayers == _cfg.table.numPlayers &&
+        target == _cfg.scoring.matchTarget) {
+      return;
+    }
+
+    try {
+      final next = RoomRules(
+        profileId: lobby.profile,
+        numPlayers: lobby.numPlayers,
+        matchTarget: target,
+      ).toConfig();
+      // loadProfile deliberately has an offline fallback. On the wire, silently
+      // turning a future profile into Buraco would be worse than keeping the
+      // caller's known-good rules until this client understands it.
+      if (next.name != lobby.profile) {
+        throw FormatException('unknown profile id: ${lobby.profile}');
+      }
+      _cfg = next;
+
+      // Lobby updates normally precede the first table. Rebuilding here too
+      // keeps the derived move index coherent if a reconnect delivers corrected
+      // rules after a view has already arrived.
+      final view = _view;
+      if (view != null) {
+        _moves = MoveIndex.build(_cfg, view);
+        _replan();
+      }
+    } catch (e) {
+      _notice = 'Could not use table rules for ${lobby.profile}: $e';
+    }
   }
 
   void _retainHeld(TableView view) {
@@ -177,20 +260,18 @@ class GameController extends ChangeNotifier {
       return;
     }
     _queue = _queue.sublist(1);
-    try {
-      transport.send(SubmitAction(actionId: next));
-      _awaitingView = true;
-    } catch (e) {
+    if (!_send(SubmitAction(actionId: next))) {
       _queue = [];
-      _notice = e is TransportException ? e.message : '$e';
-      notifyListeners();
+      return;
     }
+    _awaitingView = true;
   }
 
   // --- picking cards up ---------------------------------------------------
 
   /// Pick a card up, or put it back down.
   void toggleCard(CardId card) {
+    if (_blockSpectatorAction()) return;
     if (!myTurn || busy) return;
     _notice = null;
     _refusal = null;
@@ -200,6 +281,7 @@ class GameController extends ChangeNotifier {
   }
 
   void clearSelection() {
+    if (_blockSpectatorAction()) return;
     if (busy) return;
     if (_selection.isEmpty && _refusal == null) return;
     _selection.clear();
@@ -211,12 +293,16 @@ class GameController extends ChangeNotifier {
   // --- playing ------------------------------------------------------------
 
   /// Lay the selection down as a new meld.
-  void meldSelection() =>
-      _submitPlan((view) => planNewMeld(cfg, view, _selection));
+  void meldSelection() {
+    if (_blockSpectatorAction()) return;
+    _submitPlan((view) => planNewMeld(_cfg, view, _selection));
+  }
 
   /// Add the selection to one of your side's melds.
-  void extendMeld(int slot) =>
-      _submitPlan((view) => planExtendMeld(cfg, view, slot, _selection));
+  void extendMeld(int slot) {
+    if (_blockSpectatorAction()) return;
+    _submitPlan((view) => planExtendMeld(_cfg, view, slot, _selection));
+  }
 
   void _submitPlan(PlanResult Function(TableView view) build) {
     final view = _view;
@@ -258,10 +344,10 @@ class GameController extends ChangeNotifier {
       _openSlots = const {};
       return;
     }
-    _canMeld = planNewMeld(cfg, view, _selection) is PlanReady;
+    _canMeld = planNewMeld(_cfg, view, _selection) is PlanReady;
     _openSlots = {
       for (var slot = 0; slot < view.myMelds.length; slot++)
-        if (planExtendMeld(cfg, view, slot, _selection) is PlanReady) slot,
+        if (planExtendMeld(_cfg, view, slot, _selection) is PlanReady) slot,
     };
   }
 
@@ -280,6 +366,7 @@ class GameController extends ChangeNotifier {
 
   /// Throw the one selected card, ending your turn.
   void discardSelection() {
+    if (_blockSpectatorAction()) return;
     final move = discardMove;
     if (move == null) {
       if (_selection.length == 1 && myTurn) {
@@ -302,7 +389,7 @@ class GameController extends ChangeNotifier {
     if (view == null || _selection.length != 1 || view.hand.length != 1) {
       return false;
     }
-    final out = cfg.goingOut;
+    final out = _cfg.goingOut;
     if (out.discardToGoOut == discardOutForbidden) return false;
     if (out.requireMortoTaken &&
         !(view.side < view.mortoTaken.length && view.mortoTaken[view.side])) {
@@ -317,7 +404,7 @@ class GameController extends ChangeNotifier {
   Refusal? get goOutRefusal {
     final view = _view;
     if (view == null) return null;
-    final out = cfg.goingOut;
+    final out = _cfg.goingOut;
     if (out.requireMortoTaken &&
         !(view.side < view.mortoTaken.length && view.mortoTaken[view.side])) {
       return Refusal.mortoFirst;
@@ -331,11 +418,12 @@ class GameController extends ChangeNotifier {
   }
 
   bool _isQualifyingCanastra(MeldView meld) =>
-      meld.isCanastra && (!cfg.goingOut.requireCleanCanastra || meld.isClean);
+      meld.isCanastra && (!_cfg.goingOut.requireCleanCanastra || meld.isClean);
 
   void play(MoveOption move) => playId(move.actionId);
 
   void playId(int actionId) {
+    if (_blockSpectatorAction()) return;
     if (_awaitingView ||
         _view == null ||
         !_view!.legalActions.contains(actionId)) {
@@ -343,18 +431,46 @@ class GameController extends ChangeNotifier {
     }
     _notice = null;
     _refusal = null;
-    try {
-      transport.send(SubmitAction(actionId: actionId));
+    if (_send(SubmitAction(actionId: actionId))) {
       _awaitingView = true;
-    } catch (e) {
-      _notice = e is TransportException ? e.message : '$e';
-      notifyListeners();
     }
   }
 
-  void nextRound() => transport.send(const RequestNextRound());
+  void setReady(bool ready) {
+    if (_blockSpectatorAction()) return;
+    _send(SetReady(ready: ready));
+  }
 
-  void rematch() => transport.send(const RequestRematch());
+  void leave() => _send(const LeaveRoom());
+
+  void nextRound() {
+    if (_blockSpectatorAction()) return;
+    _send(const RequestNextRound());
+  }
+
+  void rematch() {
+    if (_blockSpectatorAction()) return;
+    _send(const RequestRematch());
+  }
+
+  bool _blockSpectatorAction() {
+    if (!spectating) return false;
+    _notice = 'Spectators can only watch.';
+    notifyListeners();
+    return true;
+  }
+
+  bool _send(ClientCommand command) {
+    if (_disposed) return false;
+    try {
+      transport.send(command);
+      return true;
+    } catch (e) {
+      _notice = e is TransportException ? e.message : '$e';
+      notifyListeners();
+      return false;
+    }
+  }
 
   void dismissNotice() {
     if (_notice == null) return;
@@ -366,6 +482,7 @@ class GameController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _eventSubscription?.cancel();
+    _connectionSubscription?.cancel();
     transport.dispose();
     super.dispose();
   }

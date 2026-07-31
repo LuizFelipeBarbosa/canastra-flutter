@@ -11,11 +11,14 @@
 @Tags(['golden'])
 library;
 
+import 'package:canastra/account/account.dart';
+import 'package:canastra/account/fake_auth_backend.dart';
 import 'package:canastra/ai/agent.dart';
 import 'package:canastra/engine/profiles.dart';
 import 'package:canastra/game/game_controller.dart';
 import 'package:canastra/game/move_index.dart';
 import 'package:canastra/multiplayer/local_transport.dart';
+import 'package:canastra/ui/account_scope.dart';
 import 'package:canastra/ui/app_scope.dart';
 import 'package:canastra/ui/screens/game_screen.dart';
 import 'package:canastra/ui/screens/landing_screen.dart';
@@ -65,12 +68,17 @@ void main() {
     await tester.pumpWidget(
       AppScope(
         prefs: prefs,
-        child: ListenableBuilder(
-          listenable: prefs,
-          builder: (context, _) => MaterialApp(
-            theme: buildTheme(prefs.palette, dark: prefs.dark),
-            debugShowCheckedModeBanner: false,
-            home: child,
+        // A signed-out fake account, mirroring main.dart's tree: the landing
+        // header reads it to draw the sign-in pill.
+        child: AccountScope(
+          account: Account(backend: FakeAuthBackend()),
+          child: ListenableBuilder(
+            listenable: prefs,
+            builder: (context, _) => MaterialApp(
+              theme: buildTheme(prefs.palette, dark: prefs.dark),
+              debugShowCheckedModeBanner: false,
+              home: child,
+            ),
           ),
         ),
       ),

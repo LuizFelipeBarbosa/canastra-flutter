@@ -17,22 +17,25 @@ import 'package:canastra/multiplayer/table_view.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 MatchHost _botTable(String profile, int players, {int seed = 7}) => MatchHost(
-      roomCode: 'TEST',
-      cfg: loadProfile(profile, numPlayers: players),
-      seed: seed,
-      seats: [
-        for (var i = 0; i < players; i++)
-          SeatInfo(seat: i, name: 'Bot $i', kind: SeatKind.bot, ready: true),
-      ],
-      botDelay: Duration.zero,
-    );
+  roomCode: 'TEST',
+  cfg: loadProfile(profile, numPlayers: players),
+  seed: seed,
+  seats: [
+    for (var i = 0; i < players; i++)
+      SeatInfo(seat: i, name: 'Bot $i', kind: SeatKind.bot, ready: true),
+  ],
+  botDelay: Duration.zero,
+);
 
 void main() {
   group('bots play complete matches', () {
     for (final (profile, players) in const [
-      ('buraco', 2), ('buraco', 4),
-      ('canasta', 2), ('canasta', 4),
-      ('biriba', 2), ('biriba', 4),
+      ('buraco', 2),
+      ('buraco', 4),
+      ('canasta', 2),
+      ('canasta', 4),
+      ('biriba', 2),
+      ('biriba', 4),
       ('rummy', 2),
     ]) {
       test('$profile ${players}p reaches a winner', () {
@@ -48,8 +51,11 @@ void main() {
           }
         }
 
-        expect(host.match.matchOver, isTrue,
-            reason: 'no winner after $guard rounds');
+        expect(
+          host.match.matchOver,
+          isTrue,
+          reason: 'no winner after $guard rounds',
+        );
         expect(host.match.winnerSide, isNotNull);
         expect(
           host.match.matchScores.reduce((a, b) => a > b ? a : b),
@@ -61,7 +67,9 @@ void main() {
 
   group('the view a seat receives leaks nothing', () {
     for (final (profile, players) in const [
-      ('buraco', 2), ('canasta', 4), ('rummy', 2),
+      ('buraco', 2),
+      ('canasta', 4),
+      ('rummy', 2),
     ]) {
       test('$profile ${players}p', () {
         final host = _botTable(profile, players, seed: 21);
@@ -74,8 +82,11 @@ void main() {
           final state = match.round;
 
           for (var seat = 0; seat < players; seat++) {
-            final view = buildTableView(match, seat,
-                playerNames: [for (final s in host.seats) s.name]);
+            final view = buildTableView(
+              match,
+              seat,
+              playerNames: [for (final s in host.seats) s.name],
+            );
 
             // My hand is exactly my hand.
             final expected = <CardId>[];
@@ -89,8 +100,11 @@ void main() {
 
             // Only the seat to act is told what it may play.
             if (seat != state.currentPlayer) {
-              expect(view.legalActions, isEmpty,
-                  reason: 'seat $seat learned another seat\'s moves');
+              expect(
+                view.legalActions,
+                isEmpty,
+                reason: 'seat $seat learned another seat\'s moves',
+              );
             }
 
             // The cards the view names are only ever mine or already public.
@@ -108,13 +122,18 @@ void main() {
             final allowed = _counts([...expected, ...public]);
             final shown = _counts(named);
             shown.forEach((ct, n) {
-              expect(n, lessThanOrEqualTo(allowed[ct] ?? 0),
-                  reason: 'seat $seat was shown a card it may not know: '
-                      '${cardStr(ct)}');
+              expect(
+                n,
+                lessThanOrEqualTo(allowed[ct] ?? 0),
+                reason:
+                    'seat $seat was shown a card it may not know: '
+                    '${cardStr(ct)}',
+              );
             });
 
             // Hidden zones appear as counts only, and those counts add up.
-            final accountedFor = view.hand.length +
+            final accountedFor =
+                view.hand.length +
                 view.trash.length +
                 view.stockCount +
                 view.melds.fold<int>(0, (a, m) => a + m.size) +
@@ -124,14 +143,20 @@ void main() {
                   for (var p = 0; p < players; p++)
                     if (p != seat) view.handSizes[p],
                 ].fold<int>(0, (a, n) => a + n);
-            expect(accountedFor, equals(host.cfg.deck.totalCards),
-                reason: 'the card count seat $seat can see does not add up');
+            expect(
+              accountedFor,
+              equals(host.cfg.deck.totalCards),
+              reason: 'the card count seat $seat can see does not add up',
+            );
           }
 
           // Advance one bot move and re-check.
           final seat = state.currentPlayer;
-          final view = buildTableView(match, seat,
-              playerNames: [for (final s in host.seats) s.name]);
+          final view = buildTableView(
+            match,
+            seat,
+            playerNames: [for (final s in host.seats) s.name],
+          );
           if (view.legalActions.isEmpty) break;
           host.handle(
             seat,
@@ -157,38 +182,43 @@ void main() {
     expect(dealtMultiset(host.match.round), equals(atDeal));
   });
 
-  test('a local single-player table drives a real command round trip',
-      () async {
-    final transport = LocalTransport.singlePlayer(
-      cfg: loadProfile('buraco', numPlayers: 2),
-      seed: 5,
-      botDelay: Duration.zero,
-    );
-    addTearDown(transport.dispose);
+  test(
+    'a local single-player table drives a real command round trip',
+    () async {
+      final transport = LocalTransport.singlePlayer(
+        cfg: loadProfile('buraco', numPlayers: 2),
+        seed: 5,
+        botDelay: Duration.zero,
+      );
+      addTearDown(transport.dispose);
 
-    final received = <ServerEvent>[];
-    transport.events.listen(received.add);
-    await transport.connect();
+      final received = <ServerEvent>[];
+      transport.events.listen(received.add);
+      await transport.connect();
 
-    transport.send(const JoinRoom(roomCode: 'LOCAL', playerName: 'Luiz'));
-    transport.send(const SetReady(ready: true));
-    await Future<void>.delayed(Duration.zero);
+      transport.send(const JoinRoom(roomCode: 'LOCAL', playerName: 'Luiz'));
+      transport.send(const SetReady(ready: true));
+      await Future<void>.delayed(Duration.zero);
 
-    expect(received.whereType<Joined>(), isNotEmpty);
-    expect(received.whereType<LobbyUpdate>(), isNotEmpty);
+      expect(received.whereType<Joined>(), isNotEmpty);
+      expect(received.whereType<LobbyUpdate>(), isNotEmpty);
 
-    final table = received.whereType<TableUpdate>().last.view;
-    expect(table.seat, equals(0));
-    expect(table.myTurn, isTrue);
-    expect(table.legalActions, isNotEmpty);
-    expect(table.hand, hasLength(11));
+      final table = received.whereType<TableUpdate>().last.view;
+      expect(table.seat, equals(0));
+      expect(table.myTurn, isTrue);
+      expect(table.legalActions, isNotEmpty);
+      expect(table.hand, hasLength(11));
 
-    received.clear();
-    transport.send(SubmitAction(actionId: table.legalActions.first));
-    await Future<void>.delayed(Duration.zero);
-    expect(received.whereType<TableUpdate>(), isNotEmpty,
-        reason: 'the host should answer an action with a fresh view');
-  });
+      received.clear();
+      transport.send(SubmitAction(actionId: table.legalActions.first));
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        received.whereType<TableUpdate>(),
+        isNotEmpty,
+        reason: 'the host should answer an action with a fresh view',
+      );
+    },
+  );
 
   test('an illegal action is rejected, not applied', () async {
     final transport = LocalTransport.singlePlayer(
@@ -219,11 +249,30 @@ void main() {
     test('commands', () {
       final commands = <ClientCommand>[
         const JoinRoom(roomCode: 'ABCD', playerName: 'Luiz', preferredSeat: 2),
+        const JoinRoom(
+          roomCode: 'AUTH',
+          playerName: 'Ana',
+          authToken: 'access-token',
+          clientId: 'browser-123',
+        ),
+        const JoinRoom(
+          roomCode: 'RECONNECT',
+          playerName: 'Bruno',
+          clientId: 'browser-456',
+        ),
         const SetReady(ready: true),
         const SubmitAction(actionId: 233),
         const RequestNextRound(),
         const RequestRematch(),
         const LeaveRoom(),
+        const JoinRoom(
+          roomCode: 'RULES',
+          playerName: 'Carla',
+          clientId: 'browser-789',
+          profileId: 'canasta',
+          numPlayers: 4,
+          matchTarget: 1500,
+        ),
       ];
       for (final cmd in commands) {
         final wire = jsonDecode(jsonEncode(cmd.toJson()));
@@ -235,8 +284,11 @@ void main() {
 
     test('a full table view', () {
       final match = Match(cfg: loadProfile('canasta', numPlayers: 4), seed: 3);
-      final view = buildTableView(match, 0,
-          playerNames: const ['A', 'B', 'C', 'D']);
+      final view = buildTableView(
+        match,
+        0,
+        playerNames: const ['A', 'B', 'C', 'D'],
+      );
       final wire = jsonDecode(jsonEncode(TableUpdate(view: view).toJson()));
       final back = ServerEvent.fromJson(wire as Map<String, dynamic>);
 
@@ -248,6 +300,269 @@ void main() {
       expect(restored.redThrees, equals(view.redThrees));
       expect(restored.initialMeldMin, equals(view.initialMeldMin));
       expect(restored.toJson(), equals(view.toJson()));
+    });
+
+    test('a lobby update', () {
+      const update = LobbyUpdate(
+        roomCode: 'RULES',
+        profile: 'canasta',
+        numPlayers: 4,
+        seats: [
+          SeatInfo(seat: 0, name: 'Carla', kind: SeatKind.remote, ready: true),
+        ],
+        started: false,
+        matchTarget: 1500,
+      );
+      final wire = jsonDecode(jsonEncode(update.toJson()));
+      final back = ServerEvent.fromJson(wire as Map<String, dynamic>);
+
+      expect(back, isA<LobbyUpdate>());
+      final restored = back as LobbyUpdate;
+      expect(restored.matchTarget, equals(1500));
+      expect(restored.toJson(), equals(update.toJson()));
+    });
+  });
+
+  group('seat takeover', () {
+    test('a bot takes over a seat and the table keeps moving', () {
+      final host = MatchHost(
+        roomCode: 'TAKEOVER',
+        cfg: loadProfile('buraco', numPlayers: 2),
+        seed: 17,
+        seats: const [
+          SeatInfo(seat: 0, name: 'Ana', kind: SeatKind.remote, ready: true),
+          SeatInfo(seat: 1, name: 'Bot 1', kind: SeatKind.bot, ready: true),
+        ],
+        botDelay: Duration.zero,
+      );
+      addTearDown(host.dispose);
+      host.start();
+
+      final actionsBefore = host.match.actionLog.length;
+      host.takeOverWithBot(0);
+
+      final takenSeat = host.seats.singleWhere((seat) => seat.seat == 0);
+      expect(takenSeat.kind, SeatKind.bot);
+      expect(takenSeat.ready, isTrue);
+
+      host.runBotsSynchronously(maxActions: 100);
+      expect(host.match.actionLog.length, greaterThan(actionsBefore));
+    });
+
+    test('the returning human gets the seat back', () {
+      final host = MatchHost(
+        roomCode: 'HAND-BACK',
+        cfg: loadProfile('buraco', numPlayers: 4),
+        seed: 23,
+        seats: const [
+          SeatInfo(seat: 0, name: 'Ana', kind: SeatKind.remote, ready: true),
+          SeatInfo(seat: 1, name: 'Bot 1', kind: SeatKind.bot, ready: true),
+          SeatInfo(seat: 2, name: 'Bot 2', kind: SeatKind.bot, ready: true),
+          SeatInfo(seat: 3, name: 'Bruno', kind: SeatKind.remote, ready: true),
+        ],
+        botDelay: Duration.zero,
+      );
+      addTearDown(host.dispose);
+      host.start();
+      host.takeOverWithBot(0);
+
+      var guard = 0;
+      while (host.match.currentPlayer == 0 && guard++ < 100) {
+        host.runBotsSynchronously(maxActions: 1);
+      }
+      expect(host.match.currentPlayer, 1);
+
+      host.handBackSeat(0);
+      final returnedSeat = host.seats.singleWhere((seat) => seat.seat == 0);
+      expect(returnedSeat.kind, SeatKind.remote);
+      expect(returnedSeat.connected, isTrue);
+
+      final actionsBeforeOtherBots = host.match.actionLog.length;
+      host.runBotsSynchronously(maxActions: 200);
+      expect(host.match.actionLog.length, greaterThan(actionsBeforeOtherBots));
+      expect(
+        host.match.currentPlayer,
+        3,
+        reason: 'the remaining bots should still play after the hand-back',
+      );
+    });
+  });
+
+  group('spectator protocol additions', () {
+    test('SpectateRoom round-trips with and without authentication', () {
+      final commands = <SpectateRoom>[
+        const SpectateRoom(roomCode: 'OPEN', clientId: 'browser-1'),
+        const SpectateRoom(
+          roomCode: 'AUTH',
+          authToken: 'access-token',
+          clientId: 'browser-2',
+        ),
+      ];
+
+      for (final command in commands) {
+        final wire = jsonDecode(jsonEncode(command.toJson()));
+        final restored = ClientCommand.fromJson(wire as Map<String, dynamic>);
+        expect(restored, isA<SpectateRoom>());
+        expect(restored.toJson(), equals(command.toJson()));
+      }
+      expect(commands.first.toJson(), isNot(contains('authToken')));
+    });
+
+    test('Joined emits spectator only when true and round-trips it', () {
+      const joined = Joined(roomCode: 'WATCH', seat: -1, spectator: true);
+      final wire = jsonDecode(jsonEncode(joined.toJson()));
+      final restored = ServerEvent.fromJson(wire as Map<String, dynamic>);
+
+      expect(restored, isA<Joined>());
+      expect((restored as Joined).spectator, isTrue);
+      expect(restored.toJson(), equals(joined.toJson()));
+      expect(
+        const Joined(roomCode: 'PLAY', seat: 0).toJson(),
+        isNot(contains('spectator')),
+      );
+    });
+
+    test('LobbyUpdate emits a positive spectator count and round-trips it', () {
+      const update = LobbyUpdate(
+        roomCode: 'WATCH',
+        profile: 'buraco',
+        numPlayers: 2,
+        seats: [],
+        started: true,
+        spectators: 2,
+      );
+      final wire = jsonDecode(jsonEncode(update.toJson()));
+      final restored = ServerEvent.fromJson(wire as Map<String, dynamic>);
+
+      expect(restored, isA<LobbyUpdate>());
+      expect((restored as LobbyUpdate).spectators, equals(2));
+      expect(restored.toJson(), equals(update.toJson()));
+    });
+  });
+
+  test('a spectator view contains public counts but no private hand', () {
+    final host = _botTable('buraco', 2, seed: 131);
+    addTearDown(host.dispose);
+    host.start();
+    host.runBotsSynchronously(maxActions: 6);
+    expect(host.match.actionLog, isNotEmpty);
+    expect(host.match.round.roundOver, isFalse);
+
+    final names = [for (final seat in host.seats) seat.name];
+    final spectator = buildSpectatorView(host.match, playerNames: names);
+    final seated = buildTableView(host.match, 0, playerNames: names);
+    final state = host.match.round;
+
+    expect(spectator.seat, equals(-1));
+    expect(spectator.side, equals(host.cfg.table.numSides));
+    expect(spectator.hand, isEmpty);
+    expect(spectator.toJson()['hand'], isEmpty);
+    expect(spectator.legalActions, isEmpty);
+    expect(spectator.handSizes, [
+      for (var seat = 0; seat < host.cfg.table.numPlayers; seat++)
+        state.handSize(seat),
+    ]);
+    expect(spectator.stockCount, equals(state.stock.length));
+    expect(spectator.mortoSizes, [
+      for (final packet in state.morto) packet?.length ?? 0,
+    ]);
+
+    expect(
+      spectator.melds.map((meld) => meld.toJson()),
+      equals(seated.melds.map((meld) => meld.toJson())),
+    );
+    expect(spectator.trash, equals(seated.trash));
+    expect(spectator.redThrees, equals(seated.redThrees));
+    expect(spectator.publicScores, equals(seated.publicScores));
+    expect(spectator.matchScores, equals(seated.matchScores));
+  });
+
+  group('match recording hooks', () {
+    test(
+      'uuidV7 has the expected version, variant, and time ordering',
+      () async {
+        final first = uuidV7();
+        await Future<void>.delayed(const Duration(milliseconds: 2));
+        final second = uuidV7();
+
+        final shape = RegExp(
+          r'^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-'
+          r'[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+        );
+        expect(first, matches(shape));
+        expect(second, matches(shape));
+        expect(first[14], equals('7'));
+        expect(int.parse(first[19], radix: 16) & 0xc, equals(0x8));
+
+        BigInt timestamp(String id) =>
+            BigInt.parse(id.replaceAll('-', '').substring(0, 12), radix: 16);
+        expect(timestamp(second), greaterThanOrEqualTo(timestamp(first)));
+      },
+    );
+
+    test('round and match hooks keep one identity until a rematch', () {
+      final roundResults = <RoundResult>[];
+      final roundMatchIds = <String>[];
+      final matchIds = <String>[];
+      final startedAtValues = <DateTime>[];
+      var matchOverCalls = 0;
+      final host = MatchHost(
+        roomCode: 'RECORDER',
+        cfg: loadProfile('rummy', numPlayers: 2).withMatchTarget(500),
+        seed: 37,
+        seats: const [
+          SeatInfo(seat: 0, name: 'Bot 0', kind: SeatKind.bot, ready: true),
+          SeatInfo(seat: 1, name: 'Bot 1', kind: SeatKind.bot, ready: true),
+        ],
+        botDelay: Duration.zero,
+        onRoundOver: (result, match, {required matchId, required startedAt}) {
+          roundResults.add(result);
+          roundMatchIds.add(matchId);
+          startedAtValues.add(startedAt);
+        },
+        onMatchOver: (match, {required matchId, required startedAt}) {
+          matchOverCalls++;
+          matchIds.add(matchId);
+          startedAtValues.add(startedAt);
+        },
+      );
+      addTearDown(host.dispose);
+      final initialMatchId = host.matchId;
+
+      host.start();
+      var guard = 0;
+      while (!host.match.matchOver && guard++ < 20) {
+        host.runBotsSynchronously(maxActions: 20000);
+        if (host.match.round.roundOver && !host.match.matchOver) {
+          host.handle(0, const RequestNextRound());
+        }
+      }
+
+      expect(host.match.matchOver, isTrue);
+      expect(roundResults, hasLength(host.match.roundIndex + 1));
+      expect(roundMatchIds, everyElement(initialMatchId));
+      expect(matchOverCalls, equals(1));
+      expect(matchIds, equals([initialMatchId]));
+      expect(startedAtValues, isNotEmpty);
+      expect(
+        startedAtValues.map((value) => value.toUtc()),
+        everyElement(startedAtValues.first),
+      );
+
+      for (var side = 0; side < host.cfg.table.numSides; side++) {
+        final scoreFromRounds = roundResults.fold<int>(
+          0,
+          (total, result) =>
+              total +
+              result.sheet.singleWhere((sheet) => sheet.side == side).total,
+        );
+        expect(scoreFromRounds, equals(host.match.matchScores[side]));
+      }
+
+      host.handle(0, const RequestRematch());
+      expect(host.matchId, isNot(equals(initialMatchId)));
+      expect(host.match.matchOver, isFalse);
+      expect(matchOverCalls, equals(1));
     });
   });
 }
