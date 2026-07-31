@@ -31,6 +31,7 @@ class FakeAuthBackend implements AuthBackend {
   String? enqueuedLadder;
   bool queueCancelled = false;
   List<LeaderboardEntry> leaderboardEntries = [];
+  List<MatchHistoryEntry> historyEntries = [];
   RankInfo? rankInfo;
   List<FriendEntry> friendEntries = [];
   List<FriendRequestEntry> friendRequestEntries = [];
@@ -217,6 +218,10 @@ class FakeAuthBackend implements AuthBackend {
     String ladderId, {
     int limit = 20,
   }) async => leaderboardEntries.take(limit).toList(growable: false);
+
+  @override
+  Future<List<MatchHistoryEntry>> matchHistory({int limit = 10}) async =>
+      historyEntries.take(limit).toList(growable: false);
 
   @override
   Future<RankInfo?> myRank(String ladderId) async => rankInfo;

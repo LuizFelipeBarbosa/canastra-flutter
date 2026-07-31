@@ -177,6 +177,9 @@ class Account extends ChangeNotifier {
     int limit = 20,
   }) => _run(() => _backend.leaderboard(ladderId, limit: limit));
 
+  Future<List<MatchHistoryEntry>> matchHistory({int limit = 10}) =>
+      _run(() => _backend.matchHistory(limit: limit));
+
   Future<RankInfo?> myRank(String ladderId) =>
       _run(() => _backend.myRank(ladderId));
 

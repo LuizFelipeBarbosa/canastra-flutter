@@ -661,6 +661,11 @@ class RankedCopy {
   final String searching;
   final String cancel;
   final String leaderboard;
+  final String history;
+  final String noHistory;
+  final String won;
+  final String lost;
+  final String draw;
   final String Function(int rank, int percentile) yourRank;
   final String rating;
   final String wins;
@@ -673,6 +678,11 @@ class RankedCopy {
     required this.searching,
     required this.cancel,
     required this.leaderboard,
+    required this.history,
+    required this.noHistory,
+    required this.won,
+    required this.lost,
+    required this.draw,
     required this.yourRank,
     required this.rating,
     required this.wins,
@@ -687,6 +697,11 @@ const _enRanked = RankedCopy(
   searching: 'Looking for an opponent',
   cancel: 'Cancel',
   leaderboard: 'Leaderboard',
+  history: 'Match history',
+  noHistory: 'Nothing recorded yet. Play online!',
+  won: 'WON',
+  lost: 'LOST',
+  draw: 'DRAW',
   yourRank: _enYourRank,
   rating: 'RATING',
   wins: 'W',
@@ -700,6 +715,11 @@ const _ptRanked = RankedCopy(
   searching: 'Procurando adversário',
   cancel: 'Cancelar',
   leaderboard: 'Ranking',
+  history: 'Histórico',
+  noHistory: 'Nada registrado ainda. Jogue online!',
+  won: 'GANHOU',
+  lost: 'PERDEU',
+  draw: 'EMPATE',
   yourRank: _ptYourRank,
   rating: 'RATING',
   wins: 'V',

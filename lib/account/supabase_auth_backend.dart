@@ -342,6 +342,29 @@ class SupabaseAuthBackend implements AuthBackend {
   });
 
   @override
+  Future<List<MatchHistoryEntry>> matchHistory({int limit = 10}) =>
+      _guard(() async {
+        final uid = _client.auth.currentUser?.id;
+        if (uid == null) return const [];
+
+        final rows = await _client
+            .from('match_players')
+            .select(
+              'side, result, rating_delta, '
+              'matches!match_players_match_id_fkey('
+              'id, profile_id, num_players, final_scores, is_ranked, ended_at)',
+            )
+            .eq('user_id', uid)
+            // Match ids are UUIDv7, so descending id order is newest first.
+            .order('match_id', ascending: false)
+            .limit(limit);
+        return rows
+            .map((raw) => _matchHistoryEntry(Map<String, dynamic>.from(raw)))
+            .nonNulls
+            .toList(growable: false);
+      });
+
+  @override
   Future<RankInfo?> myRank(String ladderId) => _guard(() async {
     final rows = await _client.rpc<List<dynamic>>(
       'my_rank',
@@ -637,6 +660,48 @@ FriendRequestEntry _friendRequestEntry(Map<String, dynamic> row, String uid) {
     userId: profile['id'] as String,
     displayName: profile['display_name'] as String,
     incoming: incoming,
+  );
+}
+
+MatchHistoryEntry? _matchHistoryEntry(Map<String, dynamic> row) {
+  final result = row['result'];
+  final rawMatch = row['matches'];
+  if (result is! String || rawMatch is! Map) return null;
+
+  final match = Map<String, dynamic>.from(rawMatch);
+  final matchId = match['id'];
+  final profileId = match['profile_id'];
+  final numPlayers = match['num_players'];
+  final rawScores = match['final_scores'];
+  final isRanked = match['is_ranked'];
+  final rawEndedAt = match['ended_at'];
+  final side = row['side'];
+  final rawRatingDelta = row['rating_delta'];
+  final endedAt = rawEndedAt is String ? DateTime.tryParse(rawEndedAt) : null;
+  if (matchId is! String ||
+      profileId is! String ||
+      numPlayers is! num ||
+      rawScores is! List ||
+      rawScores.any((score) => score is! num) ||
+      isRanked is! bool ||
+      endedAt == null ||
+      side is! num ||
+      (rawRatingDelta != null && rawRatingDelta is! num)) {
+    return null;
+  }
+
+  return MatchHistoryEntry(
+    matchId: matchId,
+    profileId: profileId,
+    numPlayers: numPlayers.toInt(),
+    result: result,
+    finalScores: rawScores
+        .map((score) => (score as num).toInt())
+        .toList(growable: false),
+    mySide: side.toInt(),
+    ratingDelta: (rawRatingDelta as num?)?.toInt(),
+    isRanked: isRanked,
+    endedAt: endedAt,
   );
 }
 

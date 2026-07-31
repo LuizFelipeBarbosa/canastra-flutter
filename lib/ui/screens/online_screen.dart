@@ -24,6 +24,7 @@ import '../widgets/sheet.dart';
 import '../widgets/stage.dart';
 import 'friends_screen.dart';
 import 'game_screen.dart';
+import 'history_screen.dart';
 import 'leaderboard_screen.dart';
 import 'queue_screen.dart';
 
@@ -173,6 +174,12 @@ class _OnlineScreenState extends State<OnlineScreen> {
     );
   }
 
+  void _history() {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => const HistoryScreen()));
+  }
+
   void _friends() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -268,8 +275,23 @@ class _OnlineScreenState extends State<OnlineScreen> {
                       onTap: _leaderboard,
                     ),
                   ),
-                  // Guests can receive requests, but only permanent accounts
-                  // may send them, so the social entry point is Player-only.
+                ],
+                // Guests play recorded casual matches too, so history belongs
+                // to every signed-in identity rather than ranked players only.
+                if (context.account.signedIn) ...[
+                  const SizedBox(height: 14),
+                  Center(
+                    child: TextLink(
+                      label: l.ranked.history,
+                      palette: p,
+                      color: p.ashDim,
+                      onTap: _history,
+                    ),
+                  ),
+                ],
+                // Guests can receive requests, but only permanent accounts
+                // may send them, so the social entry point is Player-only.
+                if (context.account.state is Player) ...[
                   const SizedBox(height: 14),
                   Center(
                     child: TextLink(

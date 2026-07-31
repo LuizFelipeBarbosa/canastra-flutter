@@ -98,6 +98,95 @@ class LeaderboardEntry {
       Object.hash(rank, userId, username, displayName, rating, games, wins);
 }
 
+class MatchHistoryEntry {
+  final String matchId;
+  final String profileId;
+  final int numPlayers;
+
+  /// One of win, loss or draw.
+  final String result;
+
+  /// Final match score for each engine side.
+  final List<int> finalScores;
+  final int mySide;
+  final int? ratingDelta;
+  final bool isRanked;
+  final DateTime endedAt;
+
+  const MatchHistoryEntry({
+    required this.matchId,
+    required this.profileId,
+    required this.numPlayers,
+    required this.result,
+    required this.finalScores,
+    required this.mySide,
+    required this.ratingDelta,
+    required this.isRanked,
+    required this.endedAt,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'matchId': matchId,
+    'profileId': profileId,
+    'numPlayers': numPlayers,
+    'result': result,
+    'finalScores': finalScores,
+    'mySide': mySide,
+    'ratingDelta': ratingDelta,
+    'isRanked': isRanked,
+    'endedAt': endedAt.toIso8601String(),
+  };
+
+  factory MatchHistoryEntry.fromJson(Map<String, dynamic> j) =>
+      MatchHistoryEntry(
+        matchId: j['matchId'] as String,
+        profileId: j['profileId'] as String,
+        numPlayers: (j['numPlayers'] as num).toInt(),
+        result: j['result'] as String,
+        finalScores: (j['finalScores'] as List<dynamic>)
+            .map((score) => (score as num).toInt())
+            .toList(growable: false),
+        mySide: (j['mySide'] as num).toInt(),
+        ratingDelta: (j['ratingDelta'] as num?)?.toInt(),
+        isRanked: j['isRanked'] as bool,
+        endedAt: DateTime.parse(j['endedAt'] as String),
+      );
+
+  @override
+  bool operator ==(Object other) =>
+      other is MatchHistoryEntry &&
+      other.matchId == matchId &&
+      other.profileId == profileId &&
+      other.numPlayers == numPlayers &&
+      other.result == result &&
+      _sameScores(other.finalScores, finalScores) &&
+      other.mySide == mySide &&
+      other.ratingDelta == ratingDelta &&
+      other.isRanked == isRanked &&
+      other.endedAt == endedAt;
+
+  @override
+  int get hashCode => Object.hash(
+    matchId,
+    profileId,
+    numPlayers,
+    result,
+    Object.hashAll(finalScores),
+    mySide,
+    ratingDelta,
+    isRanked,
+    endedAt,
+  );
+}
+
+bool _sameScores(List<int> left, List<int> right) {
+  if (left.length != right.length) return false;
+  for (var i = 0; i < left.length; i++) {
+    if (left[i] != right[i]) return false;
+  }
+  return true;
+}
+
 class RankInfo {
   final int rank;
   final int rating;
@@ -350,6 +439,9 @@ abstract class AuthBackend {
   Future<void> cancelQueue();
 
   Future<List<LeaderboardEntry>> leaderboard(String ladderId, {int limit = 20});
+
+  /// Newest first. Empty when signed out or nothing recorded.
+  Future<List<MatchHistoryEntry>> matchHistory({int limit = 10});
 
   /// Null when unranked (fewer than 10 games or no row).
   Future<RankInfo?> myRank(String ladderId);

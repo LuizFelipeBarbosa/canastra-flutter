@@ -24,6 +24,7 @@ import 'package:canastra/ui/app_scope.dart';
 import 'package:canastra/ui/copy.dart';
 import 'package:canastra/ui/screens/friends_screen.dart';
 import 'package:canastra/ui/screens/game_screen.dart';
+import 'package:canastra/ui/screens/history_screen.dart';
 import 'package:canastra/ui/screens/landing_screen.dart';
 import 'package:canastra/ui/screens/leaderboard_screen.dart';
 import 'package:canastra/ui/screens/online_screen.dart';
@@ -804,4 +805,37 @@ void main() {
     expect(find.text(Copy.of(Lang.en).social.friends), findsNothing);
     expect(tester.takeException(), isNull);
   });
+
+  for (final (name, size) in const [
+    ('life size', _desktop),
+    ('a phone', _phone),
+  ]) {
+    testWidgets('the history screen lays out at $name', (tester) async {
+      final backend = FakeAuthBackend()
+        ..historyEntries = List.generate(
+          10,
+          (index) => MatchHistoryEntry(
+            matchId: 'match-$index',
+            profileId: index.isEven ? 'buraco' : 'canasta',
+            numPlayers: index.isEven ? 2 : 4,
+            result: index % 3 == 0 ? 'win' : 'loss',
+            finalScores: [3000 + index, 1700 + index],
+            mySide: index.isEven ? 0 : 1,
+            ratingDelta: index.isEven ? 20 : -12,
+            isRanked: true,
+            endedAt: DateTime.now().subtract(Duration(hours: index + 1)),
+          ),
+        );
+      final account = Account(backend: backend);
+      addTearDown(() async {
+        account.dispose();
+        await backend.close();
+      });
+
+      await _pumpAt(tester, size, const HistoryScreen(), account: account);
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+    });
+  }
 }
