@@ -34,6 +34,11 @@ class MeldBox extends StatefulWidget {
   /// profile with no canastra bonus.
   final int bonus;
 
+  /// Too narrow for the meld's name. The count takes its place: the rank is
+  /// already legible on the top card, and the name is still what a screen
+  /// reader is given.
+  final bool compact;
+
   final VoidCallback? onTap;
 
   const MeldBox({
@@ -43,6 +48,7 @@ class MeldBox extends StatefulWidget {
     required this.width,
     required this.height,
     required this.bonus,
+    this.compact = false,
     this.open = false,
     this.onTap,
   });
@@ -138,24 +144,24 @@ class _MeldBoxState extends State<MeldBox> with TickerProviderStateMixin {
               ),
               // The caption sits under the cards, which the layout draws on top.
               Positioned(
-                left: 9,
-                right: 9,
-                bottom: 6,
+                left: widget.compact ? 6 : 9,
+                right: widget.compact ? 6 : 9,
+                bottom: widget.compact ? 4 : 6,
                 child: Row(
                   children: [
                     Expanded(
                       child: Text(
-                        meldLabel(meld),
+                        widget.compact ? '×${meld.size}' : meldLabel(meld),
                         overflow: TextOverflow.ellipsis,
                         softWrap: false,
-                        style: mono(9, color: p.ash),
+                        style: mono(widget.compact ? 8 : 9, color: p.ash),
                       ),
                     ),
                     const SizedBox(width: 6),
                     Text(
                       '${meld.points}',
                       style: mono(
-                        9,
+                        widget.compact ? 8 : 9,
                         color: meld.isCanastra ? accent : p.ashDim,
                       ),
                     ),

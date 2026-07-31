@@ -42,8 +42,12 @@ import 'package:flutter_test/flutter_test.dart';
 /// Life size, where the stage does not scale at all.
 const _desktop = Size(1280, 820);
 
-/// Small enough in portrait that the table asks to be rotated.
+/// Upright, where the narrow stage applies.
 const _phone = Size(390, 844);
+
+/// The smallest phone the design claims to serve, where the portrait stage no
+/// longer fits at life size and everything on it is scaled down.
+const _smallPhone = Size(320, 568);
 
 Future<AppPrefs> _pumpAt(
   WidgetTester tester,
@@ -152,9 +156,7 @@ Future<void> _pushGame(WidgetTester tester, GameController controller) async {
     ),
   );
   Navigator.of(homeContext).push(
-    MaterialPageRoute<void>(
-      builder: (_) => GameScreen(controller: controller),
-    ),
+    MaterialPageRoute<void>(builder: (_) => GameScreen(controller: controller)),
   );
   await tester.pump();
   await tester.pump(const Duration(seconds: 2));
@@ -273,27 +275,17 @@ void main() {
     ('a phone', _phone),
   ]) {
     testWidgets('the landing screen lays out at $name', (tester) async {
-      final prefs = await _pumpAt(tester, size, const LandingScreen());
-      if (size == _phone) {
-        expect(find.text(prefs.copy.rotatePrompt), findsOneWidget);
-        expect(find.text('Play now'), findsNothing);
-      } else {
-        expect(find.text('BURACO'), findsOneWidget);
-        expect(find.text('LIVRE'), findsOneWidget);
-        expect(find.text('Play now'), findsOneWidget);
-      }
+      await _pumpAt(tester, size, const LandingScreen());
+      expect(find.text('BURACO'), findsOneWidget);
+      expect(find.text('LIVRE'), findsOneWidget);
+      expect(find.text('Play now'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
     testWidgets('the setup screen lays out at $name', (tester) async {
-      final prefs = await _pumpAt(tester, size, const SetupScreen());
-      if (size == _phone) {
-        expect(find.text(prefs.copy.rotatePrompt), findsOneWidget);
-        expect(find.text('Deal'), findsNothing);
-      } else {
-        expect(find.text('Set the table'), findsOneWidget);
-        expect(find.text('Deal'), findsOneWidget);
-      }
+      await _pumpAt(tester, size, const SetupScreen());
+      expect(find.text('Set the table'), findsOneWidget);
+      expect(find.text('Deal'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   }
@@ -522,7 +514,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('the game asks for rotation only in tiny portrait', (
+  testWidgets('the table lays out in portrait and in landscape', (
     tester,
   ) async {
     final controller = await _dealt(tester, 'buraco');
@@ -533,13 +525,14 @@ void main() {
     );
     await tester.pump(const Duration(seconds: 2));
 
-    expect(find.text(prefs.copy.rotatePrompt), findsOneWidget);
-    expect(find.text(prefs.copy.stock), findsNothing);
+    expect(find.text(prefs.copy.stock), findsOneWidget);
+    expect(tester.takeException(), isNull);
 
+    // Rotating swaps the stage under a live table, which is the moment a card's
+    // identity has to survive being laid out somewhere completely different.
     tester.view.physicalSize = _desktop;
     await tester.pump();
 
-    expect(find.text(prefs.copy.rotatePrompt), findsNothing);
     expect(find.text(prefs.copy.stock), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -552,16 +545,28 @@ void main() {
     ('buraco', 4),
     ('rummy', 2),
   ]) {
-    testWidgets('the $players-handed $profile table lays out', (tester) async {
-      final controller = await _dealt(tester, profile, numPlayers: players);
-      await _pumpAt(tester, _desktop, GameScreen(controller: controller));
-      // Let the deal animation run to the end.
-      await tester.pump(const Duration(seconds: 2));
+    for (final (where, size) in const [
+      ('', _desktop),
+      (' upright', _phone),
+      (' on a small phone', _smallPhone),
+    ]) {
+      testWidgets('the $players-handed $profile table lays out$where', (
+        tester,
+      ) async {
+        final controller = await _dealt(tester, profile, numPlayers: players);
+        await _pumpAt(tester, size, GameScreen(controller: controller));
+        // Let the deal animation run to the end.
+        await tester.pump(const Duration(seconds: 2));
 
-      expect(controller.view, isNotNull, reason: 'the host should have dealt');
-      expect(find.text(profile.toUpperCase()), findsOneWidget);
-      expect(tester.takeException(), isNull);
-    });
+        expect(
+          controller.view,
+          isNotNull,
+          reason: 'the host should have dealt',
+        );
+        expect(find.text(profile.toUpperCase()), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      });
+    }
   }
 
   testWidgets('the light table lays out too', (tester) async {
@@ -747,11 +752,7 @@ void main() {
       await tester.pump(const Duration(seconds: 2));
 
       expect(controller.view, isNotNull);
-      if (size == _phone) {
-        expect(find.text(prefs.copy.rotatePrompt), findsOneWidget);
-      } else {
-        expect(find.text(prefs.copy.stock), findsOneWidget);
-      }
+      expect(find.text(prefs.copy.stock), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   }

@@ -240,6 +240,7 @@ class BackLink extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Semantics(
     button: true,
+    label: label,
     child: Hoverable(
       onTap: onTap,
       builder: (hovered) {
@@ -248,8 +249,12 @@ class BackLink extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.arrow_back, size: 12, color: tint),
-            const SizedBox(width: 6),
-            Text(label, style: mono(11, color: tint)),
+            // An empty label leaves the arrow to speak for itself, which is what
+            // a bar too narrow for both asks for. The word stays in [Semantics].
+            if (label.isNotEmpty) ...[
+              const SizedBox(width: 6),
+              Text(label, style: mono(11, color: tint)),
+            ],
           ],
         );
       },

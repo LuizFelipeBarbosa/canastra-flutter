@@ -2,10 +2,12 @@
 ///
 /// Setting up a game, joining one, signing in — none of them are part of the
 /// Buraco Livre table design, so they all borrow the same sheet: a card of one
-/// width, floated on the [Stage], with labelled fields stacked down it. Keeping
+/// width, floated in the room, with labelled fields stacked down it. Keeping
 /// that in one place is what stops the fourth such screen from being the third
 /// slightly different card.
 library;
+
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -13,9 +15,11 @@ import '../theme.dart';
 
 /// The card every non-table screen sits on.
 ///
-/// The width is fixed rather than proportional because the [Stage] already
-/// scales the whole screen to fit — a card that also flexed would be scaled
-/// twice.
+/// [width] is the width the sheet wants, not the width it takes: on a landscape
+/// stage there is always room for it, and on a phone it gives way to the screen.
+/// The padding goes with it, because 40 points of it on either side of a 388-wide
+/// sheet is a quarter of the card spent on nothing. Scrolling belongs to the
+/// [Room], so that a screen has one scroll view rather than one per sheet.
 class SheetCard extends StatelessWidget {
   final Palette palette;
   final List<Widget> children;
@@ -30,19 +34,28 @@ class SheetCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Center(
-    child: Container(
-      width: width,
-      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 36),
-      decoration: BoxDecoration(
-        color: palette.sheet,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: palette.line),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: children,
-      ),
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        final taken = math.min(width, constraints.maxWidth);
+        final tight = taken < 420;
+        return Container(
+          width: taken,
+          padding: EdgeInsets.symmetric(
+            horizontal: tight ? 24 : 40,
+            vertical: tight ? 28 : 36,
+          ),
+          decoration: BoxDecoration(
+            color: palette.sheet,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: palette.line),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: children,
+          ),
+        );
+      },
     ),
   );
 }

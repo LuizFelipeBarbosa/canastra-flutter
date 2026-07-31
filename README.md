@@ -155,6 +155,22 @@ Suit pips are painted, not typed. No bundled font has the suit characters, so a
 string containing one renders as a blank box; `SuitPip` draws them, which also
 keeps them identical on every platform.
 
+The table is drawn in one fixed coordinate space, scaled to fit, the way a real
+table does not rearrange itself when you stand further back — which is what lets
+every card be positioned absolutely and glide from one frame to the next instead
+of being rebuilt somewhere else. There are two such spaces, because a phone held
+upright is not a short wide display: 1240×790 and 420×840, chosen by viewport in
+`StageMetrics.of` and described by a `TableMetrics`. Rotating the device swaps
+one for the other, and since a card keeps its identity across the switch, the
+whole table glides into its other arrangement.
+
+Nine melds cannot be spread across a phone — the frames alone are wider than the
+felt before a single card is drawn — so on the narrow stage a meld is drawn as a
+squared-up stack over two rows: top card, thickness, count and seal, the same
+trade the discard pile already makes. Tapping one opens it out. Everything that
+is *not* the table has no absolute geometry to protect, so it sits in a `Room`
+instead: the same felt, but the sheet flows and scrolls at life size.
+
 Interaction is one idea: **pick up a card and everywhere it can legally go
 lights up.** `MoveIndex` walks the host's legal-move list and works out which
 cards each move spends, using the engine's own planners — so the screen can
@@ -176,10 +192,13 @@ flutter test --run-skipped --update-goldens test/golden_test.dart
 | `multiplayer_test` | bots finish matches; views leak nothing; protocol round-trips  |
 | `online_test`      | two real clients over a real socket against the real server    |
 | `ui_test`          | screens lay out from a 320pt phone to desktop                  |
-| `golden_test`      | renders screens to PNG for visual review                       |
+| `table_layout_test`| the felt's geometric invariants, on both stages                 |
+| `golden_test`      | renders screens to PNG for visual review, upright and wide      |
 
 ## Status
 
-Web and macOS builds are verified. Android is scaffolded but unbuilt here — this
-machine has no JDK, so `flutter build apk` cannot run; nothing in the code is
-Android-specific. iOS is scaffolded and unbuilt.
+Web, macOS and iOS builds are verified; the iOS build runs on a simulator in
+both orientations. Android is scaffolded but unbuilt here — this machine's JDK is
+8 and Gradle needs 17, so `flutter build apk` cannot run; nothing in the code is
+Android-specific, but note that `android/app/src/main/AndroidManifest.xml` has no
+`INTERNET` permission, so a release build could play offline and nothing else.

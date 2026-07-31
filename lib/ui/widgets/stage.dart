@@ -1,30 +1,81 @@
 /// The table, and the room it sits in.
 ///
-/// Every screen is laid out at one fixed size and then scaled to fit, the way a
-/// real table does not rearrange itself when you stand further back. That makes
-/// the whole design one coordinate space — a card at (620, 596) is at (620, 596)
-/// on every display — which is what lets the table be positioned absolutely
-/// instead of negotiated by a dozen nested flexes.
+/// The table is laid out at one fixed size and then scaled to fit, the way a real
+/// table does not rearrange itself when you stand further back. That makes it one
+/// coordinate space — a card at (620, 596) is at (620, 596) on every display —
+/// which is what lets it be positioned absolutely instead of negotiated by a dozen
+/// nested flexes. It never scales *up*: past life size the table stops growing and
+/// the room around it gets bigger instead.
 ///
-/// It never scales *up*: past life size the table stops growing and the room
-/// around it gets bigger instead.
+/// There are two such spaces, because a phone held upright is not a short wide
+/// display: [kStageLandscape] and [kStagePortrait]. A viewport gets whichever one
+/// it can show at a readable size, and since a card keeps its identity across the
+/// switch, rotating the device glides the whole table into its other arrangement
+/// rather than rebuilding it.
+///
+/// Everything that is *not* the table — setting up a game, signing in, the
+/// leaderboard — has no absolute geometry to protect, so it sits in a [Room]: the
+/// same felt, but the sheet flows and scrolls at life size. Scaling a form would
+/// only shrink its text and its tap targets, and inside a scaled box the soft
+/// keyboard shrinks the viewport and with it the whole screen.
 library;
 
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import '../app_scope.dart';
 import '../theme.dart';
 
-/// The one coordinate space the whole app is drawn in.
-const Size kStage = Size(1240, 790);
+/// The coordinate space the table is drawn in on a display wider than it is tall.
+const Size kStageLandscape = Size(1240, 790);
+
+/// The coordinate space the table is drawn in on a phone held upright.
+///
+/// 420 is the width at which a fifteen-card hand still fans above the design's own
+/// readability floor of a quarter of a card. 840 makes the aspect match a phone's
+/// *safe* area rather than its whole screen, so the stage fills the display
+/// instead of letterboxing above and below the notch.
+const Size kStagePortrait = Size(420, 840);
+
+/// Which stage a viewport gets, and how big it is.
+class StageMetrics {
+  final Size size;
+  final bool portrait;
+
+  const StageMetrics({required this.size, required this.portrait});
+
+  /// Portrait exactly when the landscape stage would be too small to read.
+  ///
+  /// That is the rule the rotate prompt used to apply, answered now with a layout
+  /// instead of an instruction — so every viewport that renders landscape today
+  /// still renders landscape, at the same scale, by construction.
+  factory StageMetrics.of(BoxConstraints constraints) {
+    final landscapeScale = math.min(
+      constraints.maxWidth / kStageLandscape.width,
+      constraints.maxHeight / kStageLandscape.height,
+    );
+    final portrait =
+        constraints.maxHeight > constraints.maxWidth && landscapeScale < 0.5;
+    return StageMetrics(
+      size: portrait ? kStagePortrait : kStageLandscape,
+      portrait: portrait,
+    );
+  }
+}
+
+extension StageContext on BuildContext {
+  /// Which stage this screen is on, read from the window rather than from a
+  /// [LayoutBuilder] — for the screens that need to drop a column on a phone
+  /// without owning the constraints themselves.
+  StageMetrics get stage =>
+      StageMetrics.of(BoxConstraints.tight(MediaQuery.sizeOf(this)));
+}
 
 class Stage extends StatelessWidget {
   final Palette palette;
 
-  /// Positioned children, in stage coordinates.
-  final List<Widget> children;
+  /// Positioned children, in the coordinates of the stage the viewport got.
+  final List<Widget> Function(StageMetrics) children;
 
   const Stage({super.key, required this.palette, required this.children});
 
@@ -33,56 +84,88 @@ class Stage extends StatelessWidget {
     color: palette.shell,
     child: LayoutBuilder(
       builder: (context, constraints) {
-        final scale = math.min(
-          math.min(
-            constraints.maxWidth / kStage.width,
-            constraints.maxHeight / kStage.height,
-          ),
-          1,
-        );
-        if (constraints.maxHeight > constraints.maxWidth && scale < 0.5) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(32),
-              child: Text(
-                context.copy.rotatePrompt,
-                textAlign: TextAlign.center,
-                style: T.title(18, color: palette.ash),
-              ),
-            ),
-          );
-        }
-        return Center(
-          child: FittedBox(
-            // Exactly min(w / 1240, h / 790, 1).
-            fit: BoxFit.scaleDown,
-            child: SizedBox(
-              width: kStage.width,
-              height: kStage.height,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(6),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    RepaintBoundary(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: groundGradient(palette),
-                        ),
-                        child: CustomPaint(
-                          painter: AzulejoPainter(ink: palette.motifInk),
-                        ),
+        final metrics = StageMetrics.of(constraints);
+        final table = FittedBox(
+          // Exactly min(w / width, h / height, 1).
+          fit: BoxFit.scaleDown,
+          child: SizedBox(
+            width: metrics.size.width,
+            height: metrics.size.height,
+            child: ClipRRect(
+              // A portrait stage nearly fills the display, so there is no island
+              // for its corners to be rounded against.
+              borderRadius: BorderRadius.circular(metrics.portrait ? 0 : 6),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  RepaintBoundary(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: groundGradient(palette),
+                      ),
+                      child: CustomPaint(
+                        painter: AzulejoPainter(ink: palette.motifInk),
                       ),
                     ),
-                    Stack(children: children),
-                  ],
+                  ),
+                  Stack(children: children(metrics)),
+                ],
+              ),
+            ),
+          ),
+        );
+        // The insets are only load-bearing in portrait, where the stage runs
+        // edge to edge. Applying them in landscape would shrink a phone's table
+        // for a notch it already clears.
+        return Center(child: metrics.portrait ? SafeArea(child: table) : table);
+      },
+    ),
+  );
+}
+
+/// The room the table sits in, for every screen that is not the table.
+///
+/// In landscape it is the [Stage] with the screen floated on it, unchanged. In
+/// portrait the felt goes full-bleed behind the safe area and the screen scrolls
+/// at life size — there is no island to sit on when the stage nearly fills the
+/// display, and a form is the one thing that must not be scaled.
+class Room extends StatelessWidget {
+  final Palette palette;
+  final Widget child;
+
+  const Room({super.key, required this.palette, required this.child});
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      if (!StageMetrics.of(constraints).portrait) {
+        return Stage(
+          palette: palette,
+          children: (_) => [Positioned.fill(child: child)],
+        );
+      }
+      return DecoratedBox(
+        decoration: BoxDecoration(gradient: groundGradient(palette)),
+        child: CustomPaint(
+          painter: AzulejoPainter(ink: palette.motifInk),
+          child: SafeArea(
+            child: LayoutBuilder(
+              builder: (context, safe) => SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: ConstrainedBox(
+                  // Tall enough to centre a short screen, free to grow past the
+                  // fold when the content is long.
+                  constraints: BoxConstraints(
+                    minHeight: math.max(0, safe.maxHeight - 32),
+                  ),
+                  child: child,
                 ),
               ),
             ),
           ),
-        );
-      },
-    ),
+        ),
+      );
+    },
   );
 }
 

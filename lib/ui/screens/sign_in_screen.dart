@@ -143,149 +143,144 @@ class _SignInScreenState extends State<SignInScreen> {
     final l = context.copy;
 
     return Scaffold(
-      body: Stage(
+      body: Room(
         palette: p,
-        children: [
-          Positioned.fill(
-            child: SheetCard(
-              palette: p,
+        child: SheetCard(
+          palette: p,
+          children: [
+            IgnorePointer(
+              ignoring: _pushing,
+              child: BackLink(
+                label: l.back,
+                palette: p,
+                onTap: () => Navigator.of(context).maybePop(),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              l.auth.title,
+              style: T.display(34, tracking: -1.4, color: p.text),
+            ),
+            const SizedBox(height: 20),
+            Text(l.auth.blurb, style: T.body(13, color: p.ash)),
+            const SizedBox(height: 20),
+            IgnorePointer(
+              ignoring: _pushing,
+              child: GoldButton(
+                label: l.auth.playAsGuest,
+                palette: p,
+                wide: true,
+                onTap: () =>
+                    _completeSignIn((account) => account.signInAnonymously()),
+              ),
+            ),
+            const SizedBox(height: 18),
+            Row(
               children: [
-                IgnorePointer(
+                Expanded(child: Divider(color: p.line)),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Text(l.auth.or, style: mono(10, color: p.ashDim)),
+                ),
+                Expanded(child: Divider(color: p.line)),
+              ],
+            ),
+            const SizedBox(height: 18),
+            TextEntry(
+              label: l.auth.emailLabel,
+              controller: _email,
+              hint: l.auth.emailHint,
+              keyboardType: TextInputType.emailAddress,
+              enabled: !_pushing,
+              palette: p,
+            ),
+            const SizedBox(height: 14),
+            IgnorePointer(
+              ignoring: _pushing,
+              child: MintButton(
+                label: l.auth.sendCode,
+                palette: p,
+                onTap: _sendCode,
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (!_showPassword)
+              Center(
+                child: IgnorePointer(
                   ignoring: _pushing,
-                  child: BackLink(
-                    label: l.back,
+                  child: TextLink(
+                    label: l.auth.usePassword,
                     palette: p,
-                    onTap: () => Navigator.of(context).maybePop(),
+                    onTap: () => setState(() {
+                      _showPassword = true;
+                      _error = null;
+                      _confirmation = null;
+                    }),
                   ),
                 ),
-                const SizedBox(height: 20),
-                Text(
-                  l.auth.title,
-                  style: T.display(34, tracking: -1.4, color: p.text),
-                ),
-                const SizedBox(height: 20),
-                Text(l.auth.blurb, style: T.body(13, color: p.ash)),
-                const SizedBox(height: 20),
-                IgnorePointer(
-                  ignoring: _pushing,
-                  child: GoldButton(
-                    label: l.auth.playAsGuest,
-                    palette: p,
-                    wide: true,
-                    onTap: () => _completeSignIn(
-                      (account) => account.signInAnonymously(),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 18),
-                Row(
-                  children: [
-                    Expanded(child: Divider(color: p.line)),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Text(l.auth.or, style: mono(10, color: p.ashDim)),
-                    ),
-                    Expanded(child: Divider(color: p.line)),
-                  ],
-                ),
-                const SizedBox(height: 18),
-                TextEntry(
-                  label: l.auth.emailLabel,
-                  controller: _email,
-                  hint: l.auth.emailHint,
-                  keyboardType: TextInputType.emailAddress,
-                  enabled: !_pushing,
+              )
+            else ...[
+              TextEntry(
+                label: l.auth.passwordLabel,
+                controller: _password,
+                hint: l.auth.passwordHint,
+                obscure: true,
+                enabled: !_pushing,
+                palette: p,
+              ),
+              const SizedBox(height: 14),
+              IgnorePointer(
+                ignoring: _pushing,
+                child: MintButton(
+                  label: l.auth.verify,
                   palette: p,
-                ),
-                const SizedBox(height: 14),
-                IgnorePointer(
-                  ignoring: _pushing,
-                  child: MintButton(
-                    label: l.auth.sendCode,
-                    palette: p,
-                    onTap: _sendCode,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                if (!_showPassword)
-                  Center(
-                    child: IgnorePointer(
-                      ignoring: _pushing,
-                      child: TextLink(
-                        label: l.auth.usePassword,
-                        palette: p,
-                        onTap: () => setState(() {
-                          _showPassword = true;
-                          _error = null;
-                          _confirmation = null;
-                        }),
-                      ),
+                  onTap: () => _completeSignIn(
+                    (account) => account.signInWithPassword(
+                      _email.text.trim(),
+                      _password.text,
                     ),
-                  )
-                else ...[
-                  TextEntry(
-                    label: l.auth.passwordLabel,
-                    controller: _password,
-                    hint: l.auth.passwordHint,
-                    obscure: true,
-                    enabled: !_pushing,
-                    palette: p,
                   ),
-                  const SizedBox(height: 14),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
                   IgnorePointer(
                     ignoring: _pushing,
-                    child: MintButton(
-                      label: l.auth.verify,
+                    child: TextLink(
+                      label: l.auth.createAccount,
                       palette: p,
                       onTap: () => _completeSignIn(
-                        (account) => account.signInWithPassword(
+                        (account) => account.signUpWithPassword(
                           _email.text.trim(),
                           _password.text,
                         ),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      IgnorePointer(
-                        ignoring: _pushing,
-                        child: TextLink(
-                          label: l.auth.createAccount,
-                          palette: p,
-                          onTap: () => _completeSignIn(
-                            (account) => account.signUpWithPassword(
-                              _email.text.trim(),
-                              _password.text,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 20),
-                      IgnorePointer(
-                        ignoring: _pushing,
-                        child: TextLink(
-                          label: l.auth.forgotPassword,
-                          palette: p,
-                          onTap: _resetPassword,
-                        ),
-                      ),
-                    ],
+                  const SizedBox(width: 20),
+                  IgnorePointer(
+                    ignoring: _pushing,
+                    child: TextLink(
+                      label: l.auth.forgotPassword,
+                      palette: p,
+                      onTap: _resetPassword,
+                    ),
                   ),
                 ],
-                if (_confirmation != null) ...[
-                  const SizedBox(height: 14),
-                  Text(_confirmation!, style: T.body(13, color: p.ash)),
-                ],
-                if (_error != null) ...[
-                  const SizedBox(height: 14),
-                  Text(_error!, style: T.body(13, color: p.pink)),
-                ],
-              ],
-            ),
-          ),
-        ],
+              ),
+            ],
+            if (_confirmation != null) ...[
+              const SizedBox(height: 14),
+              Text(_confirmation!, style: T.body(13, color: p.ash)),
+            ],
+            if (_error != null) ...[
+              const SizedBox(height: 14),
+              Text(_error!, style: T.body(13, color: p.pink)),
+            ],
+          ],
+        ),
       ),
     );
   }

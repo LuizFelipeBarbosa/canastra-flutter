@@ -31,6 +31,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// The stage's own size, so a golden is pixel-for-pixel with the design.
 const _stage = Size(1280, 820);
 
+/// The portrait stage at its own size, for the same reason.
+const _upright = Size(420, 840);
+
 Future<void> _loadFonts() async {
   for (final family in const {
     'Archivo': ['assets/fonts/Archivo.ttf'],
@@ -158,6 +161,23 @@ void main() {
     await mount(tester, GameScreen(controller: controller), dark: false);
     await playAFewMelds(tester, controller);
     await shoot(tester, 'table_light');
+  });
+
+  testWidgets('landing held upright', (tester) async {
+    await mount(tester, const LandingScreen(), size: _upright);
+    await shoot(tester, 'landing_portrait');
+  });
+
+  testWidgets('setup held upright', (tester) async {
+    await mount(tester, const SetupScreen(), size: _upright);
+    await shoot(tester, 'setup_portrait');
+  });
+
+  testWidgets('the table held upright', (tester) async {
+    final controller = await playedOut(tester, 'buraco');
+    await mount(tester, GameScreen(controller: controller), size: _upright);
+    await playAFewMelds(tester, controller);
+    await shoot(tester, 'table_portrait');
   });
 
   testWidgets('round sheet', (tester) async {

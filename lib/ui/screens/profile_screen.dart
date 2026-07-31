@@ -151,106 +151,102 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final l = context.copy;
 
     return Scaffold(
-      body: Stage(
+      body: Room(
         palette: p,
-        children: [
-          Positioned.fill(
-            child: SheetCard(
+        child: SheetCard(
+          palette: p,
+          children: [
+            IgnorePointer(
+              ignoring: _pushing,
+              child: BackLink(
+                label: l.back,
+                palette: p,
+                onTap: () => Navigator.of(context).maybePop(),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              l.auth.profileTitle,
+              style: T.display(34, tracking: -1.4, color: p.text),
+            ),
+            const SizedBox(height: 20),
+            TextEntry(
+              label: l.auth.displayNameLabel,
+              controller: _name,
+              hint: l.auth.displayNameHint,
+              enabled: !_pushing,
               palette: p,
+            ),
+            const SizedBox(height: 14),
+            Row(
               children: [
-                IgnorePointer(
-                  ignoring: _pushing,
-                  child: BackLink(
-                    label: l.back,
-                    palette: p,
-                    onTap: () => Navigator.of(context).maybePop(),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  l.auth.profileTitle,
-                  style: T.display(34, tracking: -1.4, color: p.text),
-                ),
-                const SizedBox(height: 20),
-                TextEntry(
-                  label: l.auth.displayNameLabel,
-                  controller: _name,
-                  hint: l.auth.displayNameHint,
-                  enabled: !_pushing,
-                  palette: p,
-                ),
-                const SizedBox(height: 14),
-                Row(
-                  children: [
-                    Expanded(
-                      child: IgnorePointer(
-                        ignoring: _pushing,
-                        child: MintButton(
-                          label: l.auth.save,
-                          palette: p,
-                          onTap: _save,
-                        ),
-                      ),
-                    ),
-                    if (_saved) ...[
-                      const SizedBox(width: 14),
-                      Text(l.auth.saved, style: mono(10, color: p.ashDim)),
-                    ],
-                  ],
-                ),
-                if (account.state is Guest) ...[
-                  const SizedBox(height: 22),
-                  Text(l.auth.guestBanner, style: mono(10, color: p.ashDim)),
-                  const SizedBox(height: 10),
-                  Text(l.auth.guestWarning, style: T.body(13, color: p.ash)),
-                  const SizedBox(height: 22),
-                  Text(
-                    l.auth.upgradeTitle,
-                    style: T.display(22, tracking: -0.8, color: p.text),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(l.auth.upgradeBlurb, style: T.body(13, color: p.ash)),
-                  const SizedBox(height: 16),
-                  TextEntry(
-                    label: l.auth.emailLabel,
-                    controller: _email,
-                    hint: l.auth.emailHint,
-                    keyboardType: TextInputType.emailAddress,
-                    enabled: !_pushing,
-                    palette: p,
-                  ),
-                  const SizedBox(height: 14),
-                  IgnorePointer(
+                Expanded(
+                  child: IgnorePointer(
                     ignoring: _pushing,
-                    child: GoldButton(
-                      label: l.auth.keepMyGames,
+                    child: MintButton(
+                      label: l.auth.save,
                       palette: p,
-                      wide: true,
-                      onTap: _upgrade,
+                      onTap: _save,
                     ),
                   ),
-                ],
-                if (account.state is Player) ...[
-                  const SizedBox(height: 18),
-                  Center(
-                    child: IgnorePointer(
-                      ignoring: _pushing,
-                      child: TextLink(
-                        label: l.auth.signOut,
-                        palette: p,
-                        onTap: _signOut,
-                      ),
-                    ),
-                  ),
-                ],
-                if (_error != null) ...[
-                  const SizedBox(height: 14),
-                  Text(_error!, style: T.body(13, color: p.pink)),
+                ),
+                if (_saved) ...[
+                  const SizedBox(width: 14),
+                  Text(l.auth.saved, style: mono(10, color: p.ashDim)),
                 ],
               ],
             ),
-          ),
-        ],
+            if (account.state is Guest) ...[
+              const SizedBox(height: 22),
+              Text(l.auth.guestBanner, style: mono(10, color: p.ashDim)),
+              const SizedBox(height: 10),
+              Text(l.auth.guestWarning, style: T.body(13, color: p.ash)),
+              const SizedBox(height: 22),
+              Text(
+                l.auth.upgradeTitle,
+                style: T.display(22, tracking: -0.8, color: p.text),
+              ),
+              const SizedBox(height: 10),
+              Text(l.auth.upgradeBlurb, style: T.body(13, color: p.ash)),
+              const SizedBox(height: 16),
+              TextEntry(
+                label: l.auth.emailLabel,
+                controller: _email,
+                hint: l.auth.emailHint,
+                keyboardType: TextInputType.emailAddress,
+                enabled: !_pushing,
+                palette: p,
+              ),
+              const SizedBox(height: 14),
+              IgnorePointer(
+                ignoring: _pushing,
+                child: GoldButton(
+                  label: l.auth.keepMyGames,
+                  palette: p,
+                  wide: true,
+                  onTap: _upgrade,
+                ),
+              ),
+            ],
+            if (account.state is Player) ...[
+              const SizedBox(height: 18),
+              Center(
+                child: IgnorePointer(
+                  ignoring: _pushing,
+                  child: TextLink(
+                    label: l.auth.signOut,
+                    palette: p,
+                    onTap: _signOut,
+                  ),
+                ),
+              ),
+            ],
+            if (_error != null) ...[
+              const SizedBox(height: 14),
+              Text(_error!, style: T.body(13, color: p.pink)),
+            ],
+          ],
+        ),
       ),
     );
   }

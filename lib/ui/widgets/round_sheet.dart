@@ -66,6 +66,52 @@ class _RoundSheetState extends State<RoundSheet>
   @override
   Widget build(BuildContext context) {
     final p = widget.palette;
+
+    return AnimatedBuilder(
+      animation: _rise,
+      builder: (context, child) {
+        final t = Curves.easeOutCubic.transform(_rise.value);
+        if (t == 0) return const SizedBox.shrink();
+        return ColoredBox(
+          color: p.scrim.withValues(alpha: p.scrim.a * t),
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: Transform.translate(
+              offset: Offset(0, 10 * (1 - t)),
+              child: Opacity(opacity: t, child: child),
+            ),
+          ),
+        );
+      },
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // Half the wide stage, or the whole of a narrow one. The score sheet
+          // is two blocks of six lines and a button, which fits an upright phone
+          // but not a short browser window — so it scrolls rather than clipping
+          // the thing the round was played for.
+          final tight = constraints.maxWidth < 620;
+          return Container(
+            width: tight ? constraints.maxWidth : 620,
+            constraints: BoxConstraints(maxHeight: constraints.maxHeight * 0.9),
+            padding: tight
+                ? const EdgeInsets.fromLTRB(20, 18, 20, 26)
+                : const EdgeInsets.fromLTRB(32, 22, 32, 34),
+            decoration: BoxDecoration(
+              color: p.sheet,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(24),
+              ),
+              border: Border(top: BorderSide(color: p.line)),
+            ),
+            child: SingleChildScrollView(child: _body(context, tight: tight)),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _body(BuildContext context, {required bool tight}) {
+    final p = widget.palette;
     final view = widget.view;
     final l = widget.copy;
     final result = view.roundResult;
@@ -85,103 +131,74 @@ class _RoundSheetState extends State<RoundSheet>
           : l.theyWent(_sideName(view, l, result!.wentOutSide!));
     }
 
-    return AnimatedBuilder(
-      animation: _rise,
-      builder: (context, child) {
-        final t = Curves.easeOutCubic.transform(_rise.value);
-        if (t == 0) return const SizedBox.shrink();
-        return ColoredBox(
-          color: p.scrim.withValues(alpha: p.scrim.a * t),
-          child: Align(
-            alignment: Alignment.bottomCenter,
-            child: Transform.translate(
-              offset: Offset(0, 10 * (1 - t)),
-              child: Opacity(opacity: t, child: child),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Center(
+          child: Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: p.ashDim,
+              borderRadius: BorderRadius.circular(2),
             ),
           ),
-        );
-      },
-      child: Container(
-        width: 620,
-        padding: const EdgeInsets.fromLTRB(32, 22, 32, 34),
-        decoration: BoxDecoration(
-          color: p.sheet,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          border: Border(top: BorderSide(color: p.line)),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: p.ashDim,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              '${l.round} ${(result?.roundIndex ?? view.roundIndex) + 1}',
-              style: mono(10, color: p.ashDim),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              headline,
-              style: T.display(
-                30,
-                tracking: -1.2,
-                color: iWon ? p.gold : p.ash,
-              ),
-            ),
-            const SizedBox(height: 22),
-            if (result != null)
-              for (final sheet in result.sheets) ...[
-                _SideBlock(
-                  name: _sideName(view, l, sheet.side),
-                  sheet: sheet,
-                  mine: sheet.side == view.side,
-                  winner: sheet.side == result.wentOutSide,
-                  palette: p,
-                  copy: l,
-                ),
-                const SizedBox(height: 14),
-              ],
-            Container(height: 1, color: p.line),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '${l.matchLine}${view.matchTarget}',
-                    style: mono(10, color: p.ashDim),
-                  ),
-                ),
-                for (var side = 0; side < view.matchScores.length; side++)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 14),
-                    child: Text(
-                      '${view.matchScores[side]}',
-                      style: mono(
-                        18,
-                        color: side == view.side ? p.mint : p.ash,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 22),
-            MintButton(
-              label: view.matchOver ? l.newMatch : l.nextRound,
+        const SizedBox(height: 20),
+        Text(
+          '${l.round} ${(result?.roundIndex ?? view.roundIndex) + 1}',
+          style: mono(10, color: p.ashDim),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          headline,
+          style: T.display(
+            tight ? 26 : 30,
+            tracking: -1.2,
+            color: iWon ? p.gold : p.ash,
+          ),
+        ),
+        const SizedBox(height: 22),
+        if (result != null)
+          for (final sheet in result.sheets) ...[
+            _SideBlock(
+              name: _sideName(view, l, sheet.side),
+              sheet: sheet,
+              mine: sheet.side == view.side,
+              winner: sheet.side == result.wentOutSide,
               palette: p,
-              onTap: widget.onContinue,
+              copy: l,
             ),
+            const SizedBox(height: 14),
+          ],
+        Container(height: 1, color: p.line),
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                '${l.matchLine}${view.matchTarget}',
+                style: mono(10, color: p.ashDim),
+              ),
+            ),
+            for (var side = 0; side < view.matchScores.length; side++)
+              Padding(
+                padding: const EdgeInsets.only(left: 14),
+                child: Text(
+                  '${view.matchScores[side]}',
+                  style: mono(18, color: side == view.side ? p.mint : p.ash),
+                ),
+              ),
           ],
         ),
-      ),
+        const SizedBox(height: 22),
+        MintButton(
+          label: view.matchOver ? l.newMatch : l.nextRound,
+          palette: p,
+          onTap: widget.onContinue,
+        ),
+      ],
     );
   }
 

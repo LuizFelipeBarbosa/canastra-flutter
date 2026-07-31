@@ -98,84 +98,80 @@ class _OtpScreenState extends State<OtpScreen> {
     final l = context.copy;
 
     return Scaffold(
-      body: Stage(
+      body: Room(
         palette: p,
-        children: [
-          Positioned.fill(
-            child: SheetCard(
+        child: SheetCard(
+          palette: p,
+          children: [
+            IgnorePointer(
+              ignoring: _pushing,
+              child: BackLink(
+                label: l.back,
+                palette: p,
+                onTap: () => Navigator.of(context).maybePop(),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              l.auth.codeTitle,
+              style: T.display(34, tracking: -1.4, color: p.text),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              l.auth.codeSentTo(widget.email),
+              style: T.body(13, color: p.ash),
+            ),
+            const SizedBox(height: 20),
+            TextEntry(
+              label: l.auth.codeLabel,
+              controller: _code,
+              keyboardType: TextInputType.number,
+              enabled: !_pushing,
               palette: p,
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 14),
+              Text(_error!, style: T.body(13, color: p.pink)),
+            ],
+            const SizedBox(height: 24),
+            IgnorePointer(
+              ignoring: _pushing,
+              child: GoldButton(
+                label: l.auth.verify,
+                palette: p,
+                wide: true,
+                onTap: _verify,
+              ),
+            ),
+            const SizedBox(height: 14),
+            // A Wrap, not a Row: the two links fit side by side in
+            // Portuguese but not quite in English, and a second line
+            // beats nine clipped pixels.
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 20,
+              runSpacing: 8,
               children: [
                 IgnorePointer(
                   ignoring: _pushing,
-                  child: BackLink(
-                    label: l.back,
+                  child: TextLink(
+                    label: l.auth.resend,
+                    palette: p,
+                    onTap: _resend,
+                  ),
+                ),
+                IgnorePointer(
+                  ignoring: _pushing,
+                  child: TextLink(
+                    label: l.auth.changeEmail,
                     palette: p,
                     onTap: () => Navigator.of(context).maybePop(),
                   ),
                 ),
-                const SizedBox(height: 20),
-                Text(
-                  l.auth.codeTitle,
-                  style: T.display(34, tracking: -1.4, color: p.text),
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  l.auth.codeSentTo(widget.email),
-                  style: T.body(13, color: p.ash),
-                ),
-                const SizedBox(height: 20),
-                TextEntry(
-                  label: l.auth.codeLabel,
-                  controller: _code,
-                  keyboardType: TextInputType.number,
-                  enabled: !_pushing,
-                  palette: p,
-                ),
-                if (_error != null) ...[
-                  const SizedBox(height: 14),
-                  Text(_error!, style: T.body(13, color: p.pink)),
-                ],
-                const SizedBox(height: 24),
-                IgnorePointer(
-                  ignoring: _pushing,
-                  child: GoldButton(
-                    label: l.auth.verify,
-                    palette: p,
-                    wide: true,
-                    onTap: _verify,
-                  ),
-                ),
-                const SizedBox(height: 14),
-                // A Wrap, not a Row: the two links fit side by side in
-                // Portuguese but not quite in English, and a second line
-                // beats nine clipped pixels.
-                Wrap(
-                  alignment: WrapAlignment.center,
-                  spacing: 20,
-                  runSpacing: 8,
-                  children: [
-                    IgnorePointer(
-                      ignoring: _pushing,
-                      child: TextLink(
-                        label: l.auth.resend,
-                        palette: p,
-                        onTap: _resend,
-                      ),
-                    ),
-                    IgnorePointer(
-                      ignoring: _pushing,
-                      child: TextLink(
-                        label: l.auth.changeEmail,
-                        palette: p,
-                        onTap: () => Navigator.of(context).maybePop(),
-                      ),
-                    ),
-                  ],
-                ),
               ],
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

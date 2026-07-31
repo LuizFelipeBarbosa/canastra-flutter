@@ -231,142 +231,132 @@ class _FriendsScreenState extends State<FriendsScreen> {
         .toList(growable: false);
 
     return Scaffold(
-      body: Stage(
+      body: Room(
         palette: p,
-        children: [
-          Positioned.fill(
-            child: SheetCard(
-              width: 1000,
+        child: SheetCard(
+          width: 1000,
+          palette: p,
+          children: [
+            BackLink(
+              label: l.back,
               palette: p,
-              children: [
-                BackLink(
-                  label: l.back,
-                  palette: p,
-                  onTap: () => Navigator.of(context).maybePop(),
+              onTap: () => Navigator.of(context).maybePop(),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              l.social.friends,
+              style: T.display(34, tracking: -1.4, color: p.text),
+            ),
+            if (_invite case final invite?) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
                 ),
-                const SizedBox(height: 12),
-                Text(
-                  l.social.friends,
-                  style: T.display(34, tracking: -1.4, color: p.text),
+                decoration: BoxDecoration(
+                  color: p.panel,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: p.line),
                 ),
-                if (_invite case final invite?) ...[
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: p.panel,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: p.line),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            l.social.invitedBy(invite.inviterName),
-                            style: T.title(12, color: p.text),
-                          ),
-                        ),
-                        TextLink(
-                          label: l.social.join,
-                          palette: p,
-                          color: p.mint,
-                          onTap: _joinInvite,
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 14),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
+                child: Row(
                   children: [
                     Expanded(
-                      child: TextEntry(
-                        label: l.social.add.toUpperCase(),
-                        controller: _username,
-                        hint: l.social.usernameHint,
-                        textInputAction: TextInputAction.done,
-                        onSubmitted: (_) => _requestFriend(),
-                        palette: p,
+                      child: Text(
+                        l.social.invitedBy(invite.inviterName),
+                        style: T.title(12, color: p.text),
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    SizedBox(
-                      width: 130,
-                      child: MintButton(
-                        label: l.social.add,
-                        palette: p,
-                        onTap: _requestFriend,
-                      ),
+                    TextLink(
+                      label: l.social.join,
+                      palette: p,
+                      color: p.mint,
+                      onTap: _joinInvite,
                     ),
                   ],
                 ),
-                if (_actionError != null) ...[
-                  const SizedBox(height: 8),
-                  Text(_actionError!, style: T.body(12, color: p.pink)),
-                ],
-                const SizedBox(height: 14),
-                if (_loading)
-                  Center(child: CircularProgressIndicator(color: p.mint))
-                else if (_loadError case final error?) ...[
-                  Text(
-                    _accountError(l, error),
-                    style: T.body(13, color: p.pink),
-                  ),
-                  const SizedBox(height: 10),
-                  Center(
-                    child: TextLink(
-                      label: l.social.friends,
-                      palette: p,
-                      onTap: _load,
-                    ),
-                  ),
-                ] else ...[
-                  ..._requestRows(
-                    label: l.social.incoming,
-                    requests: incoming,
-                    incoming: true,
+              ),
+            ],
+            const SizedBox(height: 14),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(
+                  child: TextEntry(
+                    label: l.social.add.toUpperCase(),
+                    controller: _username,
+                    hint: l.social.usernameHint,
+                    textInputAction: TextInputAction.done,
+                    onSubmitted: (_) => _requestFriend(),
                     palette: p,
-                    copy: l.social,
                   ),
-                  ..._requestRows(
-                    label: l.social.outgoing,
-                    requests: outgoing,
-                    incoming: false,
+                ),
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: 130,
+                  child: MintButton(
+                    label: l.social.add,
                     palette: p,
-                    copy: l.social,
+                    onTap: _requestFriend,
                   ),
-                  FieldLabel(label: l.social.friends.toUpperCase(), palette: p),
-                  const SizedBox(height: 6),
-                  if (_friends.isEmpty)
-                    Text(l.social.noFriends, style: T.body(12, color: p.ash))
-                  else
-                    Wrap(
-                      spacing: 18,
-                      runSpacing: 4,
-                      children: [
-                        // Fixed Stage: three compact columns keep 30 friends
-                        // visible without making the canvas scroll.
-                        for (final friend in _friends.take(30))
-                          SizedBox(
-                            width: 288,
-                            child: _FriendRow(
-                              friend: friend,
-                              palette: p,
-                              copy: l.social,
-                              onBlock: () => _block(friend),
-                            ),
-                          ),
-                      ],
-                    ),
-                ],
+                ),
               ],
             ),
-          ),
-        ],
+            if (_actionError != null) ...[
+              const SizedBox(height: 8),
+              Text(_actionError!, style: T.body(12, color: p.pink)),
+            ],
+            const SizedBox(height: 14),
+            if (_loading)
+              Center(child: CircularProgressIndicator(color: p.mint))
+            else if (_loadError case final error?) ...[
+              Text(_accountError(l, error), style: T.body(13, color: p.pink)),
+              const SizedBox(height: 10),
+              Center(
+                child: TextLink(
+                  label: l.social.friends,
+                  palette: p,
+                  onTap: _load,
+                ),
+              ),
+            ] else ...[
+              ..._requestRows(
+                label: l.social.incoming,
+                requests: incoming,
+                incoming: true,
+                palette: p,
+                copy: l.social,
+              ),
+              ..._requestRows(
+                label: l.social.outgoing,
+                requests: outgoing,
+                incoming: false,
+                palette: p,
+                copy: l.social,
+              ),
+              FieldLabel(label: l.social.friends.toUpperCase(), palette: p),
+              const SizedBox(height: 6),
+              if (_friends.isEmpty)
+                Text(l.social.noFriends, style: T.body(12, color: p.ash))
+              else
+                _Columns(
+                  target: 288,
+                  spacing: 18,
+                  children: [
+                    // Compact columns keep 30 friends visible at once on a
+                    // display wide enough to hold them.
+                    for (final friend in _friends.take(30))
+                      _FriendRow(
+                        friend: friend,
+                        palette: p,
+                        copy: l.social,
+                        onBlock: () => _block(friend),
+                      ),
+                  ],
+                ),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -382,49 +372,76 @@ class _FriendsScreenState extends State<FriendsScreen> {
     return [
       FieldLabel(label: label, palette: palette),
       const SizedBox(height: 5),
-      Wrap(
+      _Columns(
+        target: 440,
         spacing: 20,
-        runSpacing: 4,
         children: [
           for (final request in requests)
-            SizedBox(
-              width: 440,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      request.displayName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: T.title(12, color: palette.text),
-                    ),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    request.displayName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: T.title(12, color: palette.text),
                   ),
-                  if (incoming) ...[
-                    TextLink(
-                      label: copy.accept,
-                      palette: palette,
-                      onTap: () => _respond(request, true),
-                    ),
-                    const SizedBox(width: 10),
-                    TextLink(
-                      label: copy.decline,
-                      palette: palette,
-                      onTap: () => _respond(request, false),
-                    ),
-                  ] else
-                    TextLink(
-                      label: copy.cancel,
-                      palette: palette,
-                      onTap: () => _cancel(request),
-                    ),
-                ],
-              ),
+                ),
+                if (incoming) ...[
+                  TextLink(
+                    label: copy.accept,
+                    palette: palette,
+                    onTap: () => _respond(request, true),
+                  ),
+                  const SizedBox(width: 10),
+                  TextLink(
+                    label: copy.decline,
+                    palette: palette,
+                    onTap: () => _respond(request, false),
+                  ),
+                ] else
+                  TextLink(
+                    label: copy.cancel,
+                    palette: palette,
+                    onTap: () => _cancel(request),
+                  ),
+              ],
             ),
         ],
       ),
       const SizedBox(height: 12),
     ];
   }
+}
+
+/// As many equal columns of [target] width as the sheet can hold, and one on a
+/// phone. The list is the same either way; only how much of it fits on a line
+/// changes.
+class _Columns extends StatelessWidget {
+  final double target;
+  final double spacing;
+  final List<Widget> children;
+
+  const _Columns({
+    required this.target,
+    required this.spacing,
+    required this.children,
+  });
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final columns = (constraints.maxWidth / target).floor().clamp(1, 3);
+      final width = (constraints.maxWidth - spacing * (columns - 1)) / columns;
+      return Wrap(
+        spacing: spacing,
+        runSpacing: 4,
+        children: [
+          for (final child in children) SizedBox(width: width, child: child),
+        ],
+      );
+    },
+  );
 }
 
 class _FriendRow extends StatelessWidget {
