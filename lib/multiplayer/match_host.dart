@@ -8,6 +8,7 @@
 library;
 
 import 'dart:async';
+import 'dart:math';
 
 import '../ai/agent.dart';
 import '../engine/config.dart';
@@ -19,13 +20,51 @@ import 'table_view.dart';
 /// An event and its addressee; [seat] of null means broadcast.
 typedef HostMessage = ({int? seat, ServerEvent event});
 
+typedef RoundOverCallback =
+    void Function(
+      RoundResult result,
+      Match match, {
+      required String matchId,
+      required DateTime startedAt,
+    });
+
+typedef MatchOverCallback =
+    void Function(
+      Match match, {
+      required String matchId,
+      required DateTime startedAt,
+    });
+
 /// Outbound addressee used for one public-only view shared by all spectators.
 const int spectatorHostSeat = -1;
+
+final _uuidRandom = Random.secure();
+
+/// Mint a time-ordered UUIDv7 using the current millisecond and secure entropy.
+String uuidV7() {
+  final bytes = List<int>.generate(16, (_) => _uuidRandom.nextInt(256));
+  var milliseconds = DateTime.now().millisecondsSinceEpoch;
+  for (var i = 5; i >= 0; i--) {
+    bytes[i] = milliseconds & 0xff;
+    milliseconds >>= 8;
+  }
+  bytes[6] = 0x70 | (bytes[6] & 0x0f);
+  bytes[8] = 0x80 | (bytes[8] & 0x3f);
+
+  final hex = bytes
+      .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+      .join();
+  return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
+      '${hex.substring(12, 16)}-${hex.substring(16, 20)}-'
+      '${hex.substring(20)}';
+}
 
 class MatchHost {
   final String roomCode;
   final RulesConfig cfg;
   final int seed;
+  final RoundOverCallback? onRoundOver;
+  final MatchOverCallback? onMatchOver;
 
   /// How long a bot "thinks" before moving, ~600ms in the app so the table
   /// reads as a sequence of moves rather than one jump.
@@ -45,6 +84,8 @@ class MatchHost {
   bool _started = false;
   bool _disposed = false;
   int _botGeneration = 0;
+  String _matchId;
+  DateTime _startedAt;
 
   MatchHost({
     required this.roomCode,
@@ -53,8 +94,12 @@ class MatchHost {
     required List<SeatInfo> seats,
     AgentLevel botLevel = AgentLevel.normal,
     this.botDelay = const Duration(milliseconds: 600),
+    this.onRoundOver,
+    this.onMatchOver,
   }) : _seats = List.of(seats),
-       _match = Match(cfg: cfg, seed: seed) {
+       _match = Match(cfg: cfg, seed: seed),
+       _matchId = uuidV7(),
+       _startedAt = DateTime.now().toUtc() {
     if (seats.length != cfg.table.numPlayers) {
       throw ArgumentError(
         'expected ${cfg.table.numPlayers} seats, got ${seats.length}',
@@ -73,6 +118,7 @@ class MatchHost {
   Match get match => _match;
   bool get started => _started;
   int get spectatorCount => _spectatorCount;
+  String get matchId => _matchId;
 
   /// Everyone who is not a bot has readied up (bots are always ready).
   bool get everyoneReady =>
@@ -146,8 +192,9 @@ class MatchHost {
   }
 
   void _applyAndBroadcast(int seat, int actionId) {
+    final RoundResult? result;
     try {
-      _match.applyId(actionId);
+      result = _match.applyId(actionId);
     } on IllegalAction catch (e) {
       _emit(seat, ActionRejected(actionId: actionId, reason: e.message));
       _pushTable(seat);
@@ -161,6 +208,18 @@ class MatchHost {
       return;
     }
     _broadcastTable();
+
+    if (result != null) {
+      onRoundOver?.call(
+        result,
+        _match,
+        matchId: _matchId,
+        startedAt: _startedAt,
+      );
+      if (_match.matchOver) {
+        onMatchOver?.call(_match, matchId: _matchId, startedAt: _startedAt);
+      }
+    }
 
     if (_match.round.roundOver) {
       // Nobody human is watching, so keep the match moving on its own.
@@ -187,7 +246,10 @@ class MatchHost {
     if (!_match.matchOver) return;
     _botGeneration++;
     _matchNumber++;
-    _match = Match(cfg: cfg, seed: seed + 1013 * (_match.roundIndex + 1));
+    final rematchSeed = seed + 1013 * (_match.roundIndex + 1);
+    _match = Match(cfg: cfg, seed: rematchSeed);
+    _matchId = uuidV7();
+    _startedAt = DateTime.now().toUtc();
     _broadcastTable();
     _scheduleBot();
   }

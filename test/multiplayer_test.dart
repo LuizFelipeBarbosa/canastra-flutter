@@ -476,6 +476,95 @@ void main() {
     expect(spectator.publicScores, equals(seated.publicScores));
     expect(spectator.matchScores, equals(seated.matchScores));
   });
+
+  group('match recording hooks', () {
+    test(
+      'uuidV7 has the expected version, variant, and time ordering',
+      () async {
+        final first = uuidV7();
+        await Future<void>.delayed(const Duration(milliseconds: 2));
+        final second = uuidV7();
+
+        final shape = RegExp(
+          r'^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-'
+          r'[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+        );
+        expect(first, matches(shape));
+        expect(second, matches(shape));
+        expect(first[14], equals('7'));
+        expect(int.parse(first[19], radix: 16) & 0xc, equals(0x8));
+
+        BigInt timestamp(String id) =>
+            BigInt.parse(id.replaceAll('-', '').substring(0, 12), radix: 16);
+        expect(timestamp(second), greaterThanOrEqualTo(timestamp(first)));
+      },
+    );
+
+    test('round and match hooks keep one identity until a rematch', () {
+      final roundResults = <RoundResult>[];
+      final roundMatchIds = <String>[];
+      final matchIds = <String>[];
+      final startedAtValues = <DateTime>[];
+      var matchOverCalls = 0;
+      final host = MatchHost(
+        roomCode: 'RECORDER',
+        cfg: loadProfile('rummy', numPlayers: 2).withMatchTarget(500),
+        seed: 37,
+        seats: const [
+          SeatInfo(seat: 0, name: 'Bot 0', kind: SeatKind.bot, ready: true),
+          SeatInfo(seat: 1, name: 'Bot 1', kind: SeatKind.bot, ready: true),
+        ],
+        botDelay: Duration.zero,
+        onRoundOver: (result, match, {required matchId, required startedAt}) {
+          roundResults.add(result);
+          roundMatchIds.add(matchId);
+          startedAtValues.add(startedAt);
+        },
+        onMatchOver: (match, {required matchId, required startedAt}) {
+          matchOverCalls++;
+          matchIds.add(matchId);
+          startedAtValues.add(startedAt);
+        },
+      );
+      addTearDown(host.dispose);
+      final initialMatchId = host.matchId;
+
+      host.start();
+      var guard = 0;
+      while (!host.match.matchOver && guard++ < 20) {
+        host.runBotsSynchronously(maxActions: 20000);
+        if (host.match.round.roundOver && !host.match.matchOver) {
+          host.handle(0, const RequestNextRound());
+        }
+      }
+
+      expect(host.match.matchOver, isTrue);
+      expect(roundResults, hasLength(host.match.roundIndex + 1));
+      expect(roundMatchIds, everyElement(initialMatchId));
+      expect(matchOverCalls, equals(1));
+      expect(matchIds, equals([initialMatchId]));
+      expect(startedAtValues, isNotEmpty);
+      expect(
+        startedAtValues.map((value) => value.toUtc()),
+        everyElement(startedAtValues.first),
+      );
+
+      for (var side = 0; side < host.cfg.table.numSides; side++) {
+        final scoreFromRounds = roundResults.fold<int>(
+          0,
+          (total, result) =>
+              total +
+              result.sheet.singleWhere((sheet) => sheet.side == side).total,
+        );
+        expect(scoreFromRounds, equals(host.match.matchScores[side]));
+      }
+
+      host.handle(0, const RequestRematch());
+      expect(host.matchId, isNot(equals(initialMatchId)));
+      expect(host.match.matchOver, isFalse);
+      expect(matchOverCalls, equals(1));
+    });
+  });
 }
 
 Map<CardId, int> _counts(List<CardId> cards) {

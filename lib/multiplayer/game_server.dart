@@ -19,7 +19,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import '../engine/match.dart';
 import 'auth.dart';
+import 'game_backend.dart';
 import 'match_host.dart';
 import 'protocol.dart';
 import 'room_rules.dart';
@@ -29,9 +31,166 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 enum _ConnState { idle, authorizing, seated, spectating }
 
+class _MatchRecorder {
+  final GameBackend backend;
+  final String roomCode;
+  final String? roomId;
+  final String? ladderId;
+  final bool isRanked;
+  final bool authenticatedOwners;
+
+  final List<Map<String, dynamic>> _rounds = [];
+  final Map<int, int> _disconnects = {};
+  final Set<int> _replacedByBot = {};
+  final Set<String> _submittedMatchIds = {};
+  String? _activeMatchId;
+  bool _recorded = false;
+  bool _disposed = false;
+
+  _MatchRecorder({
+    required this.backend,
+    required this.roomCode,
+    required this.roomId,
+    required this.ladderId,
+    required this.isRanked,
+    required this.authenticatedOwners,
+  });
+
+  void recordRound(RoundResult result, {required String matchId}) {
+    if (_disposed) return;
+    _selectMatch(matchId);
+    final sheet = {
+      'roundIndex': result.roundIndex,
+      'reason': result.reason.name,
+      'wentOutSide': result.wentOutSide,
+      'sheets': [
+        for (final sideScore in result.sheet)
+          {
+            'side': sideScore.side,
+            'lines': [
+              for (final line in sideScore.lines)
+                {'label': line.label, 'points': line.points},
+            ],
+            'total': sideScore.total,
+          },
+      ],
+      'matchScores': List<int>.of(result.matchScoresAfter),
+    };
+    _rounds.add({
+      'round_index': result.roundIndex,
+      'reason': result.reason.name,
+      'went_out_side': result.wentOutSide,
+      'sheet': sheet,
+      'match_scores_after': List<int>.of(result.matchScoresAfter),
+    });
+  }
+
+  void recordDisconnect(int seat, {required String matchId}) {
+    if (_disposed) return;
+    _selectMatch(matchId);
+    _disconnects[seat] = (_disconnects[seat] ?? 0) + 1;
+  }
+
+  void recordBotReplacement(int seat, {required String matchId}) {
+    if (_disposed) return;
+    _selectMatch(matchId);
+    _replacedByBot.add(seat);
+  }
+
+  void recordMatch(
+    Match match, {
+    required String matchId,
+    required DateTime startedAt,
+    required List<SeatInfo> seats,
+    required Map<int, String> seatOwners,
+  }) {
+    if (_disposed) return;
+    _selectMatch(matchId);
+    if (_recorded) return;
+    _recorded = true;
+
+    final finalScores = List<int>.of(match.matchScores);
+    var winnerSide = match.winnerSide;
+    if (finalScores.length > 1) {
+      final ordered = List<int>.of(finalScores)..sort((a, b) => b.compareTo(a));
+      // winnerSide picks the first maximum, but both sides can cross the
+      // target in one round. A tied match has no database winner.
+      if (ordered[0] == ordered[1]) winnerSide = null;
+    }
+
+    final payload = <String, dynamic>{
+      'match_id': matchId,
+      'room_id': roomId,
+      'room_code': roomCode,
+      'ladder_id': ladderId,
+      'profile': match.cfg.name,
+      'num_players': match.cfg.table.numPlayers,
+      'num_sides': match.cfg.table.numSides,
+      'match_target': match.cfg.scoring.matchTarget,
+      'seed': match.seed,
+      'is_ranked': isRanked,
+      'host_instance': Platform.environment['FLY_MACHINE_ID'],
+      'started_at': startedAt.toUtc().toIso8601String(),
+      'ended_at': DateTime.now().toUtc().toIso8601String(),
+      'winner_side': winnerSide,
+      'final_scores': finalScores,
+      'sides': [
+        for (var side = 0; side < finalScores.length; side++)
+          {'side': side, 'score_final': finalScores[side]},
+      ],
+      'players': [
+        for (final seat in seats)
+          {
+            'seat': seat.seat,
+            'side': match.cfg.table.side(seat.seat),
+            'user_id': authenticatedOwners && seat.kind != SeatKind.bot
+                ? seatOwners[seat.seat]
+                : null,
+            'is_bot': seat.kind == SeatKind.bot,
+            'bot_level': seat.kind == SeatKind.bot ? 'normal' : null,
+            'display_name': seat.name,
+            'disconnects': _disconnects[seat.seat] ?? 0,
+            'replaced_by_bot': _replacedByBot.contains(seat.seat),
+          },
+      ],
+      'rounds': List<Map<String, dynamic>>.of(_rounds),
+    };
+    _submittedMatchIds.add(matchId);
+    unawaited(
+      backend.recordMatchResult(payload).whenComplete(() {
+        _submittedMatchIds.remove(matchId);
+      }),
+    );
+  }
+
+  void _selectMatch(String matchId) {
+    if (_activeMatchId == matchId) return;
+    _activeMatchId = matchId;
+    _rounds.clear();
+    _disconnects.clear();
+    _replacedByBot.clear();
+    _recorded = false;
+  }
+
+  void dispose() {
+    _disposed = true;
+    final gameBackend = backend;
+    if (gameBackend is SupabaseGameBackend) {
+      for (final matchId in _submittedMatchIds) {
+        gameBackend.cancelPendingMatchResult(matchId);
+      }
+    }
+    _submittedMatchIds.clear();
+    _rounds.clear();
+    _disconnects.clear();
+    _replacedByBot.clear();
+  }
+}
+
 class _Room {
   final String code;
   final MatchHost host;
+  final _MatchRecorder recorder;
   final Map<int, WebSocketChannel> clients = {};
   final Set<WebSocketChannel> spectators = {};
   final Map<int, String> seatOwners = {};
@@ -39,7 +198,9 @@ class _Room {
   Timer? roomGrace;
   late final StreamSubscription<HostMessage> _sub;
 
-  _Room({required this.code, required this.host}) {
+  bool _closed = false;
+
+  _Room({required this.code, required this.host, required this.recorder}) {
     _sub = host.outbound.listen((msg) {
       final payload = jsonEncode(msg.event.toJson());
       if (msg.seat == null) {
@@ -83,12 +244,15 @@ class _Room {
   }
 
   Future<void> close() async {
+    if (_closed) return;
+    _closed = true;
     roomGrace?.cancel();
     roomGrace = null;
     for (final timer in botTakeover.values) {
       timer.cancel();
     }
     botTakeover.clear();
+    recorder.dispose();
     final spectatorSockets = spectators.toList();
     spectators.clear();
     await _sub.cancel();
@@ -116,6 +280,10 @@ class GameServer {
   ///
   /// Null preserves the open behavior used by local development and tests.
   final TokenVerifier? verifier;
+
+  /// Database admission and result recording. The no-op default preserves the
+  /// open, in-memory server used by local development.
+  final GameBackend backend;
 
   /// Browser origins allowed to open a socket, or null to accept any.
   ///
@@ -152,6 +320,7 @@ class GameServer {
     this.allowedOrigins,
     this.pingInterval = const Duration(seconds: 30),
     this.verifier,
+    this.backend = const NullBackend(),
     this.botTakeoverAfter = const Duration(seconds: 45),
     this.roomGraceAfter = const Duration(minutes: 10),
   });
@@ -207,6 +376,7 @@ class GameServer {
           state = _ConnState.authorizing;
           final spectate = cmd;
           final tokenVerifier = verifier;
+          String? verifiedUserId;
           if (tokenVerifier != null) {
             final token = spectate.authToken;
             if (token == null) {
@@ -223,6 +393,35 @@ class GameServer {
               channel.sink.add(
                 jsonEncode(
                   const ServerError(message: 'session rejected').toJson(),
+                ),
+              );
+              await channel.sink.close();
+              return;
+            }
+            verifiedUserId = user.id;
+          }
+          final gameBackend = backend;
+          if (verifiedUserId != null && gameBackend is! NullBackend) {
+            final authorization = await gameBackend.authorizeJoin(
+              roomCode: spectate.roomCode,
+              userId: verifiedUserId,
+              spectator: true,
+            );
+            if (connectionClosed) return;
+            if (authorization == null) {
+              // Admission bookkeeping must not take the live game down. During
+              // a backend outage, favor availability and keep open seating.
+              stderr.writeln(
+                '[${spectate.roomCode}] room authorization unavailable; '
+                'allowing spectator',
+              );
+            } else if (authorization['ok'] != true) {
+              final reason = authorization['reason'];
+              channel.sink.add(
+                jsonEncode(
+                  ServerError(
+                    message: reason is String ? reason : 'room join refused',
+                  ).toJson(),
                 ),
               );
               await channel.sink.close();
@@ -272,6 +471,7 @@ class GameServer {
           // Bound to a local so the nested closure keeps the promoted type.
           final join = cmd;
           final tokenVerifier = verifier;
+          Map<String, dynamic>? authorization;
           if (tokenVerifier != null) {
             final token = join.authToken;
             if (token == null) {
@@ -297,6 +497,33 @@ class GameServer {
           } else {
             ownerId = join.clientId;
           }
+          final gameBackend = backend;
+          if (tokenVerifier != null && gameBackend is! NullBackend) {
+            authorization = await gameBackend.authorizeJoin(
+              roomCode: join.roomCode,
+              userId: ownerId!,
+            );
+            if (connectionClosed) return;
+            if (authorization == null) {
+              // A database outage must not make an otherwise healthy table
+              // unavailable. The room stays unranked and seating stays open.
+              stderr.writeln(
+                '[${join.roomCode}] room authorization unavailable; '
+                'allowing open seating',
+              );
+            } else if (authorization['ok'] != true) {
+              final reason = authorization['reason'];
+              channel.sink.add(
+                jsonEncode(
+                  ServerError(
+                    message: reason is String ? reason : 'room join refused',
+                  ).toJson(),
+                ),
+              );
+              await channel.sink.close();
+              return;
+            }
+          }
           if (connectionClosed) return;
 
           final existing = _rooms[join.roomCode];
@@ -307,53 +534,59 @@ class GameServer {
             target = existing;
           } else {
             late final RoomRules resolvedRules;
-            if (join.profileId != null &&
-                join.numPlayers != null &&
-                join.matchTarget != null) {
-              try {
+            try {
+              if (authorization != null) {
+                final rules = authorization['rules'];
+                if (rules is! Map<String, dynamic> ||
+                    rules['profile'] is! String ||
+                    rules['num_players'] is! int ||
+                    rules['match_target'] is! int) {
+                  throw const FormatException('invalid authorized room rules');
+                }
+                resolvedRules = RoomRules.validated(
+                  profileId: rules['profile'] as String,
+                  numPlayers: rules['num_players'] as int,
+                  matchTarget: rules['match_target'] as int,
+                );
+              } else if (join.profileId != null &&
+                  join.numPlayers != null &&
+                  join.matchTarget != null) {
                 resolvedRules = RoomRules.validated(
                   profileId: join.profileId!,
                   numPlayers: join.numPlayers!,
                   matchTarget: join.matchTarget!,
                 );
-              } on FormatException {
-                channel.sink.add(
-                  jsonEncode(
-                    const ServerError(
-                      message: "that table's rules are not offered here",
-                    ).toJson(),
-                  ),
+              } else {
+                // Partial declarations deliberately count as absent. Guessing
+                // their missing fields from server defaults would recreate the
+                // client/server mismatch this declaration exists to prevent.
+                resolvedRules = RoomRules(
+                  profileId: profileId,
+                  numPlayers: numPlayers,
+                  matchTarget: defaultMatchTarget,
                 );
-                await channel.sink.close();
-                return;
               }
-            } else {
-              // Partial declarations deliberately count as absent. Guessing
-              // their missing fields from server defaults would recreate the
-              // client/server mismatch this declaration exists to prevent.
-              resolvedRules = RoomRules(
-                profileId: profileId,
-                numPlayers: numPlayers,
-                matchTarget: defaultMatchTarget,
+            } on FormatException {
+              channel.sink.add(
+                jsonEncode(
+                  const ServerError(
+                    message: "that table's rules are not offered here",
+                  ).toJson(),
+                ),
               );
+              await channel.sink.close();
+              return;
             }
             target = _rooms.putIfAbsent(
               join.roomCode,
-              () => _Room(
-                code: join.roomCode,
-                host: MatchHost(
-                  roomCode: join.roomCode,
-                  cfg: resolvedRules.toConfig(),
-                  seed: _nextSeed++,
-                  seats: [
-                    for (var i = 0; i < resolvedRules.numPlayers; i++)
-                      SeatInfo(seat: i, name: 'Seat $i', kind: SeatKind.remote),
-                  ],
-                ),
-              ),
+              () => _createRoom(join.roomCode, resolvedRules, authorization),
             );
           }
-          final claimed = target.claimSeat(join.preferredSeat, owner: ownerId);
+          final authorizedSeat = authorization?['seat'];
+          final preferredSeat = authorizedSeat is int
+              ? authorizedSeat
+              : join.preferredSeat;
+          final claimed = target.claimSeat(preferredSeat, owner: ownerId);
           if (claimed == null) {
             state = _ConnState.idle;
             channel.sink.add(
@@ -409,6 +642,7 @@ class GameServer {
         final s = seat;
         if (s == null) return;
         r.clients.remove(s);
+        r.recorder.recordDisconnect(s, matchId: r.host.matchId);
         r.host.handle(s, const LeaveRoom());
         stdout.writeln('[${r.code}] seat $s disconnected');
         r.botTakeover.remove(s)?.cancel();
@@ -416,7 +650,10 @@ class GameServer {
         if (takeoverDelay != null && r.host.started) {
           r.botTakeover[s] = Timer(takeoverDelay, () {
             r.botTakeover.remove(s);
-            if (!r.clients.containsKey(s)) r.host.takeOverWithBot(s);
+            if (!r.clients.containsKey(s)) {
+              r.host.takeOverWithBot(s);
+              r.recorder.recordBotReplacement(s, matchId: r.host.matchId);
+            }
           });
         }
 
@@ -445,9 +682,61 @@ class GameServer {
     );
   }
 
+  _Room _createRoom(
+    String code,
+    RoomRules rules,
+    Map<String, dynamic>? authorization,
+  ) {
+    final rawRoomId = authorization?['room_id'];
+    final rawLadderId = authorization?['ladder_id'];
+    final recorder = _MatchRecorder(
+      backend: backend,
+      roomCode: code,
+      roomId: rawRoomId is String ? rawRoomId : null,
+      ladderId: rawLadderId is String ? rawLadderId : null,
+      isRanked: authorization?['is_ranked'] == true,
+      authenticatedOwners: verifier != null,
+    );
+    late final _Room room;
+    final host = MatchHost(
+      roomCode: code,
+      cfg: rules.toConfig(),
+      seed: _nextSeed++,
+      seats: [
+        for (var i = 0; i < rules.numPlayers; i++)
+          SeatInfo(seat: i, name: 'Seat $i', kind: SeatKind.remote),
+      ],
+      onRoundOver: (result, match, {required matchId, required startedAt}) {
+        recorder.recordRound(result, matchId: matchId);
+      },
+      onMatchOver: (match, {required matchId, required startedAt}) {
+        recorder.recordMatch(
+          match,
+          matchId: matchId,
+          startedAt: startedAt,
+          seats: room.host.seats,
+          seatOwners: room.seatOwners,
+        );
+      },
+    );
+    room = _Room(code: code, host: host, recorder: recorder);
+    return room;
+  }
+
   Future<void> _closeRoom(_Room room) async {
+    if (room._closed) return;
     _spectatorCount -= room.spectators.length;
     assert(_spectatorCount >= 0);
     await room.close();
+  }
+
+  /// Close every room and release resources owned by the configured backend.
+  Future<void> dispose() async {
+    final rooms = _rooms.values.toList();
+    _rooms.clear();
+    for (final room in rooms) {
+      await _closeRoom(room);
+    }
+    await backend.dispose();
   }
 }

@@ -14,6 +14,7 @@ library;
 import 'dart:io';
 
 import 'package:canastra/multiplayer/auth.dart';
+import 'package:canastra/multiplayer/game_backend.dart';
 import 'package:canastra/multiplayer/game_server.dart';
 import 'package:shelf/shelf.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
@@ -24,9 +25,23 @@ Future<void> main(List<String> args) async {
   var profile = env['GAME_PROFILE'] ?? 'buraco';
   var players = int.tryParse(env['GAME_PLAYERS'] ?? '') ?? 2;
   final authRequired = (env['AUTH_REQUIRED'] ?? '').toLowerCase() == 'true';
+  final supabaseUrl = env['SUPABASE_URL']?.trim();
+  final primaryServiceKey = env['SUPABASE_SERVICE_KEY']?.trim();
+  final fallbackServiceKey = env['SUPABASE_SERVICE_ROLE_KEY']?.trim();
+  final serviceKey = primaryServiceKey != null && primaryServiceKey.isNotEmpty
+      ? primaryServiceKey
+      : fallbackServiceKey;
+  final recordingEnabled =
+      supabaseUrl != null &&
+      supabaseUrl.isNotEmpty &&
+      serviceKey != null &&
+      serviceKey.isNotEmpty;
+  final GameBackend gameBackend = recordingEnabled
+      ? SupabaseGameBackend(supabaseUrl: supabaseUrl, serviceKey: serviceKey)
+      : const NullBackend();
+
   TokenVerifier? verifier;
   if (authRequired) {
-    final supabaseUrl = env['SUPABASE_URL'];
     final anonKey = env['SUPABASE_ANON_KEY'];
     if (supabaseUrl == null ||
         supabaseUrl.trim().isEmpty ||
@@ -65,6 +80,7 @@ Future<void> main(List<String> args) async {
     numPlayers: players,
     allowedOrigins: origins.isEmpty ? null : origins,
     verifier: verifier,
+    backend: gameBackend,
   );
 
   // Hoisted because `handler` builds a fresh handler on every read.
@@ -79,6 +95,7 @@ Future<void> main(List<String> args) async {
 
   final http = await shelf_io.serve(handler, InternetAddress.anyIPv4, port);
   stdout.writeln('canastra host on ws://${http.address.host}:${http.port}/');
+  stdout.writeln('match recording: ${recordingEnabled ? 'on' : 'off'}');
   stdout.writeln('profile: $profile, $players players per room');
   stdout.writeln(
     origins.isEmpty ? 'origins: any' : 'origins: ${origins.join(', ')}',

@@ -8,9 +8,13 @@
 @Tags(['online'])
 library;
 
+import 'dart:async';
 import 'dart:io';
 
+import 'package:canastra/ai/agent.dart';
+import 'package:canastra/engine/profiles.dart';
 import 'package:canastra/multiplayer/auth.dart';
+import 'package:canastra/multiplayer/game_backend.dart';
 import 'package:canastra/multiplayer/game_server.dart';
 import 'package:canastra/multiplayer/protocol.dart';
 import 'package:canastra/multiplayer/table_view.dart';
@@ -1138,6 +1142,233 @@ void main() {
       expect((await noTable).message, equals('no such table'));
     });
   });
+
+  group('game backend integration', () {
+    test(
+      'a finished open match records one internally consistent payload',
+      () async {
+        final backend = _RecordingBackend();
+        final server = GameServer(
+          profileId: 'rummy',
+          numPlayers: 2,
+          defaultMatchTarget: 500,
+          backend: backend,
+          botTakeoverAfter: null,
+          roomGraceAfter: null,
+        );
+        final hosted = await _serveServer(server);
+        addTearDown(() async {
+          await hosted.http.close(force: true);
+          await server.dispose();
+        });
+        final ana = _Client(
+          WebSocketTransport(
+            endpoint: hosted.endpoint,
+            roomCode: 'record-match',
+            playerName: 'Ana',
+            clientId: 'client-ana',
+            maxRetries: 0,
+          ),
+        );
+        final bruno = _Client(
+          WebSocketTransport(
+            endpoint: hosted.endpoint,
+            roomCode: 'record-match',
+            playerName: 'Bruno',
+            clientId: 'client-bruno',
+            maxRetries: 0,
+          ),
+        );
+        addTearDown(ana.transport.dispose);
+        addTearDown(bruno.transport.dispose);
+
+        await ana.transport.connect();
+        await bruno.transport.connect();
+        ana.transport.send(const SetReady(ready: true));
+        bruno.transport.send(const SetReady(ready: true));
+        await Future.wait([
+          ana.waitForTable((view) => view.hand.isNotEmpty),
+          bruno.waitForTable((view) => view.hand.isNotEmpty),
+        ]);
+
+        final terminal = await _driveRummyMatch(ana, bruno);
+        final payload = await backend.nextRecord.timeout(
+          const Duration(seconds: 10),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+
+        expect(backend.recorded, hasLength(1));
+        expect(backend.authorizationCalls, isEmpty);
+        expect(payload['room_code'], equals('record-match'));
+        expect(payload['room_id'], isNull);
+        expect(payload['is_ranked'], isFalse);
+        expect(payload['final_scores'], equals(terminal.matchScores));
+
+        final players = (payload['players'] as List)
+            .cast<Map<String, dynamic>>();
+        expect(players, hasLength(2));
+        final anaRecord = players.singleWhere((player) => player['seat'] == 0);
+        final brunoRecord = players.singleWhere(
+          (player) => player['seat'] == 1,
+        );
+        expect(anaRecord['display_name'], equals('Ana'));
+        expect(brunoRecord['display_name'], equals('Bruno'));
+        for (final player in players) {
+          expect(player['user_id'], isNull);
+          expect(player['is_bot'], isFalse);
+        }
+
+        final sides = (payload['sides'] as List).cast<Map<String, dynamic>>();
+        expect(sides, hasLength(terminal.numSides));
+        for (var side = 0; side < terminal.numSides; side++) {
+          final sideRecord = sides.singleWhere(
+            (candidate) => candidate['side'] == side,
+          );
+          expect(sideRecord['score_final'], equals(terminal.matchScores[side]));
+        }
+
+        final rounds = (payload['rounds'] as List).cast<Map<String, dynamic>>();
+        expect(rounds, hasLength(terminal.roundIndex + 1));
+        for (var side = 0; side < terminal.numSides; side++) {
+          final scoreFromRounds = rounds.fold<int>(0, (total, round) {
+            final sheetView = round['sheet'] as Map<String, dynamic>;
+            final sheets = (sheetView['sheets'] as List)
+                .cast<Map<String, dynamic>>();
+            final sheet = sheets.singleWhere(
+              (candidate) => candidate['side'] == side,
+            );
+            return total + sheet['total'] as int;
+          });
+          expect(scoreFromRounds, equals(terminal.matchScores[side]));
+        }
+        expect(rounds.last['match_scores_after'], equals(terminal.matchScores));
+
+        final orderedScores = List<int>.of(terminal.matchScores)
+          ..sort((a, b) => b.compareTo(a));
+        final expectedWinner = orderedScores[0] == orderedScores[1]
+            ? null
+            : terminal.matchScores.indexOf(orderedScores[0]);
+        expect(payload['winner_side'], expectedWinner);
+      },
+    );
+
+    test('authorized rules and seat override the client declaration', () async {
+      final backend = _RecordingBackend(
+        authorizationResponse: {
+          'ok': true,
+          'room_id': '00000000-0000-0000-0000-000000000123',
+          'seat': 1,
+          'is_ranked': true,
+          'ladder_id': 'ranked-2p',
+          'rules': {'profile': 'buraco', 'num_players': 2, 'match_target': 500},
+        },
+      );
+      final server = GameServer(verifier: _StubVerifier(), backend: backend);
+      final hosted = await _serveServer(server);
+      addTearDown(() async {
+        await hosted.http.close(force: true);
+        await server.dispose();
+      });
+      final client = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'authorized-room',
+          playerName: 'Ana',
+          preferredSeat: 0,
+          authToken: () async => 'good-token',
+          profileId: 'rummy',
+          numPlayers: 2,
+          matchTarget: 2000,
+          maxRetries: 0,
+        ),
+      );
+      addTearDown(client.transport.dispose);
+      final joined = _nextEvent<Joined>(client);
+      final lobby = _nextEvent<LobbyUpdate>(client);
+
+      await client.transport.connect();
+
+      expect((await joined).seat, equals(1));
+      final update = await lobby;
+      expect(update.profile, equals('buraco'));
+      expect(update.numPlayers, equals(2));
+      expect(update.matchTarget, equals(500));
+      expect(
+        update.seats.singleWhere((seat) => seat.seat == 1).name,
+        equals('Ana'),
+      );
+      expect(backend.authorizationCalls, hasLength(1));
+      expect(
+        backend.authorizationCalls.single,
+        containsPair('user_id', 'verified-user'),
+      );
+    });
+
+    test('an explicit room authorization refusal closes the socket', () async {
+      final backend = _RecordingBackend(
+        authorizationResponse: {'ok': false, 'reason': 'room expired'},
+      );
+      final server = GameServer(verifier: _StubVerifier(), backend: backend);
+      final hosted = await _serveServer(server);
+      addTearDown(() async {
+        await hosted.http.close(force: true);
+        await server.dispose();
+      });
+      final client = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'expired-room',
+          playerName: 'Ana',
+          authToken: () async => 'good-token',
+          maxRetries: 0,
+        ),
+      );
+      addTearDown(client.transport.dispose);
+      final error = _nextEvent<ServerError>(client);
+
+      await client.transport.connect();
+
+      expect((await error).message, equals('room expired'));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(client.transport.isConnected, isFalse);
+      expect(client.events.whereType<Joined>(), isEmpty);
+    });
+
+    test('an unreachable room backend falls back to open seating', () async {
+      final backend = _RecordingBackend();
+      final server = GameServer(verifier: _StubVerifier(), backend: backend);
+      final hosted = await _serveServer(server);
+      addTearDown(() async {
+        await hosted.http.close(force: true);
+        await server.dispose();
+      });
+      final client = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'backend-down',
+          playerName: 'Ana',
+          preferredSeat: 0,
+          authToken: () async => 'good-token',
+          profileId: 'rummy',
+          numPlayers: 2,
+          matchTarget: 2000,
+          maxRetries: 0,
+        ),
+      );
+      addTearDown(client.transport.dispose);
+      final joined = _nextEvent<Joined>(client);
+      final lobby = _nextEvent<LobbyUpdate>(client);
+
+      await client.transport.connect();
+
+      expect((await joined).seat, equals(0));
+      final update = await lobby;
+      expect(update.profile, equals('rummy'));
+      expect(update.numPlayers, equals(2));
+      expect(update.matchTarget, equals(2000));
+      expect(backend.authorizationCalls, hasLength(1));
+    });
+  });
 }
 
 Future<LobbyUpdate> _nextLobbyWhere(
@@ -1151,3 +1382,88 @@ Future<LobbyUpdate> _nextLobbyWhere(
 
 SeatInfo _seatIn(LobbyUpdate lobby, int seat) =>
     lobby.seats.singleWhere((candidate) => candidate.seat == seat);
+
+Future<TableView> _driveRummyMatch(_Client ana, _Client bruno) async {
+  final cfg = loadProfile('rummy', numPlayers: 2).withMatchTarget(500);
+  final agents = [HeuristicAgent(seed: 101), HeuristicAgent(seed: 202)];
+
+  for (var guard = 0; guard < 50000; guard++) {
+    final view = ana.table;
+    if (view == null) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      continue;
+    }
+    if (view.matchOver) return view;
+
+    final anaUpdates = ana.events.whereType<TableUpdate>().length;
+    final brunoUpdates = bruno.events.whereType<TableUpdate>().length;
+    if (view.roundOver) {
+      ana.transport.send(const RequestNextRound());
+    } else {
+      final actingClient = view.currentPlayer == 0 ? ana : bruno;
+      final actingView = actingClient.table;
+      if (actingView == null ||
+          actingView.currentPlayer != view.currentPlayer ||
+          actingView.roundIndex != view.roundIndex ||
+          actingView.turnNumber != view.turnNumber ||
+          actingView.phase != view.phase) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        continue;
+      }
+      actingClient.transport.send(
+        SubmitAction(
+          actionId: agents[view.currentPlayer].chooseAction(cfg, actingView),
+        ),
+      );
+    }
+
+    await Future.wait([
+      _waitForTableCount(ana, anaUpdates + 1),
+      _waitForTableCount(bruno, brunoUpdates + 1),
+    ]);
+  }
+  throw StateError('rummy match did not finish');
+}
+
+Future<void> _waitForTableCount(_Client client, int count) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 5));
+  while (DateTime.now().isBefore(deadline)) {
+    if (client.events.whereType<TableUpdate>().length >= count) return;
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+  }
+  throw StateError('timed out waiting for table update $count');
+}
+
+class _RecordingBackend implements GameBackend {
+  final Map<String, dynamic>? authorizationResponse;
+  final List<Map<String, dynamic>> authorizationCalls = [];
+  final List<Map<String, dynamic>> recorded = [];
+  final Completer<Map<String, dynamic>> _firstRecord = Completer();
+
+  _RecordingBackend({this.authorizationResponse});
+
+  Future<Map<String, dynamic>> get nextRecord => _firstRecord.future;
+
+  @override
+  Future<Map<String, dynamic>?> authorizeJoin({
+    required String roomCode,
+    required String userId,
+    bool spectator = false,
+  }) async {
+    authorizationCalls.add({
+      'room_code': roomCode,
+      'user_id': userId,
+      'spectator': spectator,
+    });
+    return authorizationResponse;
+  }
+
+  @override
+  Future<void> recordMatchResult(Map<String, dynamic> payload) async {
+    recorded.add(payload);
+    if (!_firstRecord.isCompleted) _firstRecord.complete(payload);
+  }
+
+  @override
+  Future<void> dispose() async {}
+}
