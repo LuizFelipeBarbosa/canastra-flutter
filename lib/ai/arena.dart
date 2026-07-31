@@ -12,6 +12,7 @@ import '../engine/config.dart';
 import '../engine/match.dart';
 import '../multiplayer/table_view.dart';
 import 'agent.dart';
+import 'smart_agent.dart';
 
 /// Builds a fresh agent per game so no PRNG state leaks between games.
 typedef AgentFactory = Agent Function(int seed);
@@ -22,6 +23,7 @@ AgentFactory agentFactory(String name) => switch (name) {
   'normal' => (seed) => HeuristicAgent(seed: seed, noise: 1.0),
   'hard-legacy' => (seed) => HeuristicAgent(seed: seed, noise: 0.05),
   'hard' => (seed) => Agent.forLevel(AgentLevel.hard, seed: seed),
+  'smart' => (seed) => SmartAgent(seed: seed),
   _ => throw ArgumentError.value(name, 'name', 'unknown arena policy'),
 };
 
