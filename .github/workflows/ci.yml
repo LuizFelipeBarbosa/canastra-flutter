@@ -1,0 +1,55 @@
+name: CI
+
+# Netlify's deploy preview builds the web app but never runs the analyzer or the
+# suite, so without this a pull request can show all-green checks while the tests
+# are broken, and the merge to main auto-deploys it.
+#
+# Unlike fly-deploy.yml there is deliberately no path filter. That filter exists
+# because a deploy replaces the machine and ends live matches; a test run has no
+# such cost, and any file in the repo can break the suite.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# The opposite trade-off to fly-deploy.yml, which must not cancel because two
+# deploys would fight over the single machine. Here a superseded run is only
+# reporting on a commit that is already replaced.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: analyze & test
+    runs-on: ubuntu-latest
+    # online_test binds a real socket and waits on polling deadlines, so a run
+    # that wedges there would otherwise sit on a runner for the default six hours.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pinned to the version netlify.toml and the Dockerfile's FLUTTER_VERSION
+      # already pin, so the checks, the web app and the game host are built
+      # against one SDK. Moving it means moving all three.
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.44.6
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      - run: flutter analyze
+
+      # Goldens stay out because dart_test.yaml skips their tag, not because of
+      # any flag here — font rasterisation differs between machines, so a pixel
+      # diff would be noise. Passing --run-skipped would drag them back in.
+      #
+      # No dart format check: two committed test files do not satisfy it today,
+      # so adding one would fail on an untouched main.
+      - run: flutter test
