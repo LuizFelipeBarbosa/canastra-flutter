@@ -30,6 +30,29 @@ abstract class GameTransport {
   Future<void> dispose();
 }
 
+/// Connection-state support implemented only by transports that can reconnect.
+///
+/// This stays separate from [GameTransport]'s interface because its existing
+/// implementations use `implements`, which does not inherit concrete defaults.
+abstract interface class ConnectionStateTransport {
+  bool get reconnecting;
+
+  Stream<bool> get connectionChanges;
+}
+
+/// Non-breaking connection-state defaults for transports without reconnects.
+extension GameTransportConnectionState on GameTransport {
+  bool get reconnecting => switch (this) {
+    ConnectionStateTransport transport => transport.reconnecting,
+    _ => false,
+  };
+
+  Stream<bool> get connectionChanges => switch (this) {
+    ConnectionStateTransport transport => transport.connectionChanges,
+    _ => const Stream.empty(),
+  };
+}
+
 /// Thrown when a transport cannot reach its host.
 class TransportException implements Exception {
   final String message;

@@ -234,26 +234,40 @@ class _GameScreenState extends State<GameScreen> {
     );
     final cards = _cardIdentities.assign(layout.cards);
 
+    final table = Stage(
+      palette: p,
+      children: [
+        ..._meldBoxes(layout, p),
+        ..._zones(layout, p),
+        ..._rowLabels(view, l, p),
+        ..._cards(cards, p),
+        _header(view, prefs, p, l),
+        _opponents(view, l, p),
+        _strip(view, l, p),
+        _whyNot(l, p),
+        if (view.roundOver || view.matchOver)
+          Positioned.fill(
+            child: RoundSheet(
+              view: view,
+              palette: p,
+              copy: l,
+              onContinue: view.matchOver ? c.rematch : c.nextRound,
+            ),
+          ),
+      ],
+    );
+
     return Scaffold(
-      body: Stage(
-        palette: p,
+      body: Stack(
+        fit: StackFit.expand,
         children: [
-          ..._meldBoxes(layout, p),
-          ..._zones(layout, p),
-          ..._rowLabels(view, l, p),
-          ..._cards(cards, p),
-          _header(view, prefs, p, l),
-          _opponents(view, l, p),
-          _strip(view, l, p),
-          _whyNot(l, p),
-          if (view.roundOver || view.matchOver)
-            Positioned.fill(
-              child: RoundSheet(
-                view: view,
-                palette: p,
-                copy: l,
-                onContinue: view.matchOver ? c.rematch : c.nextRound,
-              ),
+          IgnorePointer(
+            ignoring: c.reconnecting,
+            child: Opacity(opacity: c.reconnecting ? 0.55 : 1, child: table),
+          ),
+          if (c.reconnecting)
+            Center(
+              child: Text(l.reconnecting, style: mono(10, color: p.mint)),
             ),
         ],
       ),

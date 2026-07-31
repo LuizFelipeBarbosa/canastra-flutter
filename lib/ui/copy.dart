@@ -45,6 +45,7 @@ class Copy {
   final String you;
   final String them;
   final String thinking;
+  final String reconnecting;
   final String round;
 
   /// The words between the round number and the match target: "FIRST TO".
@@ -192,6 +193,7 @@ class Copy {
     required this.you,
     required this.them,
     required this.thinking,
+    required this.reconnecting,
     required this.round,
     required this.firstTo,
     required this.stock,
@@ -323,6 +325,7 @@ class Copy {
     you: 'YOU',
     them: 'THEM',
     thinking: 'THINKING',
+    reconnecting: 'Reconnecting…',
     round: 'ROUND',
     firstTo: 'FIRST TO',
     stock: 'STOCK',
@@ -454,6 +457,7 @@ class Copy {
     you: 'VOCÊ',
     them: 'ELES',
     thinking: 'PENSANDO',
+    reconnecting: 'Reconectando…',
     round: 'RODADA',
     firstTo: 'ATÉ',
     stock: 'MONTE',

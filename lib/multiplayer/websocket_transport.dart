@@ -12,13 +12,15 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
+import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'protocol.dart';
 import 'transport.dart';
 
-class WebSocketTransport implements GameTransport {
+class WebSocketTransport implements GameTransport, ConnectionStateTransport {
   /// e.g. `ws://localhost:8080/ws` or `wss://play.example.com/ws`.
   final Uri endpoint;
   final String roomCode;
@@ -44,11 +46,13 @@ class WebSocketTransport implements GameTransport {
   final int maxRetries;
 
   final _events = StreamController<ServerEvent>.broadcast();
+  final _connectionChanges = StreamController<bool>.broadcast();
   WebSocketChannel? _channel;
   StreamSubscription<dynamic>? _sub;
   int? _seat;
   bool _connected = false;
   bool _connecting = false;
+  bool _reconnecting = false;
   bool _disposed = false;
   int _retries = 0;
 
@@ -62,17 +66,31 @@ class WebSocketTransport implements GameTransport {
     this.profileId,
     this.numPlayers,
     this.matchTarget,
-    this.maxRetries = 5,
+    this.maxRetries = 8,
   });
+
+  /// Computes one retry delay without opening a socket.
+  @visibleForTesting
+  static Duration retryDelay(int retries, {Random? random}) {
+    final baseMilliseconds = 300 * (1 << retries);
+    final multiplier = 0.75 + (random ?? Random()).nextDouble() * 0.5;
+    return Duration(milliseconds: (baseMilliseconds * multiplier).round());
+  }
 
   @override
   Stream<ServerEvent> get events => _events.stream;
+
+  @override
+  Stream<bool> get connectionChanges => _connectionChanges.stream;
 
   @override
   int? get seat => _seat;
 
   @override
   bool get isConnected => _connected;
+
+  @override
+  bool get reconnecting => _reconnecting;
 
   @override
   Future<void> connect() async {
@@ -106,6 +124,7 @@ class WebSocketTransport implements GameTransport {
 
       _connected = true;
       _retries = 0;
+      _setReconnecting(false);
       _sub = channel.stream.listen(
         _onMessage,
         onDone: _onDisconnected,
@@ -119,7 +138,7 @@ class WebSocketTransport implements GameTransport {
         JoinRoom(
           roomCode: roomCode,
           playerName: playerName,
-          preferredSeat: preferredSeat,
+          preferredSeat: _seat ?? preferredSeat,
           authToken: token,
           clientId: clientId,
           profileId: profileId,
@@ -151,10 +170,14 @@ class WebSocketTransport implements GameTransport {
     _connected = false;
     if (_disposed) return;
     if (_retries >= maxRetries) {
+      _setReconnecting(false);
       _events.add(const ServerError(message: 'lost connection to the host'));
       return;
     }
-    final delay = Duration(milliseconds: 300 * (1 << _retries));
+    _setReconnecting(true);
+    // Without jitter, every seat retries together after a host restart and
+    // hammers it in synchronized waves; a small spread breaks that lockstep.
+    final delay = retryDelay(_retries);
     _retries++;
     Timer(delay, () async {
       if (_disposed) return;
@@ -164,6 +187,12 @@ class WebSocketTransport implements GameTransport {
         _onDisconnected();
       }
     });
+  }
+
+  void _setReconnecting(bool value) {
+    if (_reconnecting == value) return;
+    _reconnecting = value;
+    _connectionChanges.add(value);
   }
 
   @override
@@ -182,5 +211,6 @@ class WebSocketTransport implements GameTransport {
     await _sub?.cancel();
     await _channel?.sink.close();
     await _events.close();
+    await _connectionChanges.close();
   }
 }

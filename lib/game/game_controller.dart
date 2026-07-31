@@ -40,8 +40,10 @@ class GameController extends ChangeNotifier {
   Refusal? _refusal;
   String? _notice;
   bool _connecting = true;
+  bool _reconnecting = false;
   String? _fatal;
   StreamSubscription<ServerEvent>? _eventSubscription;
+  StreamSubscription<bool>? _connectionSubscription;
   bool _disposed = false;
 
   /// Blocks duplicate submissions while `legalActions` is stale and the host's
@@ -84,6 +86,8 @@ class GameController extends ChangeNotifier {
 
   bool get connecting => _connecting;
 
+  bool get reconnecting => _reconnecting;
+
   /// Set when the game cannot continue; the screen shows this instead.
   String? get fatalError => _fatal;
 
@@ -102,6 +106,11 @@ class GameController extends ChangeNotifier {
         notifyListeners();
       },
     );
+    _connectionSubscription = transport.connectionChanges.listen((value) {
+      if (_disposed) return;
+      _reconnecting = value;
+      notifyListeners();
+    });
     try {
       await transport.connect();
       if (_disposed) return;
@@ -446,6 +455,7 @@ class GameController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _eventSubscription?.cancel();
+    _connectionSubscription?.cancel();
     transport.dispose();
     super.dispose();
   }
