@@ -34,6 +34,8 @@ class _Room {
   final MatchHost host;
   final Map<int, WebSocketChannel> clients = {};
   final Map<int, String> seatOwners = {};
+  final Map<int, Timer> botTakeover = {};
+  Timer? roomGrace;
   late final StreamSubscription<HostMessage> _sub;
 
   _Room({required this.code, required this.host}) {
@@ -54,11 +56,7 @@ class _Room {
     if (owner != null) {
       for (final entry in seatOwners.entries) {
         final seat = entry.key;
-        final isBot = host.seats.any(
-          (candidate) =>
-              candidate.seat == seat && candidate.kind == SeatKind.bot,
-        );
-        if (entry.value == owner && !clients.containsKey(seat) && !isBot) {
+        if (entry.value == owner && !clients.containsKey(seat)) {
           return seat;
         }
       }
@@ -77,6 +75,12 @@ class _Room {
   }
 
   Future<void> close() async {
+    roomGrace?.cancel();
+    roomGrace = null;
+    for (final timer in botTakeover.values) {
+      timer.cancel();
+    }
+    botTakeover.clear();
     await _sub.cancel();
     host.dispose();
     for (final c in clients.values) {
@@ -111,6 +115,16 @@ class GameServer {
   /// peer that vanished without sending a close frame.
   final Duration? pingInterval;
 
+  /// How long a dropped seat keeps its chair before a bot takes it over.
+  ///
+  /// Null disables takeover.
+  final Duration? botTakeoverAfter;
+
+  /// How long an empty room survives awaiting reconnects before disposal.
+  ///
+  /// Null reverts to close-on-empty behavior.
+  final Duration? roomGraceAfter;
+
   final Map<String, _Room> _rooms = {};
   var _nextSeed = 1;
 
@@ -121,6 +135,8 @@ class GameServer {
     this.allowedOrigins,
     this.pingInterval = const Duration(seconds: 30),
     this.verifier,
+    this.botTakeoverAfter = const Duration(seconds: 45),
+    this.roomGraceAfter = const Duration(minutes: 10),
   });
 
   Handler get handler => webSocketHandler(
@@ -252,6 +268,13 @@ class GameServer {
             );
             return;
           }
+          target.roomGrace?.cancel();
+          target.roomGrace = null;
+          target.botTakeover.remove(claimed)?.cancel();
+          final reclaimingBot = target.host.seats.any(
+            (candidate) =>
+                candidate.seat == claimed && candidate.kind == SeatKind.bot,
+          );
           room = target;
           seat = claimed;
           target.clients[claimed] = channel;
@@ -259,6 +282,7 @@ class GameServer {
           stdout.writeln(
             '[${join.roomCode}] ${join.playerName} -> seat $claimed',
           );
+          if (reclaimingBot) target.host.handBackSeat(claimed);
           target.host.handle(claimed, join);
           return;
         }
@@ -283,14 +307,33 @@ class GameServer {
         r.clients.remove(s);
         r.host.handle(s, const LeaveRoom());
         stdout.writeln('[${r.code}] seat $s disconnected');
-        // A seat's owner entry needs no cleanup of its own: the room dies with
-        // its last socket, taking seatOwners with it. Reclaim only ever spans
-        // the life of a room that some other seat is still keeping alive;
-        // surviving a fully empty room (grace timers) is a later phase.
+        r.botTakeover.remove(s)?.cancel();
+        final takeoverDelay = botTakeoverAfter;
+        if (takeoverDelay != null && r.host.started) {
+          r.botTakeover[s] = Timer(takeoverDelay, () {
+            r.botTakeover.remove(s);
+            if (!r.clients.containsKey(s)) r.host.takeOverWithBot(s);
+          });
+        }
+
         if (r.clients.isEmpty) {
-          _rooms.remove(r.code);
-          await r.close();
-          stdout.writeln('[${r.code}] room closed');
+          final graceDelay = roomGraceAfter;
+          if (graceDelay == null) {
+            _rooms.remove(r.code);
+            await r.close();
+            stdout.writeln('[${r.code}] room closed');
+          } else {
+            r.roomGrace?.cancel();
+            r.roomGrace = Timer(graceDelay, () {
+              r.roomGrace = null;
+              if (r.clients.isNotEmpty || !identical(_rooms[r.code], r)) {
+                return;
+              }
+              _rooms.remove(r.code);
+              unawaited(r.close());
+              stdout.writeln('[${r.code}] room closed after grace');
+            });
+          }
         }
       },
     );

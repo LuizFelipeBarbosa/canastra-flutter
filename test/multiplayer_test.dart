@@ -322,6 +322,71 @@ void main() {
       expect(restored.toJson(), equals(update.toJson()));
     });
   });
+
+  group('seat takeover', () {
+    test('a bot takes over a seat and the table keeps moving', () {
+      final host = MatchHost(
+        roomCode: 'TAKEOVER',
+        cfg: loadProfile('buraco', numPlayers: 2),
+        seed: 17,
+        seats: const [
+          SeatInfo(seat: 0, name: 'Ana', kind: SeatKind.remote, ready: true),
+          SeatInfo(seat: 1, name: 'Bot 1', kind: SeatKind.bot, ready: true),
+        ],
+        botDelay: Duration.zero,
+      );
+      addTearDown(host.dispose);
+      host.start();
+
+      final actionsBefore = host.match.actionLog.length;
+      host.takeOverWithBot(0);
+
+      final takenSeat = host.seats.singleWhere((seat) => seat.seat == 0);
+      expect(takenSeat.kind, SeatKind.bot);
+      expect(takenSeat.ready, isTrue);
+
+      host.runBotsSynchronously(maxActions: 100);
+      expect(host.match.actionLog.length, greaterThan(actionsBefore));
+    });
+
+    test('the returning human gets the seat back', () {
+      final host = MatchHost(
+        roomCode: 'HAND-BACK',
+        cfg: loadProfile('buraco', numPlayers: 4),
+        seed: 23,
+        seats: const [
+          SeatInfo(seat: 0, name: 'Ana', kind: SeatKind.remote, ready: true),
+          SeatInfo(seat: 1, name: 'Bot 1', kind: SeatKind.bot, ready: true),
+          SeatInfo(seat: 2, name: 'Bot 2', kind: SeatKind.bot, ready: true),
+          SeatInfo(seat: 3, name: 'Bruno', kind: SeatKind.remote, ready: true),
+        ],
+        botDelay: Duration.zero,
+      );
+      addTearDown(host.dispose);
+      host.start();
+      host.takeOverWithBot(0);
+
+      var guard = 0;
+      while (host.match.currentPlayer == 0 && guard++ < 100) {
+        host.runBotsSynchronously(maxActions: 1);
+      }
+      expect(host.match.currentPlayer, 1);
+
+      host.handBackSeat(0);
+      final returnedSeat = host.seats.singleWhere((seat) => seat.seat == 0);
+      expect(returnedSeat.kind, SeatKind.remote);
+      expect(returnedSeat.connected, isTrue);
+
+      final actionsBeforeOtherBots = host.match.actionLog.length;
+      host.runBotsSynchronously(maxActions: 200);
+      expect(host.match.actionLog.length, greaterThan(actionsBeforeOtherBots));
+      expect(
+        host.match.currentPlayer,
+        3,
+        reason: 'the remaining bots should still play after the hand-back',
+      );
+    });
+  });
 }
 
 Map<CardId, int> _counts(List<CardId> cards) {

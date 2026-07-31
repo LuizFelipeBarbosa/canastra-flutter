@@ -530,4 +530,372 @@ void main() {
       expect(created.matchTarget, equals(3500));
     });
   });
+
+  group('disconnect resilience', () {
+    test(
+      'a dropped seat is taken over by a bot after the grace window',
+      () async {
+        final hosted = await _serveServer(
+          GameServer(
+            numPlayers: 2,
+            botTakeoverAfter: const Duration(milliseconds: 120),
+            roomGraceAfter: null,
+          ),
+        );
+        addTearDown(() => hosted.http.close(force: true));
+        final a = _Client(
+          WebSocketTransport(
+            endpoint: hosted.endpoint,
+            roomCode: 'takeover',
+            playerName: 'Ana',
+            clientId: 'ana',
+            maxRetries: 0,
+          ),
+        );
+        final b = _Client(
+          WebSocketTransport(
+            endpoint: hosted.endpoint,
+            roomCode: 'takeover',
+            playerName: 'Bruno',
+            clientId: 'bruno',
+            maxRetries: 0,
+          ),
+        );
+        addTearDown(a.transport.dispose);
+        addTearDown(b.transport.dispose);
+
+        await a.transport.connect();
+        await b.transport.connect();
+        a.transport.send(const SetReady(ready: true));
+        b.transport.send(const SetReady(ready: true));
+        await Future.wait([
+          a.waitForTable((view) => view.hand.isNotEmpty),
+          b.waitForTable((view) => view.hand.isNotEmpty),
+        ]);
+
+        final takenOver = _nextLobbyWhere(
+          b,
+          (lobby) => _seatIn(lobby, 0).kind == SeatKind.bot,
+        );
+        await a.transport.dispose();
+
+        final lobby = await takenOver;
+        expect(_seatIn(lobby, 0).kind, SeatKind.bot);
+      },
+    );
+
+    test('a reconnect before the window keeps the seat human', () async {
+      final hosted = await _serveServer(
+        GameServer(
+          numPlayers: 2,
+          botTakeoverAfter: const Duration(milliseconds: 300),
+          roomGraceAfter: null,
+        ),
+      );
+      addTearDown(() => hosted.http.close(force: true));
+      final a = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'quick-reconnect',
+          playerName: 'Ana',
+          clientId: 'ana',
+          maxRetries: 0,
+        ),
+      );
+      final b = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'quick-reconnect',
+          playerName: 'Bruno',
+          clientId: 'bruno',
+          maxRetries: 0,
+        ),
+      );
+      addTearDown(a.transport.dispose);
+      addTearDown(b.transport.dispose);
+
+      await a.transport.connect();
+      await b.transport.connect();
+      a.transport.send(const SetReady(ready: true));
+      b.transport.send(const SetReady(ready: true));
+      await Future.wait([
+        a.waitForTable((view) => view.hand.isNotEmpty),
+        b.waitForTable((view) => view.hand.isNotEmpty),
+      ]);
+
+      final disconnected = _nextLobbyWhere(
+        b,
+        (lobby) => !_seatIn(lobby, 0).connected,
+      );
+      await a.transport.dispose();
+      await disconnected;
+
+      final reconnected = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'quick-reconnect',
+          playerName: 'Ana',
+          clientId: 'ana',
+          maxRetries: 0,
+        ),
+      );
+      addTearDown(reconnected.transport.dispose);
+      final joined = _nextEvent<Joined>(reconnected);
+      final humanLobby = _nextLobbyWhere(
+        reconnected,
+        (lobby) =>
+            _seatIn(lobby, 0).kind == SeatKind.remote &&
+            _seatIn(lobby, 0).connected,
+      );
+
+      await reconnected.transport.connect();
+
+      expect((await joined).seat, 0);
+      expect(_seatIn(await humanLobby, 0).kind, SeatKind.remote);
+      await Future<void>.delayed(const Duration(milliseconds: 350));
+      final lobbies = [
+        ...b.events.whereType<LobbyUpdate>(),
+        ...reconnected.events.whereType<LobbyUpdate>(),
+      ];
+      expect(
+        lobbies.any((lobby) => _seatIn(lobby, 0).kind == SeatKind.bot),
+        isFalse,
+      );
+    });
+
+    test('a reconnect after takeover evicts the bot', () async {
+      final hosted = await _serveServer(
+        GameServer(
+          numPlayers: 2,
+          botTakeoverAfter: const Duration(milliseconds: 120),
+          roomGraceAfter: null,
+        ),
+      );
+      addTearDown(() => hosted.http.close(force: true));
+      final a = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'late-reconnect',
+          playerName: 'Ana',
+          clientId: 'ana',
+          maxRetries: 0,
+        ),
+      );
+      final b = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'late-reconnect',
+          playerName: 'Bruno',
+          clientId: 'bruno',
+          maxRetries: 0,
+        ),
+      );
+      addTearDown(a.transport.dispose);
+      addTearDown(b.transport.dispose);
+
+      await a.transport.connect();
+      await b.transport.connect();
+      a.transport.send(const SetReady(ready: true));
+      b.transport.send(const SetReady(ready: true));
+      await Future.wait([
+        a.waitForTable((view) => view.hand.isNotEmpty),
+        b.waitForTable((view) => view.hand.isNotEmpty),
+      ]);
+
+      final botLobby = _nextLobbyWhere(
+        b,
+        (lobby) => _seatIn(lobby, 0).kind == SeatKind.bot,
+      );
+      await a.transport.dispose();
+      await botLobby;
+
+      final reconnected = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'late-reconnect',
+          playerName: 'Ana',
+          clientId: 'ana',
+          maxRetries: 0,
+        ),
+      );
+      addTearDown(reconnected.transport.dispose);
+      final joined = _nextEvent<Joined>(reconnected);
+      final humanLobby = _nextLobbyWhere(
+        reconnected,
+        (lobby) => _seatIn(lobby, 0).kind == SeatKind.remote,
+      );
+      final table = _nextEvent<TableUpdate>(reconnected);
+
+      await reconnected.transport.connect();
+
+      expect((await joined).seat, 0);
+      expect(_seatIn(await humanLobby, 0).kind, SeatKind.remote);
+      expect((await table).view.seat, 0);
+    });
+
+    test('an empty room survives its grace window', () async {
+      final hosted = await _serveServer(
+        GameServer(
+          profileId: 'rummy',
+          numPlayers: 2,
+          defaultMatchTarget: 2000,
+          botTakeoverAfter: null,
+          roomGraceAfter: const Duration(milliseconds: 300),
+        ),
+      );
+      addTearDown(() => hosted.http.close(force: true));
+      final a = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'room-grace',
+          playerName: 'Ana',
+          clientId: 'ana',
+          profileId: 'canasta',
+          numPlayers: 4,
+          matchTarget: 1500,
+          maxRetries: 0,
+        ),
+      );
+      final b = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'room-grace',
+          playerName: 'Bruno',
+          clientId: 'bruno',
+          maxRetries: 0,
+        ),
+      );
+      addTearDown(a.transport.dispose);
+      addTearDown(b.transport.dispose);
+      final originalLobby = _nextEvent<LobbyUpdate>(a);
+
+      await a.transport.connect();
+      final original = await originalLobby;
+      final bJoined = _nextEvent<Joined>(b);
+      await b.transport.connect();
+      expect(a.transport.seat, 0);
+      expect((await bJoined).seat, 1);
+
+      final aDisconnected = _nextLobbyWhere(
+        b,
+        (lobby) => !_seatIn(lobby, 0).connected,
+      );
+      await a.transport.dispose();
+      await aDisconnected;
+      await b.transport.dispose();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      final reconnected = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'room-grace',
+          playerName: 'Ana',
+          clientId: 'ana',
+          maxRetries: 0,
+        ),
+      );
+      addTearDown(reconnected.transport.dispose);
+      final joined = _nextEvent<Joined>(reconnected);
+      final lobby = _nextEvent<LobbyUpdate>(reconnected);
+
+      await reconnected.transport.connect();
+
+      expect((await joined).seat, 0);
+      final restored = await lobby;
+      expect(restored.profile, original.profile);
+      expect(restored.numPlayers, original.numPlayers);
+      expect(restored.matchTarget, original.matchTarget);
+
+      await reconnected.transport.dispose();
+      await Future<void>.delayed(const Duration(milliseconds: 450));
+    });
+
+    test('an empty room past its grace is gone', () async {
+      final hosted = await _serveServer(
+        GameServer(
+          profileId: 'rummy',
+          numPlayers: 2,
+          defaultMatchTarget: 2000,
+          botTakeoverAfter: null,
+          roomGraceAfter: const Duration(milliseconds: 100),
+        ),
+      );
+      addTearDown(() => hosted.http.close(force: true));
+      final a = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'room-expired',
+          playerName: 'Ana',
+          clientId: 'ana',
+          profileId: 'canasta',
+          numPlayers: 4,
+          matchTarget: 1500,
+          maxRetries: 0,
+        ),
+      );
+      final b = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'room-expired',
+          playerName: 'Bruno',
+          clientId: 'bruno',
+          maxRetries: 0,
+        ),
+      );
+      addTearDown(a.transport.dispose);
+      addTearDown(b.transport.dispose);
+      final originalLobby = _nextEvent<LobbyUpdate>(a);
+
+      await a.transport.connect();
+      expect((await originalLobby).profile, 'canasta');
+      final bJoined = _nextEvent<Joined>(b);
+      await b.transport.connect();
+      expect((await bJoined).seat, 1);
+
+      final aDisconnected = _nextLobbyWhere(
+        b,
+        (lobby) => !_seatIn(lobby, 0).connected,
+      );
+      await a.transport.dispose();
+      await aDisconnected;
+      await b.transport.dispose();
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+
+      final reconnected = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'room-expired',
+          playerName: 'Ana',
+          clientId: 'ana',
+          maxRetries: 0,
+        ),
+      );
+      addTearDown(reconnected.transport.dispose);
+      final joined = _nextEvent<Joined>(reconnected);
+      final lobby = _nextEvent<LobbyUpdate>(reconnected);
+
+      await reconnected.transport.connect();
+
+      expect((await joined).seat, 0);
+      final fresh = await lobby;
+      expect(fresh.profile, 'rummy');
+      expect(fresh.numPlayers, 2);
+      expect(fresh.matchTarget, 2000);
+
+      await reconnected.transport.dispose();
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    });
+  });
 }
+
+Future<LobbyUpdate> _nextLobbyWhere(
+  _Client client,
+  bool Function(LobbyUpdate) test,
+) => client.transport.events
+    .where((event) => event is LobbyUpdate)
+    .cast<LobbyUpdate>()
+    .firstWhere(test)
+    .timeout(const Duration(seconds: 5));
+
+SeatInfo _seatIn(LobbyUpdate lobby, int seat) =>
+    lobby.seats.singleWhere((candidate) => candidate.seat == seat);

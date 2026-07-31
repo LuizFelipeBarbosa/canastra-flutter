@@ -186,6 +186,36 @@ class MatchHost {
 
   // --- bots ------------------------------------------------------------------
 
+  /// Hand the seat to an [Agent] so the table keeps moving without its human.
+  void takeOverWithBot(int seat, {AgentLevel level = AgentLevel.normal}) {
+    if (_disposed || _agents.containsKey(seat)) return;
+    if (!_seats.any((candidate) => candidate.seat == seat)) return;
+
+    _agents[seat] = Agent.forLevel(level, seed: seed + 977 * seat);
+    _updateSeat(
+      seat,
+      (current) => current.copyWith(kind: SeatKind.bot, ready: true),
+    );
+    _broadcastLobby();
+    _scheduleBot();
+  }
+
+  /// Give the seat back to its returning human.
+  void handBackSeat(int seat) {
+    if (_disposed || !_agents.containsKey(seat)) return;
+
+    _agents.remove(seat);
+    _botGeneration++;
+    _updateSeat(
+      seat,
+      (current) => current.copyWith(kind: SeatKind.remote, connected: true),
+    );
+    _broadcastLobby();
+    // The host-wide generation bump also invalidates pending moves for every
+    // other bot, so they must all be re-armed after this seat changes hands.
+    _scheduleBot();
+  }
+
   /// If the seat to act is a bot, play its move after [botDelay].
   ///
   /// [_botGeneration] invalidates a pending move if the match is replaced while
