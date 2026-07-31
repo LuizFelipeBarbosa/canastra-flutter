@@ -10,6 +10,7 @@
 library;
 
 import 'package:canastra/account/account.dart';
+import 'package:canastra/account/auth_backend.dart';
 import 'package:canastra/account/fake_auth_backend.dart';
 import 'package:canastra/ai/agent.dart';
 import 'package:canastra/engine/cards.dart';
@@ -21,6 +22,7 @@ import 'package:canastra/multiplayer/table_view.dart';
 import 'package:canastra/ui/account_scope.dart';
 import 'package:canastra/ui/app_scope.dart';
 import 'package:canastra/ui/copy.dart';
+import 'package:canastra/ui/screens/friends_screen.dart';
 import 'package:canastra/ui/screens/game_screen.dart';
 import 'package:canastra/ui/screens/landing_screen.dart';
 import 'package:canastra/ui/screens/leaderboard_screen.dart';
@@ -707,6 +709,99 @@ void main() {
     );
     expect(find.text(Copy.of(Lang.en).ranked.findMatch), findsNothing);
     expect(find.text(Copy.of(Lang.en).ranked.leaderboard), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final (name, size) in const [
+    ('life size', _desktop),
+    ('a phone', _phone),
+  ]) {
+    testWidgets('the friends screen lays out at $name', (tester) async {
+      final backend = FakeAuthBackend()
+        ..friendEntries = List.generate(
+          29,
+          (index) => FriendEntry(
+            userId: 'friend-$index',
+            displayName: 'Friend $index',
+            username: 'friend$index',
+            online: index.isEven,
+            status: index % 5 == 0 ? 'in_game' : '',
+          ),
+        )
+        ..friendRequestEntries = const [
+          FriendRequestEntry(
+            id: 1,
+            userId: 'incoming-1',
+            displayName: 'Incoming One',
+            incoming: true,
+          ),
+          FriendRequestEntry(
+            id: 2,
+            userId: 'incoming-2',
+            displayName: 'Incoming Two',
+            incoming: true,
+          ),
+          FriendRequestEntry(
+            id: 3,
+            userId: 'outgoing-1',
+            displayName: 'Outgoing One',
+            incoming: false,
+          ),
+        ];
+      final account = Account(backend: backend);
+      addTearDown(() async {
+        account.dispose();
+        await backend.close();
+      });
+
+      await _pumpAt(tester, size, const FriendsScreen(), account: account);
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('friends link appears only for players', (tester) async {
+    final playerBackend = FakeAuthBackend();
+    final player = Account(backend: playerBackend);
+    await player.signInWithPassword('ana@example.com', 'password');
+    final guestBackend = FakeAuthBackend();
+    final guest = Account(backend: guestBackend);
+    await guest.signInAnonymously();
+    final signedOutBackend = FakeAuthBackend();
+    final signedOut = Account(backend: signedOutBackend);
+    addTearDown(() async {
+      player.dispose();
+      guest.dispose();
+      signedOut.dispose();
+      await playerBackend.close();
+      await guestBackend.close();
+      await signedOutBackend.close();
+    });
+
+    await _pumpAt(
+      tester,
+      _desktop,
+      const OnlineScreen(profileId: 'buraco', numPlayers: 2),
+      account: player,
+    );
+    expect(find.text(Copy.of(Lang.en).social.friends), findsOneWidget);
+
+    await _pumpAt(
+      tester,
+      _desktop,
+      const OnlineScreen(profileId: 'buraco', numPlayers: 2),
+      account: guest,
+    );
+    expect(find.text(Copy.of(Lang.en).social.friends), findsNothing);
+
+    await _pumpAt(
+      tester,
+      _desktop,
+      const OnlineScreen(profileId: 'buraco', numPlayers: 2),
+      account: signedOut,
+    );
+    expect(find.text(Copy.of(Lang.en).social.friends), findsNothing);
     expect(tester.takeException(), isNull);
   });
 }

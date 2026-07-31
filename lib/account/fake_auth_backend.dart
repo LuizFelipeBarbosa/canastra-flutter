@@ -12,6 +12,8 @@ import 'auth_backend.dart';
 class FakeAuthBackend implements AuthBackend {
   final StreamController<AuthUser?> _changes =
       StreamController<AuthUser?>.broadcast();
+  final StreamController<RoomInviteEntry> _invites =
+      StreamController<RoomInviteEntry>.broadcast();
   final Map<String, ({String password, AuthUser user})> _passwordUsers = {};
 
   StreamController<QueueTicket>? _queue;
@@ -30,6 +32,16 @@ class FakeAuthBackend implements AuthBackend {
   bool queueCancelled = false;
   List<LeaderboardEntry> leaderboardEntries = [];
   RankInfo? rankInfo;
+  List<FriendEntry> friendEntries = [];
+  List<FriendRequestEntry> friendRequestEntries = [];
+  List<String> requestedFriends = [];
+  AccountException? requestFriendError;
+  List<({int id, bool accept})> respondedRequests = [];
+  List<int> cancelledFriendRequests = [];
+  List<String> blockedUsers = [];
+  List<({String status, String? roomId})> heartbeats = [];
+  List<int> acceptedRoomInvites = [];
+  String acceptedRoomCode = 'AB23CD';
 
   FakeAuthBackend({AuthUser? initialUser}) : _user = initialUser;
 
@@ -210,6 +222,59 @@ class FakeAuthBackend implements AuthBackend {
   Future<RankInfo?> myRank(String ladderId) async => rankInfo;
 
   @override
+  Future<List<FriendEntry>> friends() async => friendEntries;
+
+  @override
+  Future<List<FriendRequestEntry>> friendRequests() async =>
+      friendRequestEntries;
+
+  @override
+  Future<void> requestFriend(String username) async {
+    final error = requestFriendError;
+    if (error != null) throw error;
+    requestedFriends.add(username);
+  }
+
+  @override
+  Future<void> respondFriendRequest(int id, {required bool accept}) async {
+    respondedRequests.add((id: id, accept: accept));
+    friendRequestEntries = List.of(friendRequestEntries)
+      ..removeWhere((request) => request.id == id);
+  }
+
+  @override
+  Future<void> cancelFriendRequest(int id) async {
+    cancelledFriendRequests.add(id);
+    friendRequestEntries = List.of(friendRequestEntries)
+      ..removeWhere((request) => request.id == id);
+  }
+
+  @override
+  Future<void> blockUser(String userId) async {
+    blockedUsers.add(userId);
+    friendEntries = List.of(friendEntries)
+      ..removeWhere((friend) => friend.userId == userId);
+  }
+
+  @override
+  Future<void> heartbeat({required String status, String? roomId}) async {
+    heartbeats.add((status: status, roomId: roomId));
+  }
+
+  @override
+  Stream<RoomInviteEntry> roomInvites() => _invites.stream;
+
+  void emitInvite(RoomInviteEntry invite) {
+    if (!_invites.isClosed) _invites.add(invite);
+  }
+
+  @override
+  Future<String> acceptRoomInvite(int id) async {
+    acceptedRoomInvites.add(id);
+    return acceptedRoomCode;
+  }
+
+  @override
   Future<void> signOut() async {
     _pendingLinkEmail = null;
     _otpEmail = null;
@@ -231,6 +296,7 @@ class FakeAuthBackend implements AuthBackend {
   Future<void> close() async {
     final queue = _queue;
     if (queue != null && !queue.isClosed) await queue.close();
+    await _invites.close();
     await _changes.close();
   }
 }

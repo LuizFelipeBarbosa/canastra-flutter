@@ -175,6 +175,133 @@ class QueueTicket {
   int get hashCode => Object.hash(ladderId, status, matchedRoomCode);
 }
 
+class FriendEntry {
+  final String userId;
+  final String displayName;
+  final String? username;
+  final bool online;
+
+  /// One of '', 'in_lobby', 'in_game' — '' when offline.
+  final String status;
+
+  const FriendEntry({
+    required this.userId,
+    required this.displayName,
+    this.username,
+    required this.online,
+    required this.status,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'userId': userId,
+    'displayName': displayName,
+    'username': username,
+    'online': online,
+    'status': status,
+  };
+
+  factory FriendEntry.fromJson(Map<String, dynamic> j) => FriendEntry(
+    userId: j['userId'] as String,
+    displayName: j['displayName'] as String,
+    username: j['username'] as String?,
+    online: j['online'] as bool,
+    status: j['status'] as String,
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      other is FriendEntry &&
+      other.userId == userId &&
+      other.displayName == displayName &&
+      other.username == username &&
+      other.online == online &&
+      other.status == status;
+
+  @override
+  int get hashCode =>
+      Object.hash(userId, displayName, username, online, status);
+}
+
+class FriendRequestEntry {
+  final int id;
+
+  /// The other party to the request (never the caller).
+  final String userId;
+  final String displayName;
+
+  /// True when the caller is the invitee (someone else sent this request).
+  final bool incoming;
+
+  const FriendRequestEntry({
+    required this.id,
+    required this.userId,
+    required this.displayName,
+    required this.incoming,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'userId': userId,
+    'displayName': displayName,
+    'incoming': incoming,
+  };
+
+  factory FriendRequestEntry.fromJson(Map<String, dynamic> j) =>
+      FriendRequestEntry(
+        id: (j['id'] as num).toInt(),
+        userId: j['userId'] as String,
+        displayName: j['displayName'] as String,
+        incoming: j['incoming'] as bool,
+      );
+
+  @override
+  bool operator ==(Object other) =>
+      other is FriendRequestEntry &&
+      other.id == id &&
+      other.userId == userId &&
+      other.displayName == displayName &&
+      other.incoming == incoming;
+
+  @override
+  int get hashCode => Object.hash(id, userId, displayName, incoming);
+}
+
+class RoomInviteEntry {
+  final int id;
+
+  /// Resolved to the joinable room code only once accepted; '' until then.
+  final String roomCode;
+  final String inviterName;
+
+  const RoomInviteEntry({
+    required this.id,
+    required this.roomCode,
+    required this.inviterName,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'roomCode': roomCode,
+    'inviterName': inviterName,
+  };
+
+  factory RoomInviteEntry.fromJson(Map<String, dynamic> j) => RoomInviteEntry(
+    id: (j['id'] as num).toInt(),
+    roomCode: j['roomCode'] as String,
+    inviterName: j['inviterName'] as String,
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      other is RoomInviteEntry &&
+      other.id == id &&
+      other.roomCode == roomCode &&
+      other.inviterName == inviterName;
+
+  @override
+  int get hashCode => Object.hash(id, roomCode, inviterName);
+}
+
 abstract class AuthBackend {
   /// Restore a persisted session. Null when signed out. Must not throw.
   Future<AuthUser?> restore();
@@ -226,6 +353,42 @@ abstract class AuthBackend {
 
   /// Null when unranked (fewer than 10 games or no row).
   Future<RankInfo?> myRank(String ladderId);
+
+  /// The full friends list, offline and online. Online status/status word come
+  /// from the friends_online RPC; the rest of the roster (including offline
+  /// friends) comes from a second query against the friends relationship
+  /// joined to profiles. The two are merged client-side by user id — a friend
+  /// missing from the online set is offline with status ''.
+  Future<List<FriendEntry>> friends();
+
+  /// Pending requests only, both directions.
+  Future<List<FriendRequestEntry>> friendRequests();
+
+  /// Resolves [username] to a profile id, then sends a friend request.
+  /// Throws AccountException(AccountError.unknown, 'no such player') when the
+  /// username does not resolve to a profile.
+  Future<void> requestFriend(String username);
+
+  /// Accepts or declines the pending request identified by [id].
+  Future<void> respondFriendRequest(int id, {required bool accept});
+
+  /// Cancels an outgoing pending request.
+  Future<void> cancelFriendRequest(int id);
+
+  /// Blocks [userId], removing any friendship or pending requests server-side.
+  Future<void> blockUser(String userId);
+
+  /// Upserts this user's own presence row. Never throws — presence must never
+  /// break anything else in the app.
+  Future<void> heartbeat({required String status, String? roomId});
+
+  /// Realtime INSERTs on room_invites where the caller is the invitee, each
+  /// resolved to a display name for the inviter. The channel is torn down when
+  /// the stream is cancelled.
+  Stream<RoomInviteEntry> roomInvites();
+
+  /// Accepts a room invite and returns the joinable room code.
+  Future<String> acceptRoomInvite(int id);
 
   /// External session changes such as refreshes, returns and revocations.
   Stream<AuthUser?> get changes;

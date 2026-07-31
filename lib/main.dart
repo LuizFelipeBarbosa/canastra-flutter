@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'account/account.dart';
 import 'account/backend_factory.dart';
 import 'account/legacy_stats.dart';
+import 'account/presence.dart';
 import 'ui/account_scope.dart';
 import 'ui/app_scope.dart';
 import 'ui/screens/landing_screen.dart';
@@ -25,6 +26,9 @@ Future<void> main() async {
   await Future.wait([prefs.load(), account.restore()]);
   // Permanent profiles receive pre-account counters once, in the background.
   wireLegacyUpload(account: account, prefs: prefs);
+  // Lifecycle-aware pause/resume (stopping the beat when the app is
+  // backgrounded) is a later refinement; for now it just runs while open.
+  PresenceHeartbeat(account: account).start();
   runApp(BuracoLivre(prefs: prefs, account: account));
 }
 

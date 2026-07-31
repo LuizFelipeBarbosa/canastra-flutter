@@ -22,6 +22,7 @@ import '../theme.dart';
 import '../widgets/controls.dart';
 import '../widgets/sheet.dart';
 import '../widgets/stage.dart';
+import 'friends_screen.dart';
 import 'game_screen.dart';
 import 'leaderboard_screen.dart';
 import 'queue_screen.dart';
@@ -172,6 +173,15 @@ class _OnlineScreenState extends State<OnlineScreen> {
     );
   }
 
+  void _friends() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            FriendsScreen(profileId: widget.profileId, numPlayers: _players),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final prefs = context.prefs;
@@ -256,6 +266,17 @@ class _OnlineScreenState extends State<OnlineScreen> {
                       palette: p,
                       color: p.ashDim,
                       onTap: _leaderboard,
+                    ),
+                  ),
+                  // Guests can receive requests, but only permanent accounts
+                  // may send them, so the social entry point is Player-only.
+                  const SizedBox(height: 14),
+                  Center(
+                    child: TextLink(
+                      label: l.social.friends,
+                      palette: p,
+                      color: p.ashDim,
+                      onTap: _friends,
                     ),
                   ),
                 ],

@@ -175,6 +175,9 @@ class Copy {
   /// Ranked matchmaking and the ladder it feeds.
   final RankedCopy ranked;
 
+  /// Friends, requests, presence and room invitations.
+  final SocialCopy social;
+
   /// Signing in, and everything that hangs off having an account.
   ///
   /// Grouped rather than flattened in here: accounts alone are some forty
@@ -284,6 +287,7 @@ class Copy {
     required this.soundOff,
     required this.lobby,
     required this.ranked,
+    required this.social,
     required this.auth,
   });
 
@@ -447,6 +451,7 @@ class Copy {
     soundOff: 'SOUND OFF',
     lobby: _enLobby,
     ranked: _enRanked,
+    social: _enSocial,
     auth: _enAuth,
   );
 
@@ -582,6 +587,7 @@ class Copy {
     soundOff: 'SOM DESLIGADO',
     lobby: _ptLobby,
     ranked: _ptRanked,
+    social: _ptSocial,
     auth: _ptAuth,
   );
 }
@@ -700,6 +706,82 @@ const _ptRanked = RankedCopy(
   losses: 'D',
   unranked: 'Jogue 10 partidas ranqueadas para entrar no ranking.',
   matchFound: 'Achou!',
+);
+
+class SocialCopy {
+  final String friends;
+  final String add;
+  final String usernameHint;
+  final String incoming;
+  final String outgoing;
+  final String accept;
+  final String decline;
+  final String cancel;
+  final String block;
+  final String online;
+  final String inLobby;
+  final String inGame;
+  final String noFriends;
+  final String Function(String name) invitedBy;
+  final String join;
+  final String noSuchPlayer;
+
+  const SocialCopy({
+    required this.friends,
+    required this.add,
+    required this.usernameHint,
+    required this.incoming,
+    required this.outgoing,
+    required this.accept,
+    required this.decline,
+    required this.cancel,
+    required this.block,
+    required this.online,
+    required this.inLobby,
+    required this.inGame,
+    required this.noFriends,
+    required this.invitedBy,
+    required this.join,
+    required this.noSuchPlayer,
+  });
+}
+
+const _enSocial = SocialCopy(
+  friends: 'Friends',
+  add: 'Add',
+  usernameHint: 'their username',
+  incoming: 'WANTS TO PLAY',
+  outgoing: 'INVITED',
+  accept: 'Accept',
+  decline: 'Decline',
+  cancel: 'Cancel',
+  block: 'Block',
+  online: 'Online',
+  inLobby: 'at a table',
+  inGame: 'playing',
+  noFriends: 'Nobody yet. Ask for a username.',
+  invitedBy: _enInvitedBy,
+  join: 'Join',
+  noSuchPlayer: 'No player by that name.',
+);
+
+const _ptSocial = SocialCopy(
+  friends: 'Amigos',
+  add: 'Adicionar',
+  usernameHint: 'o nome de usuário',
+  incoming: 'QUER JOGAR',
+  outgoing: 'CONVIDADOS',
+  accept: 'Aceitar',
+  decline: 'Recusar',
+  cancel: 'Cancelar',
+  block: 'Bloquear',
+  online: 'Online',
+  inLobby: 'na mesa',
+  inGame: 'jogando',
+  noFriends: 'Ninguém ainda. Peça um nome de usuário.',
+  invitedBy: _ptInvitedBy,
+  join: 'Entrar',
+  noSuchPlayer: 'Não achei ninguém com esse nome.',
 );
 
 /// Everything the app says about accounts.
@@ -923,6 +1005,8 @@ String _ptCodeSentTo(String email) =>
     'Mandamos um código de seis dígitos para $email.';
 String _enYourRank(int rank, int percentile) => '#$rank - top $percentile%';
 String _ptYourRank(int rank, int percentile) => '#$rank - top $percentile%';
+String _enInvitedBy(String name) => '$name invited you';
+String _ptInvitedBy(String name) => '$name chamou você';
 String _enBotPlaying(String who) => '$who is playing.';
 String _ptBotPlaying(String who) => '$who está jogando.';
 String _enWentOut(String who) => '$who went out';

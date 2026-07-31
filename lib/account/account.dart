@@ -180,6 +180,41 @@ class Account extends ChangeNotifier {
   Future<RankInfo?> myRank(String ladderId) =>
       _run(() => _backend.myRank(ladderId));
 
+  Future<List<FriendEntry>> friends() => _run(_backend.friends);
+
+  Future<List<FriendRequestEntry>> friendRequests() =>
+      _run(_backend.friendRequests);
+
+  Future<void> requestFriend(String username) =>
+      _run(() => _backend.requestFriend(username));
+
+  Future<void> respondFriendRequest(int id, {required bool accept}) =>
+      _run(() => _backend.respondFriendRequest(id, accept: accept));
+
+  Future<void> cancelFriendRequest(int id) =>
+      _run(() => _backend.cancelFriendRequest(id));
+
+  Future<void> blockUser(String userId) =>
+      _run(() => _backend.blockUser(userId));
+
+  Future<void> heartbeat({required String status, String? roomId}) =>
+      _backend.heartbeat(status: status, roomId: roomId);
+
+  Stream<RoomInviteEntry> roomInvites() async* {
+    try {
+      yield* _backend.roomInvites();
+    } on AccountException {
+      rethrow;
+    } on TimeoutException catch (error) {
+      throw AccountException(AccountError.offline, error.toString());
+    } on Object catch (error) {
+      throw AccountException(AccountError.unknown, error.toString());
+    }
+  }
+
+  Future<String> acceptRoomInvite(int id) =>
+      _run(() => _backend.acceptRoomInvite(id));
+
   Future<void> signOut() async {
     await _run(_backend.signOut);
     _setUser(null);
