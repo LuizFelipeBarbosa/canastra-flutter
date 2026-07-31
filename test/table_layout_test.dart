@@ -42,7 +42,10 @@ const _words = ZoneWords(
   cards: _count,
 );
 
-TableLayout _crowdedTableLayout() {
+TableLayout _crowdedTableLayout({
+  List<CardId> hand = const [],
+  List<CardId>? handOverride,
+}) {
   final melds = [
     for (var slot = 0; slot < 9; slot++)
       MeldView(
@@ -71,7 +74,7 @@ TableLayout _crowdedTableLayout() {
     profile: 'buraco',
     matchTarget: 3000,
     canastraMinSize: 7,
-    hand: const [],
+    hand: hand,
     handSizes: const [0, 0],
     melds: melds,
     trash: const [],
@@ -85,6 +88,7 @@ TableLayout _crowdedTableLayout() {
     frozen: false,
     pileBlocked: false,
     pendingPileCard: null,
+    boughtSolePileCard: null,
     initialMeldDone: const [true, true],
     initialMeldMin: const [0, 0],
     stagedPoints: 0,
@@ -104,6 +108,7 @@ TableLayout _crowdedTableLayout() {
     LayoutInput(
       view: view,
       moves: MoveIndex.empty,
+      handOverride: handOverride,
       selection: const [],
       openSlots: const {},
       canMeld: false,
@@ -255,5 +260,40 @@ void main() {
     expect(play.x, 1030);
     expect(play.width, 190);
     expect(kStage.width - (play.x + play.width), 20);
+  });
+
+  test('rank-major order groups ranks, ties by suit, jokers last', () {
+    final hand = [
+      kJoker,
+      cardId(9, 3),
+      cardId(2, 2),
+      kJoker,
+      cardId(2, 0),
+      cardId(2, 0),
+      cardId(0, 1),
+    ]..sort(rankMajorOrder);
+
+    expect(hand, [
+      cardId(0, 1),
+      cardId(2, 0),
+      cardId(2, 0),
+      cardId(2, 2),
+      cardId(9, 3),
+      kJoker,
+      kJoker,
+    ]);
+  });
+
+  test('the layout draws the hand in the override order', () {
+    final layout = _crowdedTableLayout(
+      hand: [cardId(3, 2), kJoker, cardId(3, 0)],
+      handOverride: [cardId(3, 0), cardId(3, 2), kJoker],
+    );
+    final drawn = [
+      for (final spot in layout.cards)
+        if (spot.inHand) spot.card,
+    ];
+
+    expect(drawn, [cardId(3, 0), cardId(3, 2), kJoker]);
   });
 }

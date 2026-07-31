@@ -7,6 +7,7 @@
 /// rather than the one that wrote, so only a real round trip passes.
 library;
 
+import 'package:canastra/engine/profiles.dart';
 import 'package:canastra/ui/app_scope.dart';
 import 'package:canastra/ui/copy.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -30,6 +31,8 @@ void main() {
     expect(prefs.lang, Lang.en);
     expect(prefs.target, 3000);
     expect(prefs.variant, 'buraco');
+    expect(prefs.players, 2);
+    expect(prefs.handOrder, HandOrder.suit);
     expect(prefs.played, 0);
   });
 
@@ -41,6 +44,8 @@ void main() {
     first.setLevel(2);
     first.setTarget(5000);
     first.setVariant('canasta');
+    first.setPlayers(4);
+    first.setHandOrder(HandOrder.rank);
 
     final second = await _reload();
     expect(second.dark, isFalse);
@@ -49,7 +54,18 @@ void main() {
     expect(second.level, 2);
     expect(second.target, 5000);
     expect(second.variant, 'canasta');
+    expect(second.players, 4);
+    expect(second.handOrder, HandOrder.rank);
   });
+
+  test(
+    'an unsupported stored player count falls back for the profile',
+    () async {
+      SharedPreferences.setMockInitialValues({'bl.prefs': 'players=3'});
+      final prefs = await _reload();
+      expect(prefs.playersFor(profileById('buraco')), 2);
+    },
+  );
 
   test('the streak survives a reload', () async {
     final first = await _reload();

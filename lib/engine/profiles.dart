@@ -24,6 +24,7 @@ RulesConfig buraco({int numPlayers = 2}) {
   return RulesConfig(
     name: 'buraco',
     table: table,
+    discardPile: const DiscardPileConfig(soleBuyRediscardBan: true),
     goingOut: const GoingOutConfig(discardToGoOut: discardOutOptional),
   );
 }

@@ -137,6 +137,29 @@ Future<void> _finishRound(
   await tester.pump(const Duration(milliseconds: 400));
 }
 
+/// Pushes the game screen onto a navigator, so a test can pop it the way a
+/// player would, and lets the opening deal finish.
+Future<void> _pushGame(WidgetTester tester, GameController controller) async {
+  late BuildContext homeContext;
+  await _pumpAt(
+    tester,
+    _desktop,
+    Builder(
+      builder: (context) {
+        homeContext = context;
+        return const Scaffold(body: SizedBox());
+      },
+    ),
+  );
+  Navigator.of(homeContext).push(
+    MaterialPageRoute<void>(
+      builder: (_) => GameScreen(controller: controller),
+    ),
+  );
+  await tester.pump();
+  await tester.pump(const Duration(seconds: 2));
+}
+
 String _semanticsLabel(WidgetTester tester, Finder widget) {
   final semantics = find.descendant(
     of: widget,
@@ -379,6 +402,79 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('system back mid-match asks before leaving', (tester) async {
+    final controller = await _dealt(tester, 'buraco');
+    await _pushGame(tester, controller);
+
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+
+    expect(find.text('Leave the game?'), findsOneWidget);
+    expect(find.byType(GameScreen), findsOneWidget);
+
+    await tester.tap(find.text('Keep playing'));
+    await tester.pump();
+
+    expect(find.text('Leave the game?'), findsNothing);
+    expect(find.byType(GameScreen), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('leaving from the confirm overlay disposes the session', (
+    tester,
+  ) async {
+    final controller = await _dealt(
+      tester,
+      'buraco',
+      botDelay: const Duration(milliseconds: 400),
+    );
+    var notifications = 0;
+    controller.addListener(() => notifications += 1);
+    await _pushGame(tester, controller);
+
+    controller.play(controller.moves.firstWithTarget(MoveTarget.stock)!);
+    await tester.pump();
+    controller.play(
+      controller.moves.options.firstWhere(
+        (move) => move.target == MoveTarget.discard,
+      ),
+    );
+    await tester.pump();
+    expect(controller.myTurn, isFalse);
+
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    await tester.tap(find.text('Leave'));
+    await tester.pumpAndSettle();
+    expect(find.byType(GameScreen), findsNothing);
+
+    final notificationsAfterPop = notifications;
+    await tester.pump(const Duration(seconds: 1));
+    expect(notifications, notificationsAfterPop);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a finished match pops without asking', (tester) async {
+    final controller = await _dealt(
+      tester,
+      'buraco',
+      seed: 21,
+      botDelay: const Duration(milliseconds: 1),
+      matchTarget: 1,
+    );
+    await _pushGame(tester, controller);
+
+    await _finishRound(tester, controller);
+    expect(controller.view!.matchOver, isTrue);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Leave the game?'), findsNothing);
+    expect(find.byType(GameScreen), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('double-tapping Deal pushes one game screen', (tester) async {
     await _pumpAt(tester, _desktop, const SetupScreen());
 
@@ -394,6 +490,36 @@ void main() {
     // completion or flutter_test's own teardown flags it as a Timer still
     // pending, unrelated to what this test is actually checking.
     await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('picking four players deals a four-player table', (tester) async {
+    await _pumpAt(tester, _desktop, const SetupScreen());
+
+    await tester.tap(find.text('4 · TEAMS'));
+    await tester.pump();
+    await tester.tap(find.text('Deal'));
+    await tester.pump();
+
+    final screen = tester.widget<GameScreen>(
+      find.byType(GameScreen, skipOffstage: false),
+    );
+    expect(screen.controller.cfg.table.numPlayers, 4);
+    expect(tester.takeException(), isNull);
+
+    await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('the players selector hides for a two-player-only variant', (
+    tester,
+  ) async {
+    final prefs = await _pumpAt(tester, _desktop, const SetupScreen());
+    expect(find.text('4 · TEAMS'), findsOneWidget);
+
+    prefs.setVariant('rummy');
+    await tester.pump();
+
+    expect(find.text('4 · TEAMS'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('the game asks for rotation only in tiny portrait', (

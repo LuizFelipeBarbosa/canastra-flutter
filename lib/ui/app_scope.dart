@@ -13,11 +13,26 @@ import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../ai/agent.dart';
+import '../engine/profiles.dart';
 import 'copy.dart';
 import 'theme.dart';
 
 /// Match targets the setup screen offers.
 const List<int> kTargets = [1500, 3000, 5000];
+
+/// How the cards in your hand are lined up.
+enum HandOrder {
+  suit,
+  rank;
+
+  HandOrder get other =>
+      this == HandOrder.suit ? HandOrder.rank : HandOrder.suit;
+
+  static HandOrder byName(String? name) => HandOrder.values.firstWhere(
+    (o) => o.name == name,
+    orElse: () => HandOrder.suit,
+  );
+}
 
 class AppPrefs extends ChangeNotifier {
   static const _key = 'bl.prefs';
@@ -30,6 +45,8 @@ class AppPrefs extends ChangeNotifier {
   int _level = 1;
   int _target = 3000;
   String _variant = 'buraco';
+  int _players = 2;
+  HandOrder _handOrder = HandOrder.suit;
 
   int _streak = 0;
   int _won = 0;
@@ -45,6 +62,8 @@ class AppPrefs extends ChangeNotifier {
   int get level => _level;
   int get target => _target;
   String get variant => _variant;
+  int get players => _players;
+  HandOrder get handOrder => _handOrder;
 
   int get streak => _streak;
   int get won => _won;
@@ -61,6 +80,12 @@ class AppPrefs extends ChangeNotifier {
     _ => AgentLevel.normal,
   };
 
+  /// The stored player count when [profile] offers it, else the profile's
+  /// first — the preference can outlive a switch to a two-player-only variant.
+  int playersFor(GameProfile profile) => profile.playerCounts.contains(_players)
+      ? _players
+      : profile.playerCounts.first;
+
   /// Read what was stored. Failure is not interesting — a fresh install and a
   /// corrupt store should both just start from the defaults.
   Future<void> load() async {
@@ -76,7 +101,7 @@ class AppPrefs extends ChangeNotifier {
   }
 
   void _readFrom(String raw) {
-    // A flat `key=value;` string rather than JSON: there are eleven scalars,
+    // A flat `key=value;` string rather than JSON: there are thirteen scalars,
     // and a codec would be more code than the thing it encodes.
     for (final pair in raw.split(';')) {
       final eq = pair.indexOf('=');
@@ -96,6 +121,11 @@ class AppPrefs extends ChangeNotifier {
           if (t != null && kTargets.contains(t)) _target = t;
         case 'variant':
           _variant = value;
+        case 'players':
+          final n = int.tryParse(value);
+          if (n != null) _players = n;
+        case 'handOrder':
+          _handOrder = HandOrder.byName(value);
         case 'streak':
           _streak = int.tryParse(value) ?? 0;
         case 'won':
@@ -120,6 +150,8 @@ class AppPrefs extends ChangeNotifier {
         'level=$_level',
         'target=$_target',
         'variant=$_variant',
+        'players=$_players',
+        'handOrder=${_handOrder.name}',
         'streak=$_streak',
         'won=$_won',
         'played=$_played',
@@ -141,6 +173,9 @@ class AppPrefs extends ChangeNotifier {
   void setLevel(int level) => _set(() => _level = level);
   void setTarget(int target) => _set(() => _target = target);
   void setVariant(String id) => _set(() => _variant = id);
+  void setPlayers(int players) => _set(() => _players = players);
+  void setHandOrder(HandOrder order) => _set(() => _handOrder = order);
+  void toggleHandOrder() => _set(() => _handOrder = _handOrder.other);
   void markLegacySent() => _set(() => _legacySent = true);
 
   /// Record a finished match. Only a win extends the streak; anything else ends

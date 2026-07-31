@@ -43,6 +43,9 @@ enum Refusal {
 
   /// Your morto has to come to your hand before you can go out.
   mortoFirst,
+
+  /// The sole pile card you just bought cannot go straight back.
+  justBought,
 }
 
 /// An ordered list of actions that plays a whole selection.

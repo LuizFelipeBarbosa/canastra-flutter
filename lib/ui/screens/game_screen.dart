@@ -70,6 +70,7 @@ class _GameScreenState extends State<GameScreen> {
   final SoundBoard _sound = SoundBoard();
   final CardIdentityTracker _cardIdentities = CardIdentityTracker();
   bool _matchRecorded = false;
+  bool _confirmLeave = false;
 
   /// Captured rather than read from `context` on demand: the match result is
   /// recorded from a controller callback, which is not a build.
@@ -242,6 +243,9 @@ class _GameScreenState extends State<GameScreen> {
       LayoutInput(
         view: view,
         moves: c.moves,
+        handOverride: prefs.handOrder == HandOrder.rank
+            ? ([...view.hand]..sort(rankMajorOrder))
+            : null,
         selection: c.selection,
         openSlots: c.openSlots,
         canMeld: c.canMeldSelection,
@@ -274,22 +278,42 @@ class _GameScreenState extends State<GameScreen> {
               onContinue: view.matchOver ? c.rematch : c.nextRound,
             ),
           ),
+        if (_confirmLeave)
+          Positioned.fill(
+            child: _ConfirmLeave(
+              palette: p,
+              copy: l,
+              onStay: () => setState(() => _confirmLeave = false),
+              onLeave: () => Navigator.of(context).pop(),
+            ),
+          ),
       ],
     );
 
-    return Scaffold(
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          IgnorePointer(
-            ignoring: c.reconnecting,
-            child: Opacity(opacity: c.reconnecting ? 0.55 : 1, child: table),
-          ),
-          if (c.reconnecting)
-            Center(
-              child: Text(l.reconnecting, style: mono(10, color: p.mint)),
+    // A finished match leaves freely; mid-match, back asks first. The
+    // overlay's Leave pops imperatively, which PopScope does not intercept.
+    return PopScope(
+      canPop: view.matchOver,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) setState(() => _confirmLeave = true);
+      },
+      child: Scaffold(
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            IgnorePointer(
+              // A reconnect must not trap the player inside the game.
+              ignoring: c.reconnecting && !_confirmLeave,
+              child: Opacity(opacity: c.reconnecting ? 0.55 : 1, child: table),
             ),
-        ],
+            if (c.reconnecting)
+              IgnorePointer(
+                child: Center(
+                  child: Text(l.reconnecting, style: mono(10, color: p.mint)),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -453,6 +477,12 @@ class _GameScreenState extends State<GameScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Row(
         children: [
+          BackLink(
+            label: l.back,
+            palette: p,
+            onTap: () => Navigator.of(context).maybePop(),
+          ),
+          const SizedBox(width: 14),
           Hoverable(
             onTap: () => Navigator.of(context).maybePop(),
             builder: (_) => BrandMark(size: 30, palette: p, ring: 6),
@@ -478,6 +508,15 @@ class _GameScreenState extends State<GameScreen> {
             _StreakBadge(streak: prefs.streak, palette: p, copy: l),
             const SizedBox(width: 14),
           ],
+          Pill(
+            label: prefs.handOrder == HandOrder.suit
+                ? l.orderBySuit
+                : l.orderByRank,
+            palette: p,
+            round: true,
+            onTap: prefs.toggleHandOrder,
+          ),
+          const SizedBox(width: 6),
           Pill(
             label: prefs.sound ? l.soundOn : l.soundOff,
             palette: p,
@@ -759,7 +798,68 @@ class _GameScreenState extends State<GameScreen> {
       Refusal.needCanastra => l.wnGoOut,
       Refusal.mortoFirst => l.wnMorto,
       Refusal.notAllowedYet => l.wnNotAllowedYet,
+      Refusal.justBought => l.wnJustBought,
     };
+  }
+}
+
+/// Asks before a match in progress is walked away from. Staying is the mint
+/// button; leaving is a bare word in the colour the app uses for "watch out".
+class _ConfirmLeave extends StatelessWidget {
+  final Palette palette;
+  final Copy copy;
+  final VoidCallback onStay;
+  final VoidCallback onLeave;
+
+  const _ConfirmLeave({
+    required this.palette,
+    required this.copy,
+    required this.onStay,
+    required this.onLeave,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final p = palette;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {},
+      child: ColoredBox(
+        color: p.scrim,
+        child: Center(
+          child: Container(
+            width: 380,
+            padding: const EdgeInsets.fromLTRB(32, 28, 32, 26),
+            decoration: BoxDecoration(
+              color: p.sheet,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: p.line),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  copy.leaveTitle,
+                  style: T.display(24, tracking: -0.8, color: p.text),
+                ),
+                const SizedBox(height: 22),
+                MintButton(label: copy.leaveStay, palette: p, onTap: onStay),
+                const SizedBox(height: 16),
+                Center(
+                  child: TextLink(
+                    label: copy.leaveConfirm,
+                    palette: p,
+                    color: p.pink,
+                    onTap: onLeave,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

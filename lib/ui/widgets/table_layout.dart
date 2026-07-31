@@ -349,10 +349,26 @@ class ZoneWords {
   });
 }
 
+/// Rank-major hand order: low ranks first, ties broken by suit, jokers last.
+///
+/// The view's own hand order is suit-major, so this is the one alternative a
+/// re-sorted [LayoutInput.handOverride] needs.
+int rankMajorOrder(CardId a, CardId b) {
+  if (isJoker(a) || isJoker(b)) {
+    return (isJoker(a) ? 1 : 0) - (isJoker(b) ? 1 : 0);
+  }
+  final byRank = idRank(a)! - idRank(b)!;
+  return byRank != 0 ? byRank : idSuit(a)! - idSuit(b)!;
+}
+
 /// What the screen tells the layout that the view does not already say.
 class LayoutInput {
   final TableView view;
   final MoveIndex moves;
+
+  /// Your hand in the order to draw it, when a preference re-sorts it.
+  /// Display only — everything else still speaks [TableView.hand]'s cards.
+  final List<CardId>? handOverride;
 
   final List<CardId> selection;
   final Set<int> openSlots;
@@ -372,6 +388,7 @@ class LayoutInput {
   const LayoutInput({
     required this.view,
     required this.moves,
+    this.handOverride,
     required this.selection,
     required this.openSlots,
     required this.canMeld,
@@ -627,7 +644,7 @@ List<CardSpot> _hands(LayoutInput input) {
       input.dealDone || input.dealt >= index * seats.length + order + 1;
 
   // Yours.
-  final hand = view.hand;
+  final hand = input.handOverride ?? view.hand;
   final step = hand.isEmpty ? 60.0 : _min(60, 1160 / hand.length);
   final startX = 620 - (step * (hand.length - 1) + kCardWidth) / 2;
   final unpicked = [...input.selection];
