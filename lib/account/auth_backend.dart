@@ -400,7 +400,10 @@ abstract class AuthBackend {
   /// Sends either the six-digit email code or the magic-link email.
   Future<void> sendOtp(String email);
 
-  Future<AuthUser> verifyOtp(String email, String code);
+  /// Redeems the emailed code. [upgrading] selects the token type: a code sent
+  /// by [linkEmail] is an email-change token, which GoTrue rejects when
+  /// verified as a plain sign-in code (and vice versa).
+  Future<AuthUser> verifyOtp(String email, String code, {bool upgrading});
   Future<AuthUser> signInWithPassword(String email, String password);
   Future<AuthUser> signUpWithPassword(String email, String password);
   Future<void> sendPasswordReset(String email);

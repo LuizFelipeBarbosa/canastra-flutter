@@ -588,6 +588,85 @@ void main() {
       },
     );
 
+    test('a stranger cannot claim a disconnected seat mid-match', () async {
+      final hosted = await _serveServer(
+        GameServer(
+          numPlayers: 2,
+          // Long enough that the seat is still human — and owned — when the
+          // stranger tries to grab it.
+          botTakeoverAfter: const Duration(seconds: 5),
+          roomGraceAfter: null,
+        ),
+      );
+      addTearDown(() => hosted.http.close(force: true));
+      final a = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'hijack',
+          playerName: 'Ana',
+          clientId: 'ana',
+          maxRetries: 0,
+        ),
+      );
+      final b = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'hijack',
+          playerName: 'Bruno',
+          clientId: 'bruno',
+          maxRetries: 0,
+        ),
+      );
+      addTearDown(a.transport.dispose);
+      addTearDown(b.transport.dispose);
+
+      await a.transport.connect();
+      await b.transport.connect();
+      a.transport.send(const SetReady(ready: true));
+      b.transport.send(const SetReady(ready: true));
+      await Future.wait([
+        a.waitForTable((view) => view.hand.isNotEmpty),
+        b.waitForTable((view) => view.hand.isNotEmpty),
+      ]);
+
+      final disconnected = _nextLobbyWhere(
+        b,
+        (lobby) => !_seatIn(lobby, 0).connected,
+      );
+      await a.transport.dispose();
+      await disconnected;
+
+      final stranger = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'hijack',
+          playerName: 'Mallory',
+          clientId: 'mallory',
+          maxRetries: 0,
+        ),
+      );
+      addTearDown(stranger.transport.dispose);
+      final refused = _nextEvent<ServerError>(stranger);
+      await stranger.transport.connect();
+      expect((await refused).message, 'room is full');
+      expect(stranger.events.whereType<TableUpdate>(), isEmpty);
+
+      // The chair is reserved for its owner, who still reclaims it.
+      final reconnected = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'hijack',
+          playerName: 'Ana',
+          clientId: 'ana',
+          maxRetries: 0,
+        ),
+      );
+      addTearDown(reconnected.transport.dispose);
+      final joined = _nextEvent<Joined>(reconnected);
+      await reconnected.transport.connect();
+      expect((await joined).seat, 0);
+    });
+
     test('a reconnect before the window keeps the seat human', () async {
       final hosted = await _serveServer(
         GameServer(

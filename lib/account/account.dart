@@ -114,8 +114,14 @@ class Account extends ChangeNotifier {
 
   Future<void> sendOtp(String email) => _run(() => _backend.sendOtp(email));
 
-  Future<void> verifyOtp(String email, String code) async {
-    _setUser(await _run(() => _backend.verifyOtp(email, code)));
+  Future<void> verifyOtp(
+    String email,
+    String code, {
+    bool upgrading = false,
+  }) async {
+    _setUser(
+      await _run(() => _backend.verifyOtp(email, code, upgrading: upgrading)),
+    );
   }
 
   Future<void> signInWithPassword(String email, String password) async {

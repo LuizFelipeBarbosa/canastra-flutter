@@ -69,8 +69,15 @@ class FakeAuthBackend implements AuthBackend {
   }
 
   @override
-  Future<AuthUser> verifyOtp(String email, String code) async {
-    if (code != '000000' || email != _otpEmail) {
+  Future<AuthUser> verifyOtp(
+    String email,
+    String code, {
+    bool upgrading = false,
+  }) async {
+    // Like GoTrue, a code minted by linkEmail is an email-change token and a
+    // sign-in code is not: redeeming either under the other type must fail.
+    final isLinkToken = email == _pendingLinkEmail;
+    if (code != '000000' || email != _otpEmail || upgrading != isLinkToken) {
       throw const AccountException(
         AccountError.badCode,
         'Código de acesso inválido.',
@@ -79,7 +86,7 @@ class FakeAuthBackend implements AuthBackend {
 
     final current = _user;
     final AuthUser user;
-    if (current != null && current.isAnonymous && email == _pendingLinkEmail) {
+    if (upgrading && current != null && current.isAnonymous) {
       user = AuthUser(
         id: current.id,
         email: email,

@@ -231,15 +231,29 @@ class _Room {
       }
     }
 
+    // Once play has started, a disconnected owner's chair stays reserved for
+    // them: handing it to anyone else would also hand them the owner's cards.
+    // (An owner match never reaches this list — the reclaim loop returns it.)
     final free = host.seats
-        .where((s) => s.kind != SeatKind.bot && !clients.containsKey(s.seat))
+        .where(
+          (s) =>
+              s.kind != SeatKind.bot &&
+              !clients.containsKey(s.seat) &&
+              !(host.started && seatOwners.containsKey(s.seat)),
+        )
         .map((s) => s.seat)
         .toList();
     if (free.isEmpty) return null;
     final claimed = preferred != null && free.contains(preferred)
         ? preferred
         : free.first;
-    if (owner != null) seatOwners[claimed] = owner;
+    if (owner != null) {
+      seatOwners[claimed] = owner;
+    } else {
+      // An anonymous claimant must not inherit a stale owner, or that owner
+      // could later "reclaim" the seat and read the new occupant's hand.
+      seatOwners.remove(claimed);
+    }
     return claimed;
   }
 

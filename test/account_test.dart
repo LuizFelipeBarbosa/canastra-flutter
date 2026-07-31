@@ -79,7 +79,7 @@ void main() {
 
     await account.linkEmail('ana@example.com');
     expect(account.state, isA<Guest>());
-    await account.verifyOtp('ana@example.com', '000000');
+    await account.verifyOtp('ana@example.com', '000000', upgrading: true);
 
     expect(account.state, isA<Player>());
     expect(account.user?.id, guestId);
@@ -92,7 +92,7 @@ void main() {
     await account.linkEmail('ana@example.com');
 
     await expectLater(
-      account.verifyOtp('ana@example.com', '123456'),
+      account.verifyOtp('ana@example.com', '123456', upgrading: true),
       throwsA(
         isA<AccountException>().having(
           (error) => error.error,

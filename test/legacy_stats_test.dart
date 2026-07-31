@@ -91,7 +91,7 @@ void main() {
 
     await account.signInAnonymously();
     await account.linkEmail('ana@example.com');
-    await account.verifyOtp('ana@example.com', '000000');
+    await account.verifyOtp('ana@example.com', '000000', upgrading: true);
     await _pumpMicrotasks();
 
     expect(backend.uploadedLegacy, (5, 2, 1));

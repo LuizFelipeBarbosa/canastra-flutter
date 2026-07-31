@@ -65,11 +65,17 @@ class SupabaseAuthBackend implements AuthBackend {
       _guard(() => _client.auth.signInWithOtp(email: email));
 
   @override
-  Future<AuthUser> verifyOtp(String email, String code) => _guard(() async {
+  Future<AuthUser> verifyOtp(
+    String email,
+    String code, {
+    bool upgrading = false,
+  }) => _guard(() async {
     final response = await _client.auth.verifyOTP(
       email: email,
       token: code,
-      type: OtpType.email,
+      // linkEmail's updateUser(email:) mints an email-change token, which
+      // GoTrue only accepts under this type — OtpType.email rejects it.
+      type: upgrading ? OtpType.emailChange : OtpType.email,
     );
     return _requiredUser(response.user ?? _client.auth.currentUser);
   });
@@ -382,31 +388,34 @@ class SupabaseAuthBackend implements AuthBackend {
     }
 
     final onlineRowsFuture = _client.rpc<List<dynamic>>('friends_online');
-    final rosterRowsFuture = _client
-        .from('friendships')
-        .select(
-          'user_id, friend_id, '
-          'user_profile:profiles!friendships_user_id_fkey('
-          'id, display_name, username), '
-          'friend_profile:profiles!friendships_friend_id_fkey('
-          'id, display_name, username)',
-        )
-        .or('user_id.eq.$uid,friend_id.eq.$uid');
+    // The friends view already projects the canonical (user_low, user_high)
+    // rows into both directions, so one equality filter finds the roster.
+    final rosterRows = await _client
+        .from('friends')
+        .select('friend_id')
+        .eq('user_id', uid);
+    final friendIds = <String>[
+      for (final raw in rosterRows)
+        if (raw case {'friend_id': final String friendId}) friendId,
+    ];
+    final profileRows = friendIds.isEmpty
+        ? const <dynamic>[]
+        : await _client
+              .from('profiles')
+              .select('id, display_name, username')
+              .inFilter('id', friendIds);
     final onlineRows = await onlineRowsFuture;
-    final rosterRows = await rosterRowsFuture;
 
     final onlineById = <String, Map<String, dynamic>>{
       for (final raw in onlineRows)
-        if (raw case final Map row when row['user_id'] is String)
-          row['user_id'] as String: Map<String, dynamic>.from(row),
+        if (raw case final Map row when row['friend_id'] is String)
+          row['friend_id'] as String: Map<String, dynamic>.from(row),
     };
     final entries = <FriendEntry>[
-      for (final raw in rosterRows)
+      for (final raw in profileRows)
         _friendEntry(
-          Map<String, dynamic>.from(raw),
-          uid: uid,
-          onlineRow:
-              onlineById[_otherFriendId(Map<String, dynamic>.from(raw), uid)],
+          Map<String, dynamic>.from(raw as Map),
+          onlineRow: onlineById[raw['id']],
         ),
     ];
     entries.sort((a, b) => a.displayName.compareTo(b.displayName));
@@ -450,7 +459,7 @@ class SupabaseAuthBackend implements AuthBackend {
     }
     await _client.rpc(
       'request_friend',
-      params: {'p_addressee_id': profile['id'] as String},
+      params: {'p_addressee': profile['id'] as String},
     );
   });
 
@@ -469,7 +478,7 @@ class SupabaseAuthBackend implements AuthBackend {
 
   @override
   Future<void> blockUser(String userId) =>
-      _guard(() => _client.rpc('block_user', params: {'p_user_id': userId}));
+      _guard(() => _client.rpc('block_user', params: {'p_blocked': userId}));
 
   @override
   Future<void> heartbeat({required String status, String? roomId}) async {
@@ -516,7 +525,7 @@ class SupabaseAuthBackend implements AuthBackend {
             table: 'room_invites',
             filter: PostgresChangeFilter(
               type: PostgresChangeFilterType.eq,
-              column: 'invitee',
+              column: 'invitee_id',
               value: uid,
             ),
             callback: (payload) =>
@@ -554,7 +563,7 @@ class SupabaseAuthBackend implements AuthBackend {
       final inviter = await _client
           .from('profiles')
           .select('display_name')
-          .eq('id', row['inviter'])
+          .eq('id', row['inviter_id'])
           .single();
       if (!_invitesAreActive(controller)) return;
       controller.add(
@@ -623,20 +632,10 @@ class SupabaseAuthBackend implements AuthBackend {
   Future<void> signOut() => _guard(_client.auth.signOut);
 }
 
-String _otherFriendId(Map<String, dynamic> row, String uid) =>
-    row['user_id'] == uid
-    ? row['friend_id'] as String
-    : row['user_id'] as String;
-
 FriendEntry _friendEntry(
-  Map<String, dynamic> row, {
-  required String uid,
+  Map<String, dynamic> profile, {
   required Map<String, dynamic>? onlineRow,
 }) {
-  final otherIsFriend = row['user_id'] == uid;
-  final profile = Map<String, dynamic>.from(
-    row[otherIsFriend ? 'friend_profile' : 'user_profile'] as Map,
-  );
   final liveStatus = onlineRow?['status'];
   final status = liveStatus == 'in_lobby' || liveStatus == 'in_game'
       ? liveStatus as String

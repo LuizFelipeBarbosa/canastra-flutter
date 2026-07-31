@@ -48,7 +48,11 @@ class _OtpScreenState extends State<OtpScreen> {
       _error = null;
     });
     try {
-      await account.verifyOtp(widget.email, _code.text.trim());
+      await account.verifyOtp(
+        widget.email,
+        _code.text.trim(),
+        upgrading: widget.upgrading,
+      );
       succeeded = true;
     } on AccountException catch (exception) {
       if (mounted) {
