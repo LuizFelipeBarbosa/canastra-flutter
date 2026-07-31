@@ -14,6 +14,7 @@ class FakeAuthBackend implements AuthBackend {
       StreamController<AuthUser?>.broadcast();
   final Map<String, ({String password, AuthUser user})> _passwordUsers = {};
 
+  StreamController<QueueTicket>? _queue;
   AuthUser? _user;
   String? _otpEmail;
   String? _pendingLinkEmail;
@@ -24,6 +25,11 @@ class FakeAuthBackend implements AuthBackend {
 
   /// The last room created through this fake, for assertions.
   (String profileId, int numPlayers, int matchTarget)? createdRoom;
+
+  String? enqueuedLadder;
+  bool queueCancelled = false;
+  List<LeaderboardEntry> leaderboardEntries = [];
+  RankInfo? rankInfo;
 
   FakeAuthBackend({AuthUser? initialUser}) : _user = initialUser;
 
@@ -156,6 +162,54 @@ class FakeAuthBackend implements AuthBackend {
   }
 
   @override
+  Stream<QueueTicket> enqueue(String ladderId) {
+    final previous = _queue;
+    if (previous != null && !previous.isClosed) unawaited(previous.close());
+
+    enqueuedLadder = ladderId;
+    queueCancelled = false;
+    late final StreamController<QueueTicket> controller;
+    controller = StreamController<QueueTicket>(
+      onListen: () {
+        controller.add(QueueTicket(ladderId: ladderId, status: 'waiting'));
+      },
+    );
+    _queue = controller;
+    return controller.stream;
+  }
+
+  void resolveQueue(String roomCode) {
+    final controller = _queue;
+    final ladderId = enqueuedLadder;
+    if (controller == null || controller.isClosed || ladderId == null) return;
+
+    controller.add(
+      QueueTicket(
+        ladderId: ladderId,
+        status: 'matched',
+        matchedRoomCode: roomCode,
+      ),
+    );
+    unawaited(controller.close());
+  }
+
+  @override
+  Future<void> cancelQueue() async {
+    queueCancelled = true;
+    final controller = _queue;
+    if (controller != null && !controller.isClosed) await controller.close();
+  }
+
+  @override
+  Future<List<LeaderboardEntry>> leaderboard(
+    String ladderId, {
+    int limit = 20,
+  }) async => leaderboardEntries.take(limit).toList(growable: false);
+
+  @override
+  Future<RankInfo?> myRank(String ladderId) async => rankInfo;
+
+  @override
   Future<void> signOut() async {
     _pendingLinkEmail = null;
     _otpEmail = null;
@@ -174,5 +228,9 @@ class FakeAuthBackend implements AuthBackend {
     _changes.add(user);
   }
 
-  Future<void> close() => _changes.close();
+  Future<void> close() async {
+    final queue = _queue;
+    if (queue != null && !queue.isClosed) await queue.close();
+    await _changes.close();
+  }
 }

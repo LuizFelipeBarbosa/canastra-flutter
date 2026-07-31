@@ -155,6 +155,31 @@ class Account extends ChangeNotifier {
     ),
   );
 
+  /// Streams do not fit [_run], which only guards one future. An async
+  /// generator keeps cancellation wired to the backend while applying the
+  /// same stable exception mapping to both synchronous and streamed failures.
+  Stream<QueueTicket> enqueue(String ladderId) async* {
+    try {
+      yield* _backend.enqueue(ladderId);
+    } on AccountException {
+      rethrow;
+    } on TimeoutException catch (error) {
+      throw AccountException(AccountError.offline, error.toString());
+    } on Object catch (error) {
+      throw AccountException(AccountError.unknown, error.toString());
+    }
+  }
+
+  Future<void> cancelQueue() => _run(_backend.cancelQueue);
+
+  Future<List<LeaderboardEntry>> leaderboard(
+    String ladderId, {
+    int limit = 20,
+  }) => _run(() => _backend.leaderboard(ladderId, limit: limit));
+
+  Future<RankInfo?> myRank(String ladderId) =>
+      _run(() => _backend.myRank(ladderId));
+
   Future<void> signOut() async {
     await _run(_backend.signOut);
     _setUser(null);

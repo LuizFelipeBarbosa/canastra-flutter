@@ -23,8 +23,11 @@ import 'package:canastra/ui/app_scope.dart';
 import 'package:canastra/ui/copy.dart';
 import 'package:canastra/ui/screens/game_screen.dart';
 import 'package:canastra/ui/screens/landing_screen.dart';
+import 'package:canastra/ui/screens/leaderboard_screen.dart';
+import 'package:canastra/ui/screens/online_screen.dart';
 import 'package:canastra/ui/screens/otp_screen.dart';
 import 'package:canastra/ui/screens/profile_screen.dart';
+import 'package:canastra/ui/screens/queue_screen.dart';
 import 'package:canastra/ui/screens/setup_screen.dart';
 import 'package:canastra/ui/screens/sign_in_screen.dart';
 import 'package:canastra/ui/theme.dart';
@@ -623,4 +626,87 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+
+  for (final (name, size) in const [
+    ('life size', _desktop),
+    ('a phone', _phone),
+  ]) {
+    testWidgets('the ranked queue lays out at $name', (tester) async {
+      await _pumpAt(
+        tester,
+        size,
+        const QueueScreen(
+          ladderId: 'buraco:2:ranked',
+          profileId: 'buraco',
+          numPlayers: 2,
+        ),
+      );
+
+      expect(tester.takeException(), isNull);
+      // Queue owns periodic timers, so dispose it inside the test body.
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    });
+
+    testWidgets('the leaderboard lays out at $name', (tester) async {
+      await _pumpAt(
+        tester,
+        size,
+        const LeaderboardScreen(
+          ladderId: 'buraco:2:ranked',
+          ladderLabel: 'Buraco · 2',
+        ),
+      );
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('ranked links appear only for players', (tester) async {
+    final playerBackend = FakeAuthBackend();
+    final player = Account(backend: playerBackend);
+    await player.signInWithPassword('ana@example.com', 'password');
+    final guestBackend = FakeAuthBackend();
+    final guest = Account(backend: guestBackend);
+    await guest.signInAnonymously();
+    final signedOutBackend = FakeAuthBackend();
+    final signedOut = Account(backend: signedOutBackend);
+    addTearDown(() async {
+      player.dispose();
+      guest.dispose();
+      signedOut.dispose();
+      await playerBackend.close();
+      await guestBackend.close();
+      await signedOutBackend.close();
+    });
+
+    await _pumpAt(
+      tester,
+      _desktop,
+      const OnlineScreen(profileId: 'buraco', numPlayers: 2),
+      account: player,
+    );
+    expect(find.text(Copy.of(Lang.en).ranked.findMatch), findsOneWidget);
+    expect(find.text(Copy.of(Lang.en).ranked.leaderboard), findsOneWidget);
+
+    await _pumpAt(
+      tester,
+      _desktop,
+      const OnlineScreen(profileId: 'buraco', numPlayers: 2),
+      account: guest,
+    );
+    expect(find.text(Copy.of(Lang.en).ranked.findMatch), findsNothing);
+    expect(find.text(Copy.of(Lang.en).ranked.leaderboard), findsNothing);
+
+    await _pumpAt(
+      tester,
+      _desktop,
+      const OnlineScreen(profileId: 'buraco', numPlayers: 2),
+      account: signedOut,
+    );
+    expect(find.text(Copy.of(Lang.en).ranked.findMatch), findsNothing);
+    expect(find.text(Copy.of(Lang.en).ranked.leaderboard), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
 }

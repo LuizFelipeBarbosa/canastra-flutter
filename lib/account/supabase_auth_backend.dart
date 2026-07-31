@@ -17,6 +17,10 @@ import 'auth_backend.dart';
 class SupabaseAuthBackend implements AuthBackend {
   final SupabaseClient _client;
 
+  StreamController<QueueTicket>? _queueController;
+  RealtimeChannel? _queueChannel;
+  StreamController<QueueTicket>? _queueChannelOwner;
+
   SupabaseAuthBackend() : _client = Supabase.instance.client;
 
   static Future<void> initialize({
@@ -157,8 +161,214 @@ class SupabaseAuthBackend implements AuthBackend {
   });
 
   @override
+  Stream<QueueTicket> enqueue(String ladderId) {
+    final previous = _queueController;
+    if (previous != null && !previous.isClosed) unawaited(previous.close());
+    unawaited(_removeQueueChannel(owner: previous));
+
+    late final StreamController<QueueTicket> controller;
+    controller = StreamController<QueueTicket>(
+      onListen: () => unawaited(_startQueue(controller, ladderId)),
+      onCancel: () => _abandonQueue(controller),
+    );
+    _queueController = controller;
+    return controller.stream;
+  }
+
+  Future<void> _startQueue(
+    StreamController<QueueTicket> controller,
+    String ladderId,
+  ) async {
+    try {
+      await _client.rpc(
+        'enqueue_matchmaking',
+        params: {'p_ladder_id': ladderId},
+      );
+      if (!_queueIsActive(controller)) return;
+
+      final uid = _client.auth.currentUser?.id;
+      if (uid == null) {
+        throw StateError('Ranked matchmaking requires a signed-in user.');
+      }
+      controller.add(QueueTicket(ladderId: ladderId, status: 'waiting'));
+
+      final channel = _client
+          .channel('queue:$uid')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.update,
+            schema: 'public',
+            table: 'matchmaking_queue',
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'user_id',
+              value: uid,
+            ),
+            callback: (payload) => unawaited(
+              _handleQueueUpdate(controller, ladderId, payload.newRecord),
+            ),
+          );
+      if (!_queueIsActive(controller)) return;
+
+      _queueChannel = channel;
+      _queueChannelOwner = controller;
+      channel.subscribe((status, error) {
+        if (!_queueIsActive(controller)) return;
+        if (status == RealtimeSubscribeStatus.channelError ||
+            status == RealtimeSubscribeStatus.timedOut ||
+            status == RealtimeSubscribeStatus.closed) {
+          unawaited(
+            _failQueue(
+              controller,
+              error ?? StateError('Ranked queue channel $status.'),
+              StackTrace.current,
+            ),
+          );
+        }
+      });
+    } on Object catch (error, stackTrace) {
+      await _failQueue(controller, error, stackTrace);
+    }
+  }
+
+  Future<void> _handleQueueUpdate(
+    StreamController<QueueTicket> controller,
+    String ladderId,
+    Map<String, dynamic> row,
+  ) async {
+    if (!_queueIsActive(controller)) return;
+    final status = row['status'] as String?;
+    if (status == null) return;
+
+    if (status == 'matched') {
+      final roomId = row['matched_room_id'];
+      if (roomId == null) return;
+      try {
+        final room = await _client
+            .from('rooms')
+            .select('code')
+            .eq('id', roomId)
+            .single();
+        if (!_queueIsActive(controller)) return;
+
+        controller.add(
+          QueueTicket(
+            ladderId: ladderId,
+            status: status,
+            matchedRoomCode: room['code'] as String,
+          ),
+        );
+        await _completeQueue(controller);
+      } on Object catch (error, stackTrace) {
+        await _failQueue(controller, error, stackTrace);
+      }
+      return;
+    }
+
+    controller.add(QueueTicket(ladderId: ladderId, status: status));
+    if (status == 'cancelled' || status == 'expired') {
+      await _completeQueue(controller);
+    }
+  }
+
+  bool _queueIsActive(StreamController<QueueTicket> controller) =>
+      identical(_queueController, controller) && !controller.isClosed;
+
+  Future<void> _failQueue(
+    StreamController<QueueTicket> controller,
+    Object error,
+    StackTrace stackTrace,
+  ) async {
+    if (!_queueIsActive(controller)) return;
+    controller.addError(_mapError(error), stackTrace);
+    await _completeQueue(controller);
+  }
+
+  Future<void> _completeQueue(StreamController<QueueTicket> controller) async {
+    if (!_queueIsActive(controller)) return;
+    _queueController = null;
+    await _removeQueueChannel(owner: controller);
+    if (!controller.isClosed) await controller.close();
+  }
+
+  Future<void> _abandonQueue(StreamController<QueueTicket> controller) async {
+    if (identical(_queueController, controller)) _queueController = null;
+    await _removeQueueChannel(owner: controller);
+  }
+
+  Future<void> _removeQueueChannel({
+    StreamController<QueueTicket>? owner,
+  }) async {
+    if (owner != null && !identical(_queueChannelOwner, owner)) return;
+    final channel = _queueChannel;
+    _queueChannel = null;
+    _queueChannelOwner = null;
+    if (channel == null) return;
+    try {
+      await _client.removeChannel(channel);
+    } on Object {
+      // Cleanup is best-effort after the channel is detached locally.
+    }
+  }
+
+  @override
+  Future<void> cancelQueue() => _guard(() async {
+    try {
+      await _client.rpc('cancel_matchmaking');
+    } finally {
+      final controller = _queueController;
+      _queueController = null;
+      await _removeQueueChannel(owner: controller);
+      if (controller != null && !controller.isClosed) {
+        await controller.close();
+      }
+    }
+  });
+
+  @override
+  Future<List<LeaderboardEntry>> leaderboard(
+    String ladderId, {
+    int limit = 20,
+  }) => _guard(() async {
+    final rows = await _client.rpc<List<dynamic>>(
+      'leaderboard',
+      params: {'p_ladder_id': ladderId, 'p_limit': limit},
+    );
+    return rows
+        .map((row) => _leaderboardEntry(Map<String, dynamic>.from(row as Map)))
+        .toList(growable: false);
+  });
+
+  @override
+  Future<RankInfo?> myRank(String ladderId) => _guard(() async {
+    final rows = await _client.rpc<List<dynamic>>(
+      'my_rank',
+      params: {'p_ladder_id': ladderId},
+    );
+    if (rows.isEmpty) return null;
+    return _rankInfo(Map<String, dynamic>.from(rows.first as Map));
+  });
+
+  @override
   Future<void> signOut() => _guard(_client.auth.signOut);
 }
+
+LeaderboardEntry _leaderboardEntry(Map<String, dynamic> row) =>
+    LeaderboardEntry(
+      rank: (row['rank'] as num).toInt(),
+      userId: row['user_id'] as String,
+      username: row['username'] as String?,
+      displayName: row['display_name'] as String,
+      rating: (row['rating'] as num).toInt(),
+      games: (row['games'] as num).toInt(),
+      wins: (row['wins'] as num).toInt(),
+    );
+
+RankInfo _rankInfo(Map<String, dynamic> row) => RankInfo(
+  rank: (row['rank'] as num).toInt(),
+  rating: (row['rating'] as num).toInt(),
+  games: (row['games'] as num).toInt(),
+  percentile: (row['percentile'] as num).toDouble(),
+);
 
 Future<T> _guard<T>(Future<T> Function() operation) async {
   try {

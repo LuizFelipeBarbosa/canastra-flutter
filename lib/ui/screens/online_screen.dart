@@ -23,6 +23,8 @@ import '../widgets/controls.dart';
 import '../widgets/sheet.dart';
 import '../widgets/stage.dart';
 import 'game_screen.dart';
+import 'leaderboard_screen.dart';
+import 'queue_screen.dart';
 
 class OnlineScreen extends StatefulWidget {
   final String profileId;
@@ -146,6 +148,30 @@ class _OnlineScreenState extends State<OnlineScreen> {
     }
   }
 
+  void _findMatch() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => QueueScreen(
+          ladderId: '${widget.profileId}:$_players:ranked',
+          profileId: widget.profileId,
+          numPlayers: _players,
+        ),
+      ),
+    );
+  }
+
+  void _leaderboard() {
+    final profile = profileById(widget.profileId);
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => LeaderboardScreen(
+          ladderId: '${widget.profileId}:$_players:ranked',
+          ladderLabel: '${profile.label} · $_players',
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final prefs = context.prefs;
@@ -210,6 +236,29 @@ class _OnlineScreenState extends State<OnlineScreen> {
                 ],
                 const SizedBox(height: 24),
                 MintButton(label: l.onlineJoinTable, palette: p, onTap: _join),
+                // Ranked play requires a permanent account. Guests and
+                // signed-out players get no client entry point, and the enqueue
+                // RPC independently enforces the same rule server-side.
+                if (context.account.state is Player) ...[
+                  const SizedBox(height: 14),
+                  Center(
+                    child: TextLink(
+                      label: l.ranked.findMatch,
+                      palette: p,
+                      color: p.ashDim,
+                      onTap: _findMatch,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Center(
+                    child: TextLink(
+                      label: l.ranked.leaderboard,
+                      palette: p,
+                      color: p.ashDim,
+                      onTap: _leaderboard,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 14),
                 Center(
                   child: TextLink(

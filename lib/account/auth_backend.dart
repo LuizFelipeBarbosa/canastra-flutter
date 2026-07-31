@@ -43,6 +43,138 @@ class AuthUser {
   int get hashCode => Object.hash(id, email, isAnonymous, displayName);
 }
 
+class LeaderboardEntry {
+  final int rank;
+  final String userId;
+  final String? username;
+  final String displayName;
+  final int rating;
+  final int games;
+  final int wins;
+
+  const LeaderboardEntry({
+    required this.rank,
+    required this.userId,
+    this.username,
+    required this.displayName,
+    required this.rating,
+    required this.games,
+    required this.wins,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'rank': rank,
+    'userId': userId,
+    'username': username,
+    'displayName': displayName,
+    'rating': rating,
+    'games': games,
+    'wins': wins,
+  };
+
+  factory LeaderboardEntry.fromJson(Map<String, dynamic> j) => LeaderboardEntry(
+    rank: (j['rank'] as num).toInt(),
+    userId: j['userId'] as String,
+    username: j['username'] as String?,
+    displayName: j['displayName'] as String,
+    rating: (j['rating'] as num).toInt(),
+    games: (j['games'] as num).toInt(),
+    wins: (j['wins'] as num).toInt(),
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      other is LeaderboardEntry &&
+      other.rank == rank &&
+      other.userId == userId &&
+      other.username == username &&
+      other.displayName == displayName &&
+      other.rating == rating &&
+      other.games == games &&
+      other.wins == wins;
+
+  @override
+  int get hashCode =>
+      Object.hash(rank, userId, username, displayName, rating, games, wins);
+}
+
+class RankInfo {
+  final int rank;
+  final int rating;
+  final int games;
+  final double percentile;
+
+  const RankInfo({
+    required this.rank,
+    required this.rating,
+    required this.games,
+    required this.percentile,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'rank': rank,
+    'rating': rating,
+    'games': games,
+    'percentile': percentile,
+  };
+
+  factory RankInfo.fromJson(Map<String, dynamic> j) => RankInfo(
+    rank: (j['rank'] as num).toInt(),
+    rating: (j['rating'] as num).toInt(),
+    games: (j['games'] as num).toInt(),
+    percentile: (j['percentile'] as num).toDouble(),
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      other is RankInfo &&
+      other.rank == rank &&
+      other.rating == rating &&
+      other.games == games &&
+      other.percentile == percentile;
+
+  @override
+  int get hashCode => Object.hash(rank, rating, games, percentile);
+}
+
+class QueueTicket {
+  final String ladderId;
+
+  /// One of waiting, matched, cancelled or expired.
+  final String status;
+
+  /// The resolved room code once [status] is matched.
+  final String? matchedRoomCode;
+
+  const QueueTicket({
+    required this.ladderId,
+    required this.status,
+    this.matchedRoomCode,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'ladderId': ladderId,
+    'status': status,
+    'matchedRoomCode': matchedRoomCode,
+  };
+
+  factory QueueTicket.fromJson(Map<String, dynamic> j) => QueueTicket(
+    ladderId: j['ladderId'] as String,
+    status: j['status'] as String,
+    matchedRoomCode: j['matchedRoomCode'] as String?,
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      other is QueueTicket &&
+      other.ladderId == ladderId &&
+      other.status == status &&
+      other.matchedRoomCode == matchedRoomCode;
+
+  @override
+  int get hashCode => Object.hash(ladderId, status, matchedRoomCode);
+}
+
 abstract class AuthBackend {
   /// Restore a persisted session. Null when signed out. Must not throw.
   Future<AuthUser?> restore();
@@ -83,6 +215,17 @@ abstract class AuthBackend {
     required int numPlayers,
     required int matchTarget,
   });
+
+  /// Join the ranked queue for a ladder. The stream reports the ticket's state
+  /// and completes (or errors) when it resolves; cancel() to leave.
+  Stream<QueueTicket> enqueue(String ladderId);
+
+  Future<void> cancelQueue();
+
+  Future<List<LeaderboardEntry>> leaderboard(String ladderId, {int limit = 20});
+
+  /// Null when unranked (fewer than 10 games or no row).
+  Future<RankInfo?> myRank(String ladderId);
 
   /// External session changes such as refreshes, returns and revocations.
   Stream<AuthUser?> get changes;

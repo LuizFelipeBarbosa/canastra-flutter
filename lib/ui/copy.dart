@@ -172,6 +172,9 @@ class Copy {
   /// Waiting for the rest of an online table to sit down and ready up.
   final LobbyCopy lobby;
 
+  /// Ranked matchmaking and the ladder it feeds.
+  final RankedCopy ranked;
+
   /// Signing in, and everything that hangs off having an account.
   ///
   /// Grouped rather than flattened in here: accounts alone are some forty
@@ -280,6 +283,7 @@ class Copy {
     required this.soundOn,
     required this.soundOff,
     required this.lobby,
+    required this.ranked,
     required this.auth,
   });
 
@@ -442,6 +446,7 @@ class Copy {
     soundOn: 'SOUND ON',
     soundOff: 'SOUND OFF',
     lobby: _enLobby,
+    ranked: _enRanked,
     auth: _enAuth,
   );
 
@@ -576,6 +581,7 @@ class Copy {
     soundOn: 'SOM LIGADO',
     soundOff: 'SOM DESLIGADO',
     lobby: _ptLobby,
+    ranked: _ptRanked,
     auth: _ptAuth,
   );
 }
@@ -642,6 +648,58 @@ const _ptLobby = LobbyCopy(
   disconnected: 'Desconectado',
   tableLine: _ptLobbyTableLine,
   spectators: _ptSpectators,
+);
+
+class RankedCopy {
+  final String findMatch;
+  final String searching;
+  final String cancel;
+  final String leaderboard;
+  final String Function(int rank, int percentile) yourRank;
+  final String rating;
+  final String wins;
+  final String losses;
+  final String unranked;
+  final String matchFound;
+
+  const RankedCopy({
+    required this.findMatch,
+    required this.searching,
+    required this.cancel,
+    required this.leaderboard,
+    required this.yourRank,
+    required this.rating,
+    required this.wins,
+    required this.losses,
+    required this.unranked,
+    required this.matchFound,
+  });
+}
+
+const _enRanked = RankedCopy(
+  findMatch: 'Find a match',
+  searching: 'Looking for an opponent',
+  cancel: 'Cancel',
+  leaderboard: 'Leaderboard',
+  yourRank: _enYourRank,
+  rating: 'RATING',
+  wins: 'W',
+  losses: 'L',
+  unranked: 'Play 10 ranked matches to be listed.',
+  matchFound: 'Match found!',
+);
+
+const _ptRanked = RankedCopy(
+  findMatch: 'Procurar partida',
+  searching: 'Procurando adversário',
+  cancel: 'Cancelar',
+  leaderboard: 'Ranking',
+  yourRank: _ptYourRank,
+  rating: 'RATING',
+  wins: 'V',
+  losses: 'D',
+  unranked: 'Jogue 10 partidas ranqueadas para entrar no ranking.',
+  matchFound: 'Achou!',
 );
 
 /// Everything the app says about accounts.
@@ -863,6 +921,8 @@ const _ptAuth = AuthCopy(
 String _enCodeSentTo(String email) => 'We sent a six-digit code to $email.';
 String _ptCodeSentTo(String email) =>
     'Mandamos um código de seis dígitos para $email.';
+String _enYourRank(int rank, int percentile) => '#$rank - top $percentile%';
+String _ptYourRank(int rank, int percentile) => '#$rank - top $percentile%';
 String _enBotPlaying(String who) => '$who is playing.';
 String _ptBotPlaying(String who) => '$who está jogando.';
 String _enWentOut(String who) => '$who went out';

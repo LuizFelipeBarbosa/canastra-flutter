@@ -55,6 +55,7 @@ class WebSocketTransport implements GameTransport, ConnectionStateTransport {
   bool _connecting = false;
   bool _reconnecting = false;
   bool _disposed = false;
+  Timer? _retryTimer;
   int _retries = 0;
 
   WebSocketTransport({
@@ -191,7 +192,10 @@ class WebSocketTransport implements GameTransport, ConnectionStateTransport {
     // hammers it in synchronized waves; a small spread breaks that lockstep.
     final delay = retryDelay(_retries);
     _retries++;
-    Timer(delay, () async {
+    // Held so dispose() can defuse it: the flag alone makes the callback a
+    // no-op, but the armed timer itself would outlive the transport by up to
+    // the whole backoff.
+    _retryTimer = Timer(delay, () async {
       if (_disposed) return;
       try {
         await connect();
@@ -220,6 +224,7 @@ class WebSocketTransport implements GameTransport, ConnectionStateTransport {
   Future<void> dispose() async {
     _disposed = true;
     _connected = false;
+    _retryTimer?.cancel();
     await _sub?.cancel();
     await _channel?.sink.close();
     await _events.close();
