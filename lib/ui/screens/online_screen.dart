@@ -197,138 +197,125 @@ class _OnlineScreenState extends State<OnlineScreen> {
     final counts = profileById(widget.profileId).playerCounts;
 
     return Scaffold(
-      body: Stage(
+      body: Room(
         palette: p,
-        children: [
-          Positioned.fill(
-            child: SheetCard(
+        child: SheetCard(
+          palette: p,
+          children: [
+            BackLink(
+              label: l.back,
               palette: p,
-              children: [
-                BackLink(
-                  label: l.back,
-                  palette: p,
-                  onTap: () => Navigator.of(context).maybePop(),
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  l.online,
-                  style: T.display(34, tracking: -1.4, color: p.text),
-                ),
-                const SizedBox(height: 20),
-                Text(l.onlineExplainer, style: T.body(13, color: p.ash)),
-                const SizedBox(height: 20),
-                if (counts.length > 1) ...[
-                  ChoiceField(
-                    label: l.onlinePlayers,
-                    palette: p,
-                    children: [
-                      for (final n in counts)
-                        Segment(
-                          label: n == 2
-                              ? l.onlineTwoPlayers
-                              : l.onlineFourPlayers,
-                          selected: n == _players,
-                          palette: p,
-                          onTap: () => setState(() => _players = n),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                ],
-                TextEntry(
-                  label: l.onlineTableName,
-                  controller: _room,
-                  palette: p,
-                ),
-                const SizedBox(height: 14),
-                TextEntry(
-                  label: l.onlineYourName,
-                  controller: _name,
-                  hint: l.onlinePlayerNameHint,
-                  palette: p,
-                ),
-                if (_error != null) ...[
-                  const SizedBox(height: 14),
-                  Text(_error!, style: T.body(13, color: p.pink)),
-                ],
-                const SizedBox(height: 24),
-                MintButton(label: l.onlineJoinTable, palette: p, onTap: _join),
-                // Ranked play requires a permanent account. Guests and
-                // signed-out players get no client entry point, and the enqueue
-                // RPC independently enforces the same rule server-side.
-                if (context.account.state is Player) ...[
-                  const SizedBox(height: 14),
-                  Center(
-                    child: TextLink(
-                      label: l.ranked.findMatch,
-                      palette: p,
-                      color: p.ashDim,
-                      onTap: _findMatch,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  Center(
-                    child: TextLink(
-                      label: l.ranked.leaderboard,
-                      palette: p,
-                      color: p.ashDim,
-                      onTap: _leaderboard,
-                    ),
-                  ),
-                ],
-                // Guests play recorded casual matches too, so history belongs
-                // to every signed-in identity rather than ranked players only.
-                if (context.account.signedIn) ...[
-                  const SizedBox(height: 14),
-                  Center(
-                    child: TextLink(
-                      label: l.ranked.history,
-                      palette: p,
-                      color: p.ashDim,
-                      onTap: _history,
-                    ),
-                  ),
-                ],
-                // Guests can receive requests, but only permanent accounts
-                // may send them, so the social entry point is Player-only.
-                if (context.account.state is Player) ...[
-                  const SizedBox(height: 14),
-                  Center(
-                    child: TextLink(
-                      label: l.social.friends,
-                      palette: p,
-                      color: p.ashDim,
-                      onTap: _friends,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 14),
-                Center(
-                  child: TextLink(
-                    label: l.onlineWatchTable,
-                    palette: p,
-                    color: p.ashDim,
-                    onTap: () => _join(spectate: true),
-                  ),
-                ),
-                // Creating needs an account: the server mints the code against
-                // the signed-in owner. A signed-out player can still join any
-                // table whose name or code they were given.
-                if (hasBackend && context.account.signedIn) ...[
-                  const SizedBox(height: 14),
-                  Center(
-                    child: TextLink(
-                      label: _creating ? l.onlineCreating : l.onlineCreateTable,
-                      palette: p,
-                      color: p.ashDim,
-                      onTap: _create,
-                    ),
-                  ),
-                ],
-              ],
+              onTap: () => Navigator.of(context).maybePop(),
             ),
-          ),
-        ],
+            const SizedBox(height: 20),
+            Text(l.online, style: T.display(34, tracking: -1.4, color: p.text)),
+            const SizedBox(height: 20),
+            Text(l.onlineExplainer, style: T.body(13, color: p.ash)),
+            const SizedBox(height: 20),
+            if (counts.length > 1) ...[
+              ChoiceField(
+                label: l.onlinePlayers,
+                palette: p,
+                children: [
+                  for (final n in counts)
+                    Segment(
+                      label: n == 2 ? l.onlineTwoPlayers : l.onlineFourPlayers,
+                      selected: n == _players,
+                      palette: p,
+                      onTap: () => setState(() => _players = n),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 20),
+            ],
+            TextEntry(label: l.onlineTableName, controller: _room, palette: p),
+            const SizedBox(height: 14),
+            TextEntry(
+              label: l.onlineYourName,
+              controller: _name,
+              hint: l.onlinePlayerNameHint,
+              palette: p,
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 14),
+              Text(_error!, style: T.body(13, color: p.pink)),
+            ],
+            const SizedBox(height: 24),
+            MintButton(label: l.onlineJoinTable, palette: p, onTap: _join),
+            // Ranked play requires a permanent account. Guests and
+            // signed-out players get no client entry point, and the enqueue
+            // RPC independently enforces the same rule server-side.
+            if (context.account.state is Player) ...[
+              const SizedBox(height: 14),
+              Center(
+                child: TextLink(
+                  label: l.ranked.findMatch,
+                  palette: p,
+                  color: p.ashDim,
+                  onTap: _findMatch,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Center(
+                child: TextLink(
+                  label: l.ranked.leaderboard,
+                  palette: p,
+                  color: p.ashDim,
+                  onTap: _leaderboard,
+                ),
+              ),
+            ],
+            // Guests play recorded casual matches too, so history belongs
+            // to every signed-in identity rather than ranked players only.
+            if (context.account.signedIn) ...[
+              const SizedBox(height: 14),
+              Center(
+                child: TextLink(
+                  label: l.ranked.history,
+                  palette: p,
+                  color: p.ashDim,
+                  onTap: _history,
+                ),
+              ),
+            ],
+            // Guests can receive requests, but only permanent accounts
+            // may send them, so the social entry point is Player-only.
+            if (context.account.state is Player) ...[
+              const SizedBox(height: 14),
+              Center(
+                child: TextLink(
+                  label: l.social.friends,
+                  palette: p,
+                  color: p.ashDim,
+                  onTap: _friends,
+                ),
+              ),
+            ],
+            const SizedBox(height: 14),
+            Center(
+              child: TextLink(
+                label: l.onlineWatchTable,
+                palette: p,
+                color: p.ashDim,
+                onTap: () => _join(spectate: true),
+              ),
+            ),
+            // Creating needs an account: the server mints the code against
+            // the signed-in owner. A signed-out player can still join any
+            // table whose name or code they were given.
+            if (hasBackend && context.account.signedIn) ...[
+              const SizedBox(height: 14),
+              Center(
+                child: TextLink(
+                  label: _creating ? l.onlineCreating : l.onlineCreateTable,
+                  palette: p,
+                  color: p.ashDim,
+                  onTap: _create,
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

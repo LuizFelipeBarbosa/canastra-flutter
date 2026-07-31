@@ -71,8 +71,8 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
 
       setState(
         () => _fetch = _Ready((
-          // Product cap: the Stage is a fixed 1240x790 coordinate space, so
-          // ranked play intentionally shows one top-20 page on every device.
+          // Product cap rather than a layout one: ranked play intentionally
+          // shows one top-20 page on every device.
           entries: entries.take(20).toList(growable: false),
           myRank: rank,
         )),
@@ -88,56 +88,55 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
     final l = context.copy;
 
     return Scaffold(
-      body: Stage(
+      body: Room(
         palette: p,
-        children: [
-          Positioned.fill(
-            child: SheetCard(
-              width: 720,
+        child: SheetCard(
+          width: 720,
+          palette: p,
+          children: [
+            BackLink(
+              label: l.back,
               palette: p,
-              children: [
-                BackLink(
-                  label: l.back,
-                  palette: p,
-                  onTap: () => Navigator.of(context).maybePop(),
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  l.ranked.leaderboard,
-                  style: T.display(34, tracking: -1.4, color: p.text),
-                ),
-                const SizedBox(height: 5),
-                Text(widget.ladderLabel, style: mono(10, color: p.ashDim)),
-                const SizedBox(height: 16),
-                ...switch (_fetch) {
-                  _Loading() => [
-                    Center(child: CircularProgressIndicator(color: p.mint)),
-                  ],
-                  _Failed(:final error) => [
-                    Text(
-                      _accountError(l.auth, error),
-                      style: T.body(13, color: p.pink),
-                    ),
-                    const SizedBox(height: 12),
-                    Center(
-                      child: TextLink(
-                        label: l.ranked.leaderboard,
-                        palette: p,
-                        onTap: _load,
-                      ),
-                    ),
-                  ],
-                  _Ready(:final value) => _readyRows(
-                    value,
-                    context.account.user?.id,
-                    p,
-                    l.ranked,
-                  ),
-                },
-              ],
+              onTap: () => Navigator.of(context).maybePop(),
             ),
-          ),
-        ],
+            const SizedBox(height: 14),
+            Text(
+              l.ranked.leaderboard,
+              style: T.display(34, tracking: -1.4, color: p.text),
+            ),
+            const SizedBox(height: 5),
+            Text(widget.ladderLabel, style: mono(10, color: p.ashDim)),
+            const SizedBox(height: 16),
+            ...switch (_fetch) {
+              _Loading() => [
+                Center(child: CircularProgressIndicator(color: p.mint)),
+              ],
+              _Failed(:final error) => [
+                Text(
+                  _accountError(l.auth, error),
+                  style: T.body(13, color: p.pink),
+                ),
+                const SizedBox(height: 12),
+                Center(
+                  child: TextLink(
+                    label: l.ranked.leaderboard,
+                    palette: p,
+                    onTap: _load,
+                  ),
+                ),
+              ],
+              _Ready(:final value) => _readyRows(
+                value,
+                context.account.user?.id,
+                p,
+                l.ranked,
+                // A phone has room for the standing, not for the record behind
+                // it; rank and rating are what the screen is for.
+                compact: context.stage.portrait,
+              ),
+            },
+          ],
+        ),
       ),
     );
   }
@@ -147,27 +146,34 @@ List<Widget> _readyRows(
   _LeaderboardData data,
   String? userId,
   Palette p,
-  RankedCopy copy,
-) => [
-  Row(
-    children: [
-      SizedBox(
-        width: 44,
-        child: Text('#', style: mono(9, color: p.ashDim)),
-      ),
-      const SizedBox(width: 10),
-      const Expanded(child: SizedBox()),
-      SizedBox(
-        width: 78,
-        child: Text(
-          copy.rating,
-          textAlign: TextAlign.right,
-          style: mono(9, color: p.ashDim),
+  RankedCopy copy, {
+  required bool compact,
+}) => [
+  // The same padding as a row, so the captions start where the values do.
+  Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 8),
+    child: Row(
+      children: [
+        SizedBox(
+          width: 36,
+          child: Text('#', style: mono(9, color: p.ashDim)),
         ),
-      ),
-      const SizedBox(width: 20),
-      const SizedBox(width: 100),
-    ],
+        const SizedBox(width: 10),
+        const Expanded(child: SizedBox()),
+        SizedBox(
+          width: 78,
+          child: Text(
+            copy.rating,
+            textAlign: TextAlign.right,
+            style: mono(9, color: p.ashDim),
+          ),
+        ),
+        if (!compact) ...[
+          const SizedBox(width: 20),
+          const SizedBox(width: 100),
+        ],
+      ],
+    ),
   ),
   const SizedBox(height: 5),
   for (final entry in data.entries)
@@ -176,6 +182,7 @@ List<Widget> _readyRows(
       highlighted: data.myRank != null && entry.userId == userId,
       palette: p,
       copy: copy,
+      compact: compact,
     ),
   const SizedBox(height: 14),
   if (data.myRank case final rank?)
@@ -197,11 +204,14 @@ class _LeaderboardRow extends StatelessWidget {
   final Palette palette;
   final RankedCopy copy;
 
+  final bool compact;
+
   const _LeaderboardRow({
     required this.entry,
     required this.highlighted,
     required this.palette,
     required this.copy,
+    required this.compact,
   });
 
   @override
@@ -244,15 +254,17 @@ class _LeaderboardRow extends StatelessWidget {
               style: mono(10, color: palette.text),
             ),
           ),
-          const SizedBox(width: 20),
-          SizedBox(
-            width: 100,
-            child: Text(
-              '${entry.wins}${copy.wins} - $losses${copy.losses}',
-              textAlign: TextAlign.right,
-              style: mono(9, color: palette.ash),
+          if (!compact) ...[
+            const SizedBox(width: 20),
+            SizedBox(
+              width: 100,
+              child: Text(
+                '${entry.wins}${copy.wins} - $losses${copy.losses}',
+                textAlign: TextAlign.right,
+                style: mono(9, color: palette.ash),
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );

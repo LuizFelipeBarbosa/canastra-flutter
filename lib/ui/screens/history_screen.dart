@@ -59,8 +59,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
       setState(
         () => _fetch = _Ready(
-          // Product cap: the fixed Stage holds ten compact rows on every
-          // device, so older matches stay off this read-only screen.
+          // Product cap rather than a layout one: this read-only screen is the
+          // last ten matches, on every device.
           entries.take(10).toList(growable: false),
         ),
       );
@@ -75,55 +75,51 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final l = context.copy;
 
     return Scaffold(
-      body: Stage(
+      body: Room(
         palette: p,
-        children: [
-          Positioned.fill(
-            child: SheetCard(
-              width: 720,
+        child: SheetCard(
+          width: 720,
+          palette: p,
+          children: [
+            BackLink(
+              label: l.back,
               palette: p,
-              children: [
-                BackLink(
-                  label: l.back,
-                  palette: p,
-                  onTap: () => Navigator.of(context).maybePop(),
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  l.ranked.history,
-                  style: T.display(34, tracking: -1.4, color: p.text),
-                ),
-                const SizedBox(height: 16),
-                ...switch (_fetch) {
-                  _Loading() => [
-                    Center(child: CircularProgressIndicator(color: p.mint)),
-                  ],
-                  _Failed(:final error) => [
-                    Text(
-                      _accountError(l.auth, error),
-                      style: T.body(13, color: p.pink),
-                    ),
-                    const SizedBox(height: 12),
-                    Center(
-                      child: TextLink(
-                        label: l.ranked.history,
-                        palette: p,
-                        onTap: _load,
-                      ),
-                    ),
-                  ],
-                  _Ready(value: final entries) when entries.isEmpty => [
-                    Text(l.ranked.noHistory, style: T.body(13, color: p.ash)),
-                  ],
-                  _Ready(value: final entries) => [
-                    for (final entry in entries)
-                      _HistoryRow(entry: entry, palette: p, copy: l.ranked),
-                  ],
-                },
-              ],
+              onTap: () => Navigator.of(context).maybePop(),
             ),
-          ),
-        ],
+            const SizedBox(height: 14),
+            Text(
+              l.ranked.history,
+              style: T.display(34, tracking: -1.4, color: p.text),
+            ),
+            const SizedBox(height: 16),
+            ...switch (_fetch) {
+              _Loading() => [
+                Center(child: CircularProgressIndicator(color: p.mint)),
+              ],
+              _Failed(:final error) => [
+                Text(
+                  _accountError(l.auth, error),
+                  style: T.body(13, color: p.pink),
+                ),
+                const SizedBox(height: 12),
+                Center(
+                  child: TextLink(
+                    label: l.ranked.history,
+                    palette: p,
+                    onTap: _load,
+                  ),
+                ),
+              ],
+              _Ready(value: final entries) when entries.isEmpty => [
+                Text(l.ranked.noHistory, style: T.body(13, color: p.ash)),
+              ],
+              _Ready(value: final entries) => [
+                for (final entry in entries)
+                  _HistoryRow(entry: entry, palette: p, copy: l.ranked),
+              ],
+            },
+          ],
+        ),
       ),
     );
   }

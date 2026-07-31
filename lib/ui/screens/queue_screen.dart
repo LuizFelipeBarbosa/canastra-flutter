@@ -188,42 +188,35 @@ class _QueueScreenState extends State<QueueScreen> {
         : '${l.ranked.searching}${List.filled(_dots, '.').join()}';
 
     return Scaffold(
-      body: Stage(
+      body: Room(
         palette: p,
-        children: [
-          Positioned.fill(
-            child: SheetCard(
-              palette: p,
-              children: [
-                Text(
-                  status,
-                  style: T.display(34, tracking: -1.4, color: p.text),
-                ),
-                const SizedBox(height: 24),
-                Center(
-                  child: Text(
-                    '$minutes:$seconds',
-                    style: mono(24, color: p.mint, tracking: 2),
-                  ),
-                ),
-                if (_error != null) ...[
-                  const SizedBox(height: 20),
-                  Text(_error!, style: T.body(13, color: p.pink)),
-                  const SizedBox(height: 12),
-                  Center(
-                    child: TextLink(
-                      label: l.ranked.findMatch,
-                      palette: p,
-                      onTap: _listen,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 28),
-                MintButton(label: l.ranked.cancel, palette: p, onTap: _cancel),
-              ],
+        child: SheetCard(
+          palette: p,
+          children: [
+            Text(status, style: T.display(34, tracking: -1.4, color: p.text)),
+            const SizedBox(height: 24),
+            Center(
+              child: Text(
+                '$minutes:$seconds',
+                style: mono(24, color: p.mint, tracking: 2),
+              ),
             ),
-          ),
-        ],
+            if (_error != null) ...[
+              const SizedBox(height: 20),
+              Text(_error!, style: T.body(13, color: p.pink)),
+              const SizedBox(height: 12),
+              Center(
+                child: TextLink(
+                  label: l.ranked.findMatch,
+                  palette: p,
+                  onTap: _listen,
+                ),
+              ),
+            ],
+            const SizedBox(height: 28),
+            MintButton(label: l.ranked.cancel, palette: p, onTap: _cancel),
+          ],
+        ),
       ),
     );
   }

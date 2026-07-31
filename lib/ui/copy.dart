@@ -32,6 +32,9 @@ class Copy {
 
   // --- setup ---
   final String back;
+  final String close;
+  final String settings;
+  final String settingsTitle;
   final String setupTitle;
   final String opponent;
   final String target;
@@ -168,7 +171,6 @@ class Copy {
   // --- table fallbacks ---
   /// Takes the zero-based seat index used by the game state.
   final String Function(int seat) seatFallback;
-  final String rotatePrompt;
 
   // --- the streak counters ---
   final String streak;
@@ -201,6 +203,9 @@ class Copy {
     required this.play,
     required this.free,
     required this.back,
+    required this.close,
+    required this.settings,
+    required this.settingsTitle,
     required this.setupTitle,
     required this.opponent,
     required this.target,
@@ -294,7 +299,6 @@ class Copy {
     required this.themeLight,
     required this.themeDark,
     required this.seatFallback,
-    required this.rotatePrompt,
     required this.streak,
     required this.won,
     required this.played,
@@ -344,6 +348,9 @@ class Copy {
     play: 'Play now',
     free: 'FREE FOREVER · PLAY IN THE BROWSER',
     back: 'Back',
+    close: 'Close',
+    settings: 'MENU',
+    settingsTitle: 'Table settings',
     setupTitle: 'Set the table',
     opponent: 'OPPONENT',
     target: 'PLAY TO',
@@ -466,7 +473,6 @@ class Copy {
     themeLight: 'LIGHT',
     themeDark: 'DARK',
     seatFallback: _enSeatFallback,
-    rotatePrompt: 'Turn your device sideways to see the table.',
     streak: 'STREAK ',
     won: 'WON',
     played: 'PLAYED',
@@ -488,6 +494,9 @@ class Copy {
     play: 'Jogar agora',
     free: 'GRÁTIS PARA SEMPRE · JOGUE NO NAVEGADOR',
     back: 'Voltar',
+    close: 'Fechar',
+    settings: 'MENU',
+    settingsTitle: 'Ajustes da mesa',
     setupTitle: 'Prepare a mesa',
     opponent: 'ADVERSÁRIO',
     target: 'JOGAR ATÉ',
@@ -610,7 +619,6 @@ class Copy {
     themeLight: 'CLARO',
     themeDark: 'ESCURO',
     seatFallback: _ptSeatFallback,
-    rotatePrompt: 'Gire o aparelho para ver a mesa.',
     streak: 'SEQUÊNCIA ',
     won: 'GANHAS',
     played: 'JOGADAS',

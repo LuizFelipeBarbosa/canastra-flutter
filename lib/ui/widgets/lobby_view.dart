@@ -1,7 +1,8 @@
 /// The table before the cards are dealt.
 ///
-/// A lobby belongs on the felt, but unlike the card table it remains useful in
-/// portrait: this is where a phone player reads and shares the room code.
+/// A lobby belongs on the felt, but it is a sheet rather than a table — nothing
+/// on it is positioned absolutely — so it sits in a [Room] like every other
+/// screen that is not the card table.
 library;
 
 import 'dart:async';
@@ -73,113 +74,78 @@ class _LobbyViewState extends State<LobbyView> {
     final target = lobby.matchTarget ?? controller.cfg.scoring.matchTarget;
 
     return Scaffold(
-      body: DecoratedBox(
-        decoration: BoxDecoration(gradient: groundGradient(p)),
-        child: CustomPaint(
-          painter: AzulejoPainter(ink: p.motifInk),
-          child: SafeArea(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final panelWidth = (constraints.maxWidth - 32)
-                    .clamp(0.0, 520.0)
-                    .toDouble();
-                final minHeight = (constraints.maxHeight - 32)
-                    .clamp(0.0, double.infinity)
-                    .toDouble();
-                return SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(minHeight: minHeight),
-                    child: SheetCard(
-                      width: panelWidth,
-                      palette: p,
-                      children: [
-                        Text(
-                          l.title,
-                          style: T.display(28, tracking: -0.8, color: p.text),
-                        ),
-                        const SizedBox(height: 28),
-                        FieldLabel(label: l.codeLabel, palette: p),
-                        const SizedBox(height: 6),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                lobby.roomCode,
-                                overflow: TextOverflow.ellipsis,
-                                style: mono(30, tracking: 4, color: p.text),
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            TextLink(
-                              label: l.copyCode,
-                              palette: p,
-                              onTap: () => _copyCode(lobby.roomCode),
-                            ),
-                          ],
-                        ),
-                        SizedBox(
-                          height: 20,
-                          child: _codeCopied
-                              ? Text(
-                                  l.codeCopied,
-                                  style: mono(9, color: p.mint),
-                                )
-                              : null,
-                        ),
-                        Text(
-                          l.tableLine(_profileLabel(lobby.profile), target),
-                          style: T.body(14, color: p.ash),
-                        ),
-                        const SizedBox(height: 20),
-                        for (var seat = 0; seat < seats.length; seat++) ...[
-                          _SeatRow(
-                            info: seats[seat],
-                            mine: controller.seat == seat,
-                            palette: p,
-                            copy: l,
-                          ),
-                          if (seat != seats.length - 1)
-                            const SizedBox(height: 8),
-                        ],
-                        if (controller.notice != null) ...[
-                          const SizedBox(height: 14),
-                          Text(
-                            controller.notice!,
-                            style: T.body(12, color: p.pink),
-                          ),
-                        ],
-                        const SizedBox(height: 24),
-                        MintButton(
-                          label: controller.myReady ? l.unready : l.ready,
-                          palette: p,
-                          onTap: () => controller.setReady(!controller.myReady),
-                        ),
-                        if (!everyoneReady) ...[
-                          const SizedBox(height: 12),
-                          Center(
-                            child: Text(
-                              l.waiting,
-                              style: T.body(12, color: p.ashDim),
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: 16),
-                        Center(
-                          child: TextLink(
-                            label: l.leave,
-                            palette: p,
-                            color: p.ashDim,
-                            onTap: widget.onLeave ?? controller.leave,
-                          ),
-                        ),
-                      ],
-                    ),
+      body: Room(
+        palette: p,
+        child: SheetCard(
+          palette: p,
+          children: [
+            Text(l.title, style: T.display(28, tracking: -0.8, color: p.text)),
+            const SizedBox(height: 28),
+            FieldLabel(label: l.codeLabel, palette: p),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    lobby.roomCode,
+                    overflow: TextOverflow.ellipsis,
+                    style: mono(30, tracking: 4, color: p.text),
                   ),
-                );
-              },
+                ),
+                const SizedBox(width: 16),
+                TextLink(
+                  label: l.copyCode,
+                  palette: p,
+                  onTap: () => _copyCode(lobby.roomCode),
+                ),
+              ],
             ),
-          ),
+            SizedBox(
+              height: 20,
+              child: _codeCopied
+                  ? Text(l.codeCopied, style: mono(9, color: p.mint))
+                  : null,
+            ),
+            Text(
+              l.tableLine(_profileLabel(lobby.profile), target),
+              style: T.body(14, color: p.ash),
+            ),
+            const SizedBox(height: 20),
+            for (var seat = 0; seat < seats.length; seat++) ...[
+              _SeatRow(
+                info: seats[seat],
+                mine: controller.seat == seat,
+                palette: p,
+                copy: l,
+              ),
+              if (seat != seats.length - 1) const SizedBox(height: 8),
+            ],
+            if (controller.notice != null) ...[
+              const SizedBox(height: 14),
+              Text(controller.notice!, style: T.body(12, color: p.pink)),
+            ],
+            const SizedBox(height: 24),
+            MintButton(
+              label: controller.myReady ? l.unready : l.ready,
+              palette: p,
+              onTap: () => controller.setReady(!controller.myReady),
+            ),
+            if (!everyoneReady) ...[
+              const SizedBox(height: 12),
+              Center(
+                child: Text(l.waiting, style: T.body(12, color: p.ashDim)),
+              ),
+            ],
+            const SizedBox(height: 16),
+            Center(
+              child: TextLink(
+                label: l.leave,
+                palette: p,
+                color: p.ashDim,
+                onTap: widget.onLeave ?? controller.leave,
+              ),
+            ),
+          ],
         ),
       ),
     );

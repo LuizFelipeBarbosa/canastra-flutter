@@ -30,6 +30,7 @@ import '../widgets/lobby_view.dart';
 import '../widgets/meld_box.dart';
 import '../widgets/playing_card.dart';
 import '../widgets/round_sheet.dart';
+import '../widgets/sheet.dart';
 import '../widgets/stage.dart';
 import '../widgets/table_layout.dart';
 import '../widgets/table_zone.dart';
@@ -71,6 +72,17 @@ class _GameScreenState extends State<GameScreen> {
   final CardIdentityTracker _cardIdentities = CardIdentityTracker();
   bool _matchRecorded = false;
   bool _confirmLeave = false;
+
+  /// Which meld is being read, when a stack is too narrow to read on the felt.
+  ///
+  /// The place rather than the cards: a meld held onto here by value would go on
+  /// showing the hand it had when it was tapped, and would outlive the round it
+  /// belonged to. Resolved against the live layout on every build instead, so
+  /// extending the meld updates the sheet and clearing the table closes it.
+  ({bool mine, int slot})? _inspecting;
+
+  /// The toggles, opened out, when the header is too narrow to carry them.
+  bool _settingsOpen = false;
 
   /// Captured rather than read from `context` on demand: the match result is
   /// recorded from a controller callback, which is not a build.
@@ -239,55 +251,85 @@ class _GameScreenState extends State<GameScreen> {
       return _Message(text: '${l.deal}…', palette: p);
     }
 
-    final layout = layOutTable(
-      LayoutInput(
-        view: view,
-        moves: c.moves,
-        handOverride: prefs.handOrder == HandOrder.rank
-            ? ([...view.hand]..sort(rankMajorOrder))
-            : null,
-        selection: c.selection,
-        openSlots: c.openSlots,
-        canMeld: c.canMeldSelection,
-        canDiscard: c.discardMove != null,
-        discardGoesOut: c.discardGoesOut,
-        dealt: _dealt,
-        dealDone: _dealt >= _dealTotal,
-        words: _zoneWords(l),
-      ),
-    );
-    final cards = _cardIdentities.assign(layout.cards);
-
+    // The stage decides which coordinate space this table is in, so the layout
+    // is computed inside it rather than guessed above it. Re-running the builder
+    // is safe: the identity tracker keys off card positions in the *table*, not
+    // on screen, so the same spots always come back with the same identities.
     final table = Stage(
       palette: p,
-      children: [
-        ..._meldBoxes(layout, p),
-        ..._zones(layout, p),
-        ..._rowLabels(view, l, p),
-        ..._cards(cards, p),
-        _header(view, prefs, p, l),
-        _opponents(view, l, p),
-        if (!c.spectating) _strip(view, l, p),
-        _whyNot(l, p),
-        if (view.roundOver || view.matchOver)
-          Positioned.fill(
-            child: RoundSheet(
-              view: view,
-              palette: p,
-              copy: l,
-              onContinue: view.matchOver ? c.rematch : c.nextRound,
-            ),
+      children: (stage) {
+        final m = stage.portrait
+            ? TableMetrics.portrait
+            : TableMetrics.landscape;
+        final layout = layOutTable(
+          LayoutInput(
+            view: view,
+            moves: c.moves,
+            metrics: m,
+            handOverride: prefs.handOrder == HandOrder.rank
+                ? ([...view.hand]..sort(rankMajorOrder))
+                : null,
+            selection: c.selection,
+            openSlots: c.openSlots,
+            canMeld: c.canMeldSelection,
+            canDiscard: c.discardMove != null,
+            discardGoesOut: c.discardGoesOut,
+            dealt: _dealt,
+            dealDone: _dealt >= _dealTotal,
+            words: _zoneWords(l),
           ),
-        if (_confirmLeave)
-          Positioned.fill(
-            child: _ConfirmLeave(
-              palette: p,
-              copy: l,
-              onStay: () => setState(() => _confirmLeave = false),
-              onLeave: () => Navigator.of(context).pop(),
+        );
+        final cards = _cardIdentities.assign(layout.cards);
+        final inspected = _inspectedIn(layout);
+
+        return [
+          ..._meldBoxes(layout, p),
+          ..._zones(layout, p),
+          ..._rowLabels(m, l, p),
+          ..._cards(cards, p),
+          _header(m, view, prefs, p, l),
+          _opponents(m, view, l, p),
+          if (!c.spectating) _strip(m, view, l, p),
+          _whyNot(m, l, p),
+          if (_settingsOpen)
+            Positioned.fill(
+              child: _SettingsSheet(
+                prefs: prefs,
+                palette: p,
+                copy: l,
+                onClose: () => setState(() => _settingsOpen = false),
+              ),
             ),
-          ),
-      ],
+          if (inspected case final meld?)
+            Positioned.fill(
+              child: _MeldSheet(
+                meld: meld,
+                palette: p,
+                onClose: () => setState(() => _inspecting = null),
+              ),
+            ),
+          // The end of a round outranks anything the player opened over the
+          // table, so it comes last and covers them rather than arriving behind.
+          if (view.roundOver || view.matchOver)
+            Positioned.fill(
+              child: RoundSheet(
+                view: view,
+                palette: p,
+                copy: l,
+                onContinue: view.matchOver ? c.rematch : c.nextRound,
+              ),
+            ),
+          if (_confirmLeave)
+            Positioned.fill(
+              child: _ConfirmLeave(
+                palette: p,
+                copy: l,
+                onStay: () => setState(() => _confirmLeave = false),
+                onLeave: () => Navigator.of(context).pop(),
+              ),
+            ),
+        ];
+      },
     );
 
     // A finished match leaves freely; mid-match, back asks first. The
@@ -346,15 +388,34 @@ class _GameScreenState extends State<GameScreen> {
           meld: spot.meld,
           palette: p,
           width: spot.width,
-          height: kMeldBoxHeight,
+          height: spot.height,
           bonus: spot.meld.isClean
               ? c.cfg.meld.canastraBonusClean
               : c.cfg.meld.canastraBonusDirty,
+          compact: spot.compact,
           open: spot.open,
-          onTap: spot.open ? () => c.extendMeld(spot.slot) : null,
+          // Playing onto a meld comes first. A stack that cannot be played onto
+          // is the one place a card in a meld is not visible, so tapping it
+          // opens the meld instead of doing nothing.
+          onTap: spot.open
+              ? () => c.extendMeld(spot.slot)
+              : spot.compact
+              ? () => setState(
+                  () => _inspecting = (mine: spot.mine, slot: spot.slot),
+                )
+              : null,
         ),
       ),
   ];
+
+  MeldView? _inspectedIn(TableLayout layout) {
+    final at = _inspecting;
+    if (at == null) return null;
+    for (final spot in layout.melds) {
+      if (spot.mine == at.mine && spot.slot == at.slot) return spot.meld;
+    }
+    return null;
+  }
 
   List<Widget> _zones(TableLayout layout, Palette p) => [
     for (final zone in layout.zones)
@@ -395,17 +456,17 @@ class _GameScreenState extends State<GameScreen> {
     }
   }
 
-  List<Widget> _rowLabels(TableView view, Copy l, Palette p) {
+  List<Widget> _rowLabels(TableMetrics m, Copy l, Palette p) {
     final open = c.openSlots.length;
     return [
       Positioned(
-        left: 20,
-        top: kTheirLabelY,
+        left: m.margin,
+        top: m.theirLabelY,
         child: Text(l.theirMelds, style: mono(10, color: p.ashDim)),
       ),
       Positioned(
-        left: 20,
-        top: kMyLabelY,
+        left: m.margin,
+        top: m.myLabelY,
         child: Row(
           children: [
             Text(l.myMelds, style: mono(10, color: p.ashDim)),
@@ -464,141 +525,197 @@ class _GameScreenState extends State<GameScreen> {
   // --- chrome --------------------------------------------------------------
 
   Widget _header(
+    TableMetrics m,
     TableView view,
     AppPrefs prefs,
     Palette p,
     Copy l,
-  ) => Positioned(
-    left: 0,
-    right: 0,
-    top: 0,
-    height: 58,
-    child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Row(
-        children: [
-          BackLink(
-            label: l.back,
-            palette: p,
-            onTap: () => Navigator.of(context).maybePop(),
-          ),
-          const SizedBox(width: 14),
-          Hoverable(
-            onTap: () => Navigator.of(context).maybePop(),
-            builder: (_) => BrandMark(size: 30, palette: p, ring: 6),
-          ),
-          const SizedBox(width: 14),
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (c.spectating) Text(l.watching, style: mono(8, color: p.mint)),
-              Text(
-                view.profile.toUpperCase(),
-                style: T.display(14, tracking: -0.4, color: p.text),
+  ) {
+    final narrow = m.narrow;
+    return Positioned(
+      left: 0,
+      right: 0,
+      top: 0,
+      height: m.headerHeight,
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: m.margin),
+        child: Row(
+          children: [
+            BackLink(
+              // Narrow: the arrow alone. Every point here is a point the score
+              // cannot have.
+              label: l.back,
+              showLabel: !narrow,
+              palette: p,
+              onTap: () => Navigator.of(context).maybePop(),
+            ),
+            SizedBox(width: narrow ? 10 : 14),
+            if (!narrow) ...[
+              Hoverable(
+                onTap: () => Navigator.of(context).maybePop(),
+                builder: (_) => BrandMark(size: 30, palette: p, ring: 6),
               ),
-              Text(
-                l.roundLine(view.roundIndex + 1, view.matchTarget),
-                style: mono(9, color: p.ashDim, height: 1.4),
-              ),
+              const SizedBox(width: 14),
             ],
-          ),
-          const Spacer(),
-          if (prefs.streak > 0) ...[
-            _StreakBadge(streak: prefs.streak, palette: p, copy: l),
-            const SizedBox(width: 14),
-          ],
-          Pill(
-            label: prefs.handOrder == HandOrder.suit
-                ? l.orderBySuit
-                : l.orderByRank,
-            palette: p,
-            round: true,
-            onTap: prefs.toggleHandOrder,
-          ),
-          const SizedBox(width: 6),
-          Pill(
-            label: prefs.sound ? l.soundOn : l.soundOff,
-            palette: p,
-            round: true,
-            color: prefs.sound ? p.mint : p.ashDim,
-            onTap: prefs.toggleSound,
-          ),
-          const SizedBox(width: 6),
-          Pill(
-            label: prefs.lang.toggleLabel,
-            palette: p,
-            round: true,
-            onTap: prefs.toggleLang,
-          ),
-          const SizedBox(width: 6),
-          Pill(
-            label: prefs.dark ? l.themeLight : l.themeDark,
-            palette: p,
-            round: true,
-            onTap: prefs.toggleTheme,
-          ),
-          const SizedBox(width: 12),
-          for (var side = 0; side < view.matchScores.length; side++)
-            Padding(
-              padding: const EdgeInsets.only(left: 12),
+            // Capped rather than flexible: a second flexible child would split the
+            // slack with the [Spacer] and pull everything after it out of place.
+            ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: m.headerTitleWidth),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.end,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (c.spectating)
+                    Text(l.watching, style: mono(8, color: p.mint)),
                   Text(
-                    side == view.side ? l.you : l.them,
-                    style: mono(9, color: p.ashDim),
+                    view.profile.toUpperCase(),
+                    overflow: TextOverflow.ellipsis,
+                    softWrap: false,
+                    style: T.display(14, tracking: -0.4, color: p.text),
                   ),
                   Text(
-                    '${view.matchScores[side]}',
-                    style: mono(17, color: side == view.side ? p.mint : p.ash),
+                    l.roundLine(view.roundIndex + 1, view.matchTarget),
+                    overflow: TextOverflow.ellipsis,
+                    softWrap: false,
+                    style: mono(9, color: p.ashDim, height: 1.4),
                   ),
                 ],
               ),
             ),
-        ],
+            const Spacer(),
+            // A narrow table has room for the score and one way in to everything
+            // else. The streak is on the landing screen too, and the four toggles
+            // move into a sheet where they are also finally big enough to hit.
+            if (narrow) ...[
+              Pill(
+                label: l.settings,
+                palette: p,
+                onTap: () => setState(() => _settingsOpen = true),
+              ),
+              const SizedBox(width: 12),
+            ] else ...[
+              if (prefs.streak > 0) ...[
+                _StreakBadge(streak: prefs.streak, palette: p, copy: l),
+                const SizedBox(width: 14),
+              ],
+              Pill(
+                label: prefs.handOrder == HandOrder.suit
+                    ? l.orderBySuit
+                    : l.orderByRank,
+                palette: p,
+                round: true,
+                onTap: prefs.toggleHandOrder,
+              ),
+              const SizedBox(width: 6),
+              Pill(
+                label: prefs.sound ? l.soundOn : l.soundOff,
+                palette: p,
+                round: true,
+                color: prefs.sound ? p.mint : p.ashDim,
+                onTap: prefs.toggleSound,
+              ),
+              const SizedBox(width: 6),
+              Pill(
+                label: prefs.lang.toggleLabel,
+                palette: p,
+                round: true,
+                onTap: prefs.toggleLang,
+              ),
+              const SizedBox(width: 6),
+              Pill(
+                label: prefs.dark ? l.themeLight : l.themeDark,
+                palette: p,
+                round: true,
+                onTap: prefs.toggleTheme,
+              ),
+              const SizedBox(width: 12),
+            ],
+            for (var side = 0; side < view.matchScores.length; side++)
+              Padding(
+                padding: const EdgeInsets.only(left: 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      side == view.side ? l.you : l.them,
+                      style: mono(9, color: p.ashDim),
+                    ),
+                    Text(
+                      '${view.matchScores[side]}',
+                      style: mono(
+                        17,
+                        color: side == view.side ? p.mint : p.ash,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 
-  Widget _opponents(TableView view, Copy l, Palette p) {
+  static Widget _flexible(bool yes, Widget child) =>
+      yes ? Flexible(child: child) : child;
+
+  Widget _opponents(TableMetrics m, TableView view, Copy l, Palette p) {
     final seats = [
       for (var seat = 0; seat < view.numPlayers; seat++)
         if (seat != view.seat) seat,
     ];
+    final activity = Text(
+      _activity(view, l),
+      overflow: TextOverflow.ellipsis,
+      softWrap: false,
+      style: mono(10, color: p.ash),
+    );
+    // Three chips leave a narrow table nothing for the activity line, so there
+    // it gets the row underneath instead of a sliver of this one.
+    final ownRow = m.narrow;
+
     // Bounded, so three opponents plus a long activity line on a four-handed
     // table run out of room rather than off the felt.
     return Positioned(
-      left: 20,
-      right: 20,
-      top: 62,
-      child: Row(
+      left: m.margin,
+      right: m.margin,
+      top: m.seatChipsY,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          for (final seat in seats) ...[
-            _SeatChip(
-              name: seat < view.playerNames.length
-                  ? view.playerNames[seat]
-                  : l.seatFallback(seat),
-              cards: view.handSizes[seat],
-              toPlay: seat == view.currentPlayer && !view.roundOver,
-              partner: seat == view.partnerSeat,
-              palette: p,
-            ),
-            const SizedBox(width: 12),
-          ],
-          if (!view.myTurn && !view.roundOver) ...[
-            _Thinking(label: l.thinking, palette: p),
-            const SizedBox(width: 12),
-          ],
-          Flexible(
-            child: Text(
-              _activity(view, l),
-              overflow: TextOverflow.ellipsis,
-              softWrap: false,
-              style: mono(10, color: p.ash),
-            ),
+          Row(
+            children: [
+              for (final seat in seats) ...[
+                // On a narrow row the three chips share it and their names give
+                // way; on a wide one they keep their natural size, because the
+                // activity line is the flexible child there.
+                _flexible(
+                  ownRow,
+                  _SeatChip(
+                    name: seat < view.playerNames.length
+                        ? view.playerNames[seat]
+                        : l.seatFallback(seat),
+                    cards: view.handSizes[seat],
+                    toPlay: seat == view.currentPlayer && !view.roundOver,
+                    partner: seat == view.partnerSeat,
+                    palette: p,
+                    nameWidth: m.seatNameWidth,
+                  ),
+                ),
+                const SizedBox(width: 12),
+              ],
+              if (!view.myTurn && !view.roundOver) ...[
+                _Thinking(label: l.thinking, palette: p),
+                const SizedBox(width: 12),
+              ],
+              if (!ownRow) Flexible(child: activity),
+            ],
           ),
+          if (ownRow) ...[
+            const SizedBox(height: 4),
+            SizedBox(width: double.infinity, child: activity),
+          ],
         ],
       ),
     );
@@ -662,15 +779,15 @@ class _GameScreenState extends State<GameScreen> {
     return false;
   }
 
-  Widget _strip(TableView view, Copy l, Palette p) {
+  Widget _strip(TableMetrics m, TableView view, Copy l, Palette p) {
     final selected = c.selection.length;
     final actions = _stripActions(l, p);
 
     return Positioned(
-      left: 20,
-      right: 20,
-      top: kStripY,
-      height: kStripHeight,
+      left: m.margin,
+      right: m.margin,
+      top: m.stripY,
+      height: m.stripHeight,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
@@ -761,12 +878,12 @@ class _GameScreenState extends State<GameScreen> {
     return l.coachPlay;
   }
 
-  Widget _whyNot(Copy l, Palette p) {
+  Widget _whyNot(TableMetrics m, Copy l, Palette p) {
     final text = _refusalText(l);
     return Positioned(
-      left: 20,
-      right: 20,
-      top: kWhyNotY,
+      left: m.margin,
+      right: m.margin,
+      top: m.whyNotY,
       height: 26,
       child: text == null
           ? const SizedBox.shrink()
@@ -800,6 +917,203 @@ class _GameScreenState extends State<GameScreen> {
       Refusal.notAllowedYet => l.wnNotAllowedYet,
       Refusal.justBought => l.wnJustBought,
     };
+  }
+}
+
+/// The table's toggles, opened out.
+///
+/// On a wide table these are four pills in the header. A narrow one has no room
+/// for them there, and at ten-point mono they were never really big enough to
+/// hit anyway — so they become the same choice rows the setup screen already
+/// uses, at the size a thumb expects.
+class _SettingsSheet extends StatelessWidget {
+  final AppPrefs prefs;
+  final Palette palette;
+  final Copy copy;
+  final VoidCallback onClose;
+
+  const _SettingsSheet({
+    required this.prefs,
+    required this.palette,
+    required this.copy,
+    required this.onClose,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final p = palette;
+    final l = copy;
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onClose,
+      child: ColoredBox(
+        color: p.scrim,
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: SheetCard(
+              palette: p,
+              children: [
+                Text(
+                  l.settingsTitle,
+                  style: T.display(24, tracking: -0.8, color: p.text),
+                ),
+                const SizedBox(height: 20),
+                ChoiceField(
+                  label: l.handOrder,
+                  palette: p,
+                  children: [
+                    Segment(
+                      label: l.orderBySuit,
+                      selected: prefs.handOrder == HandOrder.suit,
+                      palette: p,
+                      onTap: () => prefs.setHandOrder(HandOrder.suit),
+                    ),
+                    Segment(
+                      label: l.orderByRank,
+                      selected: prefs.handOrder == HandOrder.rank,
+                      palette: p,
+                      onTap: () => prefs.setHandOrder(HandOrder.rank),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                ChoiceRow(
+                  children: [
+                    Segment(
+                      label: prefs.sound ? l.soundOn : l.soundOff,
+                      selected: prefs.sound,
+                      palette: p,
+                      onTap: prefs.toggleSound,
+                    ),
+                    Segment(
+                      label: prefs.dark ? l.themeLight : l.themeDark,
+                      selected: false,
+                      palette: p,
+                      onTap: prefs.toggleTheme,
+                    ),
+                    Segment(
+                      label: prefs.lang.toggleLabel,
+                      selected: false,
+                      palette: p,
+                      onTap: prefs.toggleLang,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                Center(
+                  child: TextLink(
+                    label: l.close,
+                    palette: p,
+                    color: p.ashDim,
+                    onTap: onClose,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A stacked meld, opened out.
+///
+/// On a narrow table a meld is drawn as a stack, so only its top card shows.
+/// This is how you read the rest of it: the same cards at meld size, spread the
+/// way a wide table would already have shown them. Read-only — everything you
+/// can *do* to a meld is still done by tapping it on the felt.
+class _MeldSheet extends StatelessWidget {
+  final MeldView meld;
+  final Palette palette;
+  final VoidCallback onClose;
+
+  const _MeldSheet({
+    required this.meld,
+    required this.palette,
+    required this.onClose,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final p = palette;
+    final l = context.copy;
+    final scale = TableMetrics.landscape.meldScale;
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onClose,
+      child: ColoredBox(
+        color: p.scrim,
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+              decoration: BoxDecoration(
+                color: p.sheet,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: p.line),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        meldLabel(meld),
+                        style: mono(10, color: p.ash, tracking: 1.4),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        '${meld.points}',
+                        style: mono(
+                          10,
+                          color: meld.isCanastra
+                              ? (meld.isClean ? p.gold : p.pink)
+                              : p.ashDim,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Wrap(
+                    spacing: 4,
+                    runSpacing: 4,
+                    children: [
+                      for (var i = 0; i < meld.cards.length; i++)
+                        SizedBox(
+                          width: kCardWidth * scale,
+                          height: kCardHeight * scale,
+                          child: FittedBox(
+                            child: PlayingCard(
+                              card: meld.cards[i],
+                              palette: p,
+                              asWild: meld.wildIndices.contains(i),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Center(
+                    child: TextLink(
+                      label: l.close,
+                      palette: p,
+                      color: p.ashDim,
+                      onTap: onClose,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -912,12 +1226,18 @@ class _SeatChip extends StatelessWidget {
   final bool partner;
   final Palette palette;
 
+  /// How much room the name may take. Online names come from players, so on a
+  /// narrow table three of them would otherwise push the card counts off the
+  /// felt.
+  final double nameWidth;
+
   const _SeatChip({
     required this.name,
     required this.cards,
     required this.toPlay,
     required this.partner,
     required this.palette,
+    required this.nameWidth,
   });
 
   @override
@@ -948,7 +1268,17 @@ class _SeatChip extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          Text(name, style: T.title(13, color: p.text)),
+          Flexible(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: nameWidth),
+              child: Text(
+                name,
+                overflow: TextOverflow.ellipsis,
+                softWrap: false,
+                style: T.title(13, color: p.text),
+              ),
+            ),
+          ),
           const SizedBox(width: 8),
           // Two cards or fewer is a threat, and the wild colour is the app's
           // word for "watch out".
@@ -1076,22 +1406,18 @@ class _Message extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    body: Stage(
+    body: Room(
       palette: palette,
-      children: [
-        Positioned.fill(
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(48),
-              child: Text(
-                text,
-                textAlign: TextAlign.center,
-                style: T.title(16, color: isError ? palette.pink : palette.ash),
-              ),
-            ),
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(48),
+          child: Text(
+            text,
+            textAlign: TextAlign.center,
+            style: T.title(16, color: isError ? palette.pink : palette.ash),
           ),
         ),
-      ],
+      ),
     ),
   );
 }
