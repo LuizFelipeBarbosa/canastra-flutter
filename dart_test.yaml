@@ -9,4 +9,6 @@
 tags:
   golden:
     skip: "review aid; run with --run-skipped --update-goldens"
+  arena:
+    skip: "slow strength gate; run explicitly with --run-skipped --tags arena"
   online:
