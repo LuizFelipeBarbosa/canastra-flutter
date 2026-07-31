@@ -12,6 +12,7 @@ import '../engine/config.dart';
 import '../engine/prng.dart';
 import '../multiplayer/table_view.dart';
 import 'heuristic_score.dart';
+import 'smart_agent.dart';
 
 export 'heuristic_score.dart' show seqWildNoneValue;
 
@@ -22,7 +23,8 @@ enum AgentLevel {
   /// Greedy: melds naturals, hoards wilds, takes a pile that connects.
   normal,
 
-  /// The same policy with the tie-breaking noise turned down.
+  /// Reads opponents' melds, counts unseen cards, and remembers what they took
+  /// and threw this round. Changes its play as the stock runs low.
   hard,
 }
 
@@ -33,7 +35,7 @@ abstract class Agent {
   factory Agent.forLevel(AgentLevel level, {int seed = 0}) => switch (level) {
     AgentLevel.easy => RandomAgent(seed: seed),
     AgentLevel.normal => HeuristicAgent(seed: seed, noise: 1.0),
-    AgentLevel.hard => HeuristicAgent(seed: seed, noise: 0.05),
+    AgentLevel.hard => SmartAgent(seed: seed),
   };
 }
 

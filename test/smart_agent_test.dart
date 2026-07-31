@@ -248,8 +248,9 @@ void main() {
     }
   });
 
-  test('arena exposes smart without changing the hard ladder mapping', () {
+  // The ladder's own mapping is asserted in test/arena_test.dart; this only
+  // pins the name the arena uses to reach the policy directly.
+  test('arena exposes smart under its own name', () {
     expect(agentFactory('smart')(1), isA<SmartAgent>());
-    expect(agentFactory('hard')(1), isNot(isA<SmartAgent>()));
   });
 }

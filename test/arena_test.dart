@@ -1,5 +1,6 @@
 import 'package:canastra/ai/agent.dart';
 import 'package:canastra/ai/arena.dart';
+import 'package:canastra/ai/smart_agent.dart';
 import 'package:canastra/engine/profiles.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -18,7 +19,7 @@ void main() {
     expect(agentFactory('easy')(1), isA<RandomAgent>());
     expect(agentFactory('normal')(1), isA<HeuristicAgent>());
     expect(agentFactory('hard-legacy')(1), isA<HeuristicAgent>());
-    expect(agentFactory('hard')(1), isA<HeuristicAgent>());
+    expect(agentFactory('hard')(1), isA<SmartAgent>());
     expect(() => agentFactory('unknown'), throwsArgumentError);
 
     expect(agentFactory('easy')(1), isNot(same(agentFactory('easy')(1))));
@@ -57,4 +58,26 @@ void main() {
     expect(result.diagnosticsB.rounds, result.diagnosticsA.rounds);
     expect(result.format(), contains('Match win rate'));
   });
+
+  test('smart has a reproducible advantage over hard-legacy', () {
+    final result = runRoundArena(
+      ArenaSpec(
+        cfg: loadProfile('buraco', numPlayers: 2),
+        games: 1000,
+        baseSeed: 1,
+        makeA: agentFactory('smart'),
+        makeB: agentFactory('hard-legacy'),
+        nameA: 'smart',
+        nameB: 'hard-legacy',
+      ),
+    );
+    final reason =
+        'meanDiff=${result.meanDiff} seDiff=${result.seDiff}; '
+        'smart must retain a large, reproducible advantage over hard-legacy';
+
+    expect(result.meanDiff, greaterThan(25), reason: reason);
+    // A raw point or win-rate gate can drift with tuning or pass by luck on a
+    // small sample; clearing multiple standard errors shows a real advantage.
+    expect(result.meanDiff > 2 * result.seDiff, isTrue, reason: reason);
+  }, tags: ['arena']);
 }
