@@ -36,7 +36,9 @@ class MeldBox extends StatefulWidget {
 
   /// Too narrow for the meld's name. The count takes its place: the rank is
   /// already legible on the top card, and the name is still what a screen
-  /// reader is given.
+  /// reader is given — and the seal is cut down to match, since a box this
+  /// narrow cannot carry a full-size stamp without borrowing its neighbour's
+  /// room.
   final bool compact;
 
   final VoidCallback? onTap;
@@ -172,12 +174,13 @@ class _MeldBoxState extends State<MeldBox> with TickerProviderStateMixin {
               ),
               if (meld.isCanastra)
                 Positioned(
-                  right: -8,
-                  top: -7,
+                  right: widget.compact ? -3 : -8,
+                  top: widget.compact ? -3 : -7,
                   child: _Seal(
                     progress: _stamp,
                     clean: meld.isClean,
                     palette: p,
+                    compact: widget.compact,
                   ),
                 ),
               if (widget.bonus != 0)
@@ -200,15 +203,22 @@ class _MeldBoxState extends State<MeldBox> with TickerProviderStateMixin {
 
 /// LIMPA or SUJA, slammed down like a rubber stamp: in from far too big,
 /// undershooting once before it settles.
+///
+/// A stacked meld is barely wider than the card it shows, so there the stamp is
+/// struck from a smaller die — the same word at the same angle in the same two
+/// colours, only sized to hang off its own corner rather than across the row
+/// label above it and the meld beside it.
 class _Seal extends StatelessWidget {
   final Animation<double> progress;
   final bool clean;
   final Palette palette;
+  final bool compact;
 
   const _Seal({
     required this.progress,
     required this.clean,
     required this.palette,
+    required this.compact,
   });
 
   @override
@@ -231,13 +241,19 @@ class _Seal extends StatelessWidget {
         );
       },
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 4 : 7,
+          vertical: compact ? 2 : 3,
+        ),
         decoration: BoxDecoration(
           color: palette.sealBg,
-          borderRadius: BorderRadius.circular(4),
-          border: Border.all(color: accent, width: 1.6),
+          borderRadius: BorderRadius.circular(compact ? 3 : 4),
+          border: Border.all(color: accent, width: compact ? 1.2 : 1.6),
         ),
-        child: Text(clean ? 'LIMPA' : 'SUJA', style: mono(9, color: accent)),
+        child: Text(
+          clean ? 'LIMPA' : 'SUJA',
+          style: mono(compact ? 7 : 9, color: accent),
+        ),
       ),
     );
   }

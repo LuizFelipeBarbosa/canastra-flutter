@@ -40,6 +40,36 @@ List<CardSpot> _meldedCards(TableLayout layout) => [
     if (spot.key.startsWith('meld:')) spot,
 ];
 
+/// Every meld box and every card in one is inside the felt, and nothing was
+/// shrunk past what the stage allows.
+///
+/// A stage clips, so a meld box past the edge is not an untidy overflow but a
+/// meld the player cannot see at all — which makes this the one thing a crowded
+/// row is not allowed to trade away.
+///
+/// Your own melds owe one thing more. They are drop targets, and on a wide
+/// table they share their row with the play area, so stopping at the felt is
+/// not enough: a box that merely reaches the edge has been drawn underneath a
+/// tap target, which is the reason your row is handed a narrower span to
+/// compress into in the first place.
+void _expectOnTheFelt(TableLayout layout, TableMetrics m, String where) {
+  for (final meld in layout.melds) {
+    expect(meld.x, greaterThanOrEqualTo(m.margin), reason: where);
+    expect(meld.x + meld.width, _withinFelt(m), reason: where);
+    if (meld.mine) {
+      expect(
+        meld.x + meld.width,
+        lessThanOrEqualTo(m.margin + m.myMeldSpan + 1e-9),
+        reason: where,
+      );
+    }
+  }
+  for (final spot in _meldedCards(layout)) {
+    expect(spot.x + kCardWidth * spot.scale, _withinFelt(m), reason: where);
+    expect(spot.scale, greaterThanOrEqualTo(m.minMeldScale), reason: where);
+  }
+}
+
 const _words = ZoneWords(
   stock: 'stock',
   pile: 'pile',
@@ -61,6 +91,10 @@ const _words = ZoneWords(
 /// [owner] is the side that laid them: 0 is yours, and anything else is the
 /// opponent's row, which is laid out on its own terms and was for a long time
 /// never exercised here at all.
+///
+/// [meldSizes] lays a row of melds of stated sizes; without it the row is
+/// [meldCount] melds of [meldSize] each, which is the shape a swept matrix
+/// wants and not the shape a real round produces.
 TableLayout _crowdedTableLayout({
   List<CardId> hand = const [],
   List<CardId>? handOverride,
@@ -70,18 +104,23 @@ TableLayout _crowdedTableLayout({
   int owner = 0,
   int meldCount = 9,
   int meldSize = 7,
+  List<int>? meldSizes,
 }) {
+  final sizes = meldSizes ?? List.filled(meldCount, meldSize);
   final melds = [
-    for (var slot = 0; slot < meldCount; slot++)
+    for (var slot = 0; slot < sizes.length; slot++)
       MeldView(
         owner: owner,
         isSequence: false,
         suit: null,
-        rank: slot,
+        // A row can be longer than there are ranks, so the rank wraps: the fit
+        // is geometry and does not care which cards these are, but `cardId`
+        // does, and a rank past the twelfth would leave the deck entirely.
+        rank: slot % 13,
         startPos: null,
         cards: [
-          for (var copy = 0; copy < meldSize; copy++)
-            cardId(slot, copy % Suit.values.length),
+          for (var copy = 0; copy < sizes[slot]; copy++)
+            cardId(slot % 13, copy % Suit.values.length),
         ],
         wildIndices: const [],
         isCanastra: true,
@@ -383,89 +422,73 @@ void main() {
     }
   });
 
-  // One to ten melds down, of three to fourteen cards each, on either side —
-  // the whole range a side can reach in a game, and the range the fit has to
-  // survive. The two stages give ground very differently once it is crowded, so
-  // each gets the test its own concessions can pass.
-  const counts = 10;
+  // One to sixteen melds down, of three to fourteen cards each, on either side.
+  // Sixteen is not a guess at a ceiling: a bot round in the golden suite ends
+  // with fifteen melds on one row, so a row of ten was never the range the fit
+  // had to survive.
+  const counts = 16;
   const sizes = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
 
-  test('a row of stacks stays on the felt at every size a side can meld', () {
-    const m = TableMetrics.portrait;
-    for (var count = 1; count <= counts; count++) {
-      for (final size in sizes) {
-        // The opponent is the harder of the two: their melds get one row and
-        // yours get two, so ten of theirs meet the felt side by side.
-        for (final owner in const [0, 1]) {
-          final layout = _crowdedTableLayout(
-            metrics: m,
-            owner: owner,
-            meldCount: count,
-            meldSize: size,
-          );
-          final where = 'side $owner, $count melds of $size';
+  // The most cards one side can hold in front of it, counted rather than
+  // guessed at. Buraco deals from two decks — a hundred and four cards — and
+  // the other side's morto is eleven of them that this side can never touch,
+  // while an opponent still in the round holds at least one. Ninety-two is
+  // what remains. Past it the arithmetic of the deck says the row cannot
+  // happen, and a row that cannot happen is welcome to overflow.
+  const mostOneSideCanMeld = 92;
 
-          expect(layout.melds.length, count, reason: where);
-          for (final meld in layout.melds) {
-            expect(meld.x, greaterThanOrEqualTo(m.margin), reason: where);
-            expect(meld.x + meld.width, _withinFelt(m), reason: where);
-          }
-          for (final spot in _meldedCards(layout)) {
-            expect(
-              spot.x + kCardWidth * spot.scale,
-              _withinFelt(m),
-              reason: where,
+  for (final (name, m) in const [
+    ('a wide table', TableMetrics.landscape),
+    ('a phone held upright', TableMetrics.portrait),
+  ]) {
+    test('every meld a side can lay stays on the felt on $name', () {
+      for (var count = 1; count <= counts; count++) {
+        for (final size in sizes) {
+          if (count * size > mostOneSideCanMeld) continue;
+          // The opponent is the harder of the two on a phone — their melds get
+          // one row and yours get two — and the easier on a wide table, where
+          // yours give up the play area's width and theirs do not.
+          for (final owner in const [0, 1]) {
+            final layout = _crowdedTableLayout(
+              metrics: m,
+              owner: owner,
+              meldCount: count,
+              meldSize: size,
             );
-            expect(
-              spot.scale,
-              greaterThanOrEqualTo(m.minMeldScale),
-              reason: where,
-            );
+            final where = 'side $owner, $count melds of $size';
+
+            expect(layout.melds.length, count, reason: where);
+            _expectOnTheFelt(layout, m, where);
           }
         }
       }
-    }
-  });
+    });
+  }
 
-  test('a spread row leaves the felt only once it is at its floor', () {
-    const m = TableMetrics.landscape;
-    // A wide table has only the one concession to make. Past the point where a
-    // rank in the corner would start to be covered it is documented to overflow
-    // rather than become unreadable, and six melds of fourteen still do — the
-    // felt holds five. What is checked here is that nothing leaves early:
-    // whatever overflows has spent its compression first, and no card on a
-    // spread row is ever drawn smaller than the design's size.
-    final floor = m.meldCardWidth * 0.26;
-    for (var count = 1; count <= counts; count++) {
-      for (final size in sizes) {
-        for (final owner in const [0, 1]) {
-          final layout = _crowdedTableLayout(
-            metrics: m,
-            owner: owner,
-            meldCount: count,
-            meldSize: size,
-          );
-          final where = 'side $owner, $count melds of $size';
-          final drawn = _meldedCards(layout);
+  test('the round the goldens play out stays on the felt', () {
+    // Not a shape anyone chose. The `round sheet` golden plays a seeded buraco
+    // round out against a normal bot, and this is what the bot's side is
+    // holding when it goes out: fifteen melds, eighty-two cards, uneven the way
+    // a real row is and nothing like a swept matrix of equal melds. It is also
+    // the round that caught this bug — the golden it shot was a picture of five
+    // melds clipped off the edge of the felt and a sixth sliced in half.
+    //
+    // Reproduce with `flutter test --run-skipped test/golden_test.dart`.
+    const seed21 = [8, 5, 7, 8, 6, 6, 7, 4, 7, 5, 4, 4, 4, 4, 3];
+    for (final (name, m) in const [
+      ('a wide table', TableMetrics.landscape),
+      ('a phone held upright', TableMetrics.portrait),
+    ]) {
+      for (final owner in const [0, 1]) {
+        final layout = _crowdedTableLayout(
+          metrics: m,
+          owner: owner,
+          meldSizes: seed21,
+        );
+        final where = '$name, side $owner';
 
-          for (final meld in layout.melds) {
-            expect(meld.x, greaterThanOrEqualTo(m.margin), reason: where);
-          }
-          for (final spot in drawn) {
-            expect(spot.scale, m.meldScale, reason: where);
-          }
-
-          final overflowed = layout.melds.any(
-            (meld) => meld.x + meld.width > m.size.width - m.margin + 1e-9,
-          );
-          if (overflowed) {
-            expect(drawn[1].x - drawn[0].x, moreOrLessEquals(floor));
-            continue;
-          }
-          for (final spot in drawn) {
-            expect(spot.x + kCardWidth * spot.scale, _withinFelt(m));
-          }
-        }
+        expect(layout.melds.length, seed21.length, reason: where);
+        _expectOnTheFelt(layout, m, where);
       }
     }
   });
