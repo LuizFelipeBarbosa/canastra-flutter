@@ -381,6 +381,11 @@ void main() {
       }
     });
 
+    test('the hand-order toggle sits below the hand on $name', () {
+      expect(m.handY + kCardHeight, lessThanOrEqualTo(m.handOrderY));
+      expect(m.handOrderY + kHandOrderHeight, lessThanOrEqualTo(m.size.height));
+    });
+
     test('three opponents fan inside $name', () {
       final spots = _crowdedTableLayout(
         metrics: m,

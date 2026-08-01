@@ -28,6 +28,9 @@ const double kPileScale = 0.72;
 const double kMortoScale = 0.52;
 const double kOpponentScale = 0.42;
 
+/// How tall the hand-order toggle's band is.
+const double kHandOrderHeight = 24;
+
 /// How a side's melds are packed onto the felt.
 enum MeldStyle {
   /// One row per side, each meld spread out so every card in it is readable,
@@ -124,6 +127,9 @@ class TableMetrics {
   final double handY;
   final double handLift;
 
+  /// Where the hand-order toggle rests beneath it.
+  final double handOrderY;
+
   /// The bar across the top, and the row of seat chips under it.
   final double headerHeight;
   final double seatChipsY;
@@ -169,6 +175,7 @@ class TableMetrics {
     required this.whyNotY,
     required this.handY,
     required this.handLift,
+    required this.handOrderY,
     required this.headerHeight,
     required this.seatChipsY,
     required this.headerTitleWidth,
@@ -205,6 +212,7 @@ class TableMetrics {
     whyNotY: 518,
     handY: 596,
     handLift: 22,
+    handOrderY: 720,
     headerHeight: 58,
     seatChipsY: 62,
     headerTitleWidth: double.infinity,
@@ -219,7 +227,8 @@ class TableMetrics {
   ///
   /// The bands run: header, seat chips, the activity line, the opponents' fan,
   /// their melds, the three zones, your melds over two rows, the play area, the
-  /// strip, the refusal line, and your hand along the bottom.
+  /// strip, the refusal line, your hand along the bottom, and the hand-order
+  /// toggle.
   static const portrait = TableMetrics(
     size: kStagePortrait,
     margin: 16,
@@ -241,11 +250,12 @@ class TableMetrics {
     pileX: 155,
     mortoX: 294,
     mortoZoneWidth: 106,
-    stripY: 606,
+    stripY: 600,
     stripHeight: 44,
-    whyNotY: 654,
-    handY: 716,
+    whyNotY: 648,
+    handY: 702,
     handLift: 22,
+    handOrderY: 814,
     headerHeight: 48,
     seatChipsY: 52,
     headerTitleWidth: 150,

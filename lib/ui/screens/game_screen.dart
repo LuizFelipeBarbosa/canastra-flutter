@@ -290,6 +290,7 @@ class _GameScreenState extends State<GameScreen> {
           _header(m, view, prefs, p, l),
           _opponents(m, view, l, p),
           if (!c.spectating) _strip(m, view, l, p),
+          if (!c.spectating) _handOrder(m, prefs, p, l),
           _whyNot(m, l, p),
           if (_settingsOpen)
             Positioned.fill(
@@ -599,15 +600,6 @@ class _GameScreenState extends State<GameScreen> {
                 const SizedBox(width: 14),
               ],
               Pill(
-                label: prefs.handOrder == HandOrder.suit
-                    ? l.orderBySuit
-                    : l.orderByRank,
-                palette: p,
-                round: true,
-                onTap: prefs.toggleHandOrder,
-              ),
-              const SizedBox(width: 6),
-              Pill(
                 label: prefs.sound ? l.soundOn : l.soundOff,
                 palette: p,
                 round: true,
@@ -838,6 +830,25 @@ class _GameScreenState extends State<GameScreen> {
       ),
     );
   }
+
+  /// Keeps the way your hand is ordered directly beneath the cards it moves.
+  Widget _handOrder(TableMetrics m, AppPrefs prefs, Palette p, Copy l) =>
+      Positioned(
+        left: 0,
+        right: 0,
+        top: m.handOrderY,
+        height: kHandOrderHeight,
+        child: Center(
+          child: HandOrderToggle(
+            suitLabel: l.orderBySuit,
+            rankLabel: l.orderByRank,
+            rankSelected: prefs.handOrder == HandOrder.rank,
+            palette: p,
+            onChanged: (rank) =>
+                prefs.setHandOrder(rank ? HandOrder.rank : HandOrder.suit),
+          ),
+        ),
+      );
 
   /// The strip carries only the moves that have nowhere on the table to be
   /// pressed: going out, and conceding a round nobody can draw in.

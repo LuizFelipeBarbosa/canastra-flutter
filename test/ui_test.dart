@@ -34,8 +34,10 @@ import 'package:canastra/ui/screens/queue_screen.dart';
 import 'package:canastra/ui/screens/setup_screen.dart';
 import 'package:canastra/ui/screens/sign_in_screen.dart';
 import 'package:canastra/ui/theme.dart';
+import 'package:canastra/ui/widgets/controls.dart';
 import 'package:canastra/ui/widgets/meld_box.dart';
 import 'package:canastra/ui/widgets/playing_card.dart';
+import 'package:canastra/ui/widgets/table_layout.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -534,6 +536,57 @@ void main() {
     await tester.pump();
 
     expect(find.text(prefs.copy.stock), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('the hand-order toggle sorts on both stages', (tester) async {
+    List<CardId> displayedHand() {
+      final cards = find.descendant(
+        of: find.byType(Hoverable),
+        matching: find.byType(PlayingCard),
+      );
+      final positioned = [
+        for (var i = 0; i < cards.evaluate().length; i++)
+          (
+            card: tester.widget<PlayingCard>(cards.at(i)).card,
+            x: tester.getTopLeft(cards.at(i)).dx,
+          ),
+      ]..sort((a, b) => a.x.compareTo(b.x));
+      return [for (final item in positioned) item.card];
+    }
+
+    final controller = await _dealt(tester, 'buraco');
+    final prefs = await _pumpAt(
+      tester,
+      _desktop,
+      GameScreen(controller: controller),
+    );
+    await tester.pump(const Duration(seconds: 2));
+
+    final suitOrder = controller.view!.hand;
+    final rankOrder = [...suitOrder]..sort(rankMajorOrder);
+    expect(rankOrder, isNot(equals(suitOrder)), reason: 'landscape');
+    expect(displayedHand(), suitOrder, reason: 'landscape');
+    expect(find.text(prefs.copy.orderByRank), findsOneWidget);
+
+    await tester.tap(find.text(prefs.copy.orderByRank));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(prefs.handOrder, HandOrder.rank, reason: 'landscape');
+    expect(displayedHand(), rankOrder, reason: 'landscape');
+    expect(tester.takeException(), isNull);
+
+    tester.view.physicalSize = _phone;
+    await tester.pump();
+
+    expect(find.text(prefs.copy.orderBySuit), findsOneWidget);
+    await tester.tap(find.text(prefs.copy.orderBySuit));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(prefs.handOrder, HandOrder.suit, reason: 'portrait');
+    expect(displayedHand(), suitOrder, reason: 'portrait');
     expect(tester.takeException(), isNull);
   });
 

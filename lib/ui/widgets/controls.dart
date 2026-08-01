@@ -93,6 +93,70 @@ class Pill extends StatelessWidget {
   );
 }
 
+/// A two-way pill that keeps the player's hand order within reach.
+class HandOrderToggle extends StatelessWidget {
+  final String suitLabel;
+  final String rankLabel;
+  final bool rankSelected;
+  final Palette palette;
+  final ValueChanged<bool> onChanged;
+
+  const HandOrderToggle({
+    super.key,
+    required this.suitLabel,
+    required this.rankLabel,
+    required this.rankSelected,
+    required this.palette,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) => Container(
+    height: 24,
+    decoration: BoxDecoration(
+      borderRadius: BorderRadius.circular(999),
+      border: Border.all(color: palette.line),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _choice(context, label: suitLabel, rank: false),
+        _choice(context, label: rankLabel, rank: true),
+      ],
+    ),
+  );
+
+  Widget _choice(
+    BuildContext context, {
+    required String label,
+    required bool rank,
+  }) {
+    final selected = rankSelected == rank;
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: Hoverable(
+        onTap: () => onChanged(rank),
+        builder: (hovered) => AnimatedContainer(
+          duration: Motion.of(context, Motion.quick),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: selected ? palette.panelHot : Colors.transparent,
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            label,
+            style: mono(
+              10,
+              color: selected || hovered ? palette.mint : palette.ash,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// One choice in a row of them — a difficulty, a match target, a toggle.
 ///
 /// Every segment takes an equal share of the row, so the row's width does not
