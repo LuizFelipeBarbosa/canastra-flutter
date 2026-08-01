@@ -836,8 +836,8 @@ class _GameScreenState extends State<GameScreen> {
       Positioned(
         left: 0,
         right: 0,
-        top: m.handOrderY,
-        height: kHandOrderHeight,
+        top: m.handOrderY - kHandOrderHitPad,
+        height: kHandOrderHeight + 2 * kHandOrderHitPad,
         child: Center(
           child: HandOrderToggle(
             suitLabel: l.orderBySuit,

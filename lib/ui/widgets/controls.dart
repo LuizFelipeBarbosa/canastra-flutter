@@ -93,6 +93,9 @@ class Pill extends StatelessWidget {
   );
 }
 
+/// Invisible slop above and below the pill so a thumb can hit it.
+const double kHandOrderHitPad = 8;
+
 /// A two-way pill that keeps the player's hand order within reach.
 class HandOrderToggle extends StatelessWidget {
   final String suitLabel;
@@ -111,19 +114,28 @@ class HandOrderToggle extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) => Container(
-    height: 24,
-    decoration: BoxDecoration(
-      borderRadius: BorderRadius.circular(999),
-      border: Border.all(color: palette.line),
-    ),
-    child: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _choice(context, label: suitLabel, rank: false),
-        _choice(context, label: rankLabel, rank: true),
-      ],
-    ),
+  Widget build(BuildContext context) => Stack(
+    children: [
+      Positioned.fill(
+        top: kHandOrderHitPad,
+        bottom: kHandOrderHitPad,
+        child: IgnorePointer(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: palette.line),
+            ),
+          ),
+        ),
+      ),
+      Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _choice(context, label: suitLabel, rank: false),
+          _choice(context, label: rankLabel, rank: true),
+        ],
+      ),
+    ],
   );
 
   Widget _choice(
@@ -137,18 +149,21 @@ class HandOrderToggle extends StatelessWidget {
       selected: selected,
       child: Hoverable(
         onTap: () => onChanged(rank),
-        builder: (hovered) => AnimatedContainer(
-          duration: Motion.of(context, Motion.quick),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-          decoration: BoxDecoration(
-            color: selected ? palette.panelHot : Colors.transparent,
-            borderRadius: BorderRadius.circular(999),
-          ),
-          child: Text(
-            label,
-            style: mono(
-              10,
-              color: selected || hovered ? palette.mint : palette.ash,
+        builder: (hovered) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: kHandOrderHitPad),
+          child: AnimatedContainer(
+            duration: Motion.of(context, Motion.quick),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: selected ? palette.panelHot : Colors.transparent,
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              label,
+              style: mono(
+                10,
+                color: selected || hovered ? palette.mint : palette.ash,
+              ),
             ),
           ),
         ),

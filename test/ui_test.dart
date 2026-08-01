@@ -550,9 +550,15 @@ void main() {
           (
             card: tester.widget<PlayingCard>(cards.at(i)).card,
             x: tester.getTopLeft(cards.at(i)).dx,
+            y: tester.getTopLeft(cards.at(i)).dy,
           ),
-      ]..sort((a, b) => a.x.compareTo(b.x));
-      return [for (final item in positioned) item.card];
+      ];
+      final maxY = positioned
+          .map((item) => item.y)
+          .reduce((a, b) => a > b ? a : b);
+      final hand = positioned.where((item) => maxY - item.y <= 40).toList()
+        ..sort((a, b) => a.x.compareTo(b.x));
+      return [for (final item in hand) item.card];
     }
 
     final controller = await _dealt(tester, 'buraco');
@@ -566,6 +572,7 @@ void main() {
     final suitOrder = controller.view!.hand;
     final rankOrder = [...suitOrder]..sort(rankMajorOrder);
     expect(rankOrder, isNot(equals(suitOrder)), reason: 'landscape');
+    expect(displayedHand().length, suitOrder.length);
     expect(displayedHand(), suitOrder, reason: 'landscape');
     expect(find.text(prefs.copy.orderByRank), findsOneWidget);
 
