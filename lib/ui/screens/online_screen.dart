@@ -69,6 +69,23 @@ class _OnlineScreenState extends State<OnlineScreen> {
     super.dispose();
   }
 
+  /// Picks up a guest session before an online table needs one.
+  ///
+  /// A host that records matches has to be able to name who sat down, and the
+  /// anonymous session costs the player nothing — no email, no password, and it
+  /// survives a reload. A build with no Supabase behind it gets the in-memory
+  /// backend's local guest instead, which carries no token; whether that gets a
+  /// seat is the host's call, not this screen's.
+  Future<bool> _ensureSignedIn(Account account, String failureMessage) async {
+    try {
+      await account.ensureSession();
+      return true;
+    } on AccountException {
+      if (mounted) setState(() => _error = failureMessage);
+      return false;
+    }
+  }
+
   /// Ask the backend for a fresh table and drop its code into the field, so
   /// creating and joining share one path: the code the server minted is the
   /// room code the host sees.
@@ -77,11 +94,13 @@ class _OnlineScreenState extends State<OnlineScreen> {
 
     final account = context.account;
     final target = context.prefs.target;
+    final failureMessage = context.copy.auth.somethingBroke;
     setState(() {
       _creating = true;
       _error = null;
     });
     try {
+      if (!await _ensureSignedIn(account, failureMessage)) return;
       final code = await account.createRoom(
         profileId: widget.profileId,
         numPlayers: _players,
@@ -116,6 +135,10 @@ class _OnlineScreenState extends State<OnlineScreen> {
     setState(() => _error = null);
 
     final target = context.prefs.target;
+    final account = context.account;
+    if (!await _ensureSignedIn(account, l.auth.somethingBroke)) return;
+    if (!mounted) return;
+
     final cfg = loadProfile(
       widget.profileId,
       numPlayers: _players,
@@ -133,6 +156,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
             ? l.onlineDefaultPlayer
             : _name.text.trim(),
         spectate: spectate,
+        authToken: account.accessToken,
         profileId: widget.profileId,
         numPlayers: _players,
         matchTarget: target,
@@ -300,10 +324,11 @@ class _OnlineScreenState extends State<OnlineScreen> {
                 onTap: () => _join(spectate: true),
               ),
             ),
-            // Creating needs an account: the server mints the code against
-            // the signed-in owner. A signed-out player can still join any
-            // table whose name or code they were given.
-            if (hasBackend && context.account.signedIn) ...[
+            // The server mints the code against an owner, so creating needs an
+            // identity — but a signed-out player picks up a guest one on the
+            // way rather than being turned away. A build with no backend has
+            // no server to mint anything, so it still hides this.
+            if (hasBackend) ...[
               const SizedBox(height: 14),
               Center(
                 child: TextLink(

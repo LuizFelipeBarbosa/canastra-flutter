@@ -55,6 +55,18 @@ class SupabaseAuthBackend implements AuthBackend {
   }
 
   @override
+  Future<String?> accessToken() async {
+    try {
+      // The SDK refreshes in the background, so a session that is still present
+      // is the freshest token this client has. A stale one is the host's
+      // problem to reject, not a reason to refuse the connection here.
+      return _client.auth.currentSession?.accessToken;
+    } on Object {
+      return null;
+    }
+  }
+
+  @override
   Future<AuthUser> signInAnonymously() => _guard(() async {
     final response = await _client.auth.signInAnonymously();
     return _requiredUser(response.user);
@@ -91,13 +103,19 @@ class SupabaseAuthBackend implements AuthBackend {
       });
 
   @override
-  Future<AuthUser> signUpWithPassword(String email, String password) =>
+  Future<SignUpResult> signUpWithPassword(String email, String password) =>
       _guard(() async {
         final response = await _client.auth.signUp(
           email: email,
           password: password,
         );
-        return _requiredUser(response.user);
+        // With confirmation required, GoTrue answers with the new user and no
+        // session at all. Reporting that as a sign-in would leave the player
+        // holding an identity the server refuses to honour.
+        return SignUpResult(
+          user: _requiredUser(response.user),
+          needsConfirmation: response.session == null,
+        );
       });
 
   @override

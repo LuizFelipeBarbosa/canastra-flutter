@@ -193,6 +193,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
               endpoint: uri,
               roomCode: roomCode,
               playerName: playerName,
+              authToken: context.account.accessToken,
             ),
       );
       setState(() {

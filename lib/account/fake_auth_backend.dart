@@ -23,6 +23,10 @@ class FakeAuthBackend implements AuthBackend {
   int _nextGuest = 1;
   int _nextPlayer = 1;
 
+  /// Mirrors a project with email confirmation on: sign-up creates the account
+  /// but hands back no session until the emailed code is redeemed.
+  bool signUpNeedsConfirmation = false;
+
   (int played, int won, int best)? uploadedLegacy;
 
   /// The last room created through this fake, for assertions.
@@ -51,6 +55,12 @@ class FakeAuthBackend implements AuthBackend {
 
   @override
   Future<AuthUser?> restore() async => _user;
+
+  @override
+  Future<String?> accessToken() async {
+    final user = _user;
+    return user == null ? null : 'fake-token-${user.id}';
+  }
 
   @override
   Future<AuthUser> signInAnonymously() async {
@@ -111,7 +121,7 @@ class FakeAuthBackend implements AuthBackend {
   }
 
   @override
-  Future<AuthUser> signUpWithPassword(String email, String password) async {
+  Future<SignUpResult> signUpWithPassword(String email, String password) async {
     if (_passwordUsers.containsKey(email)) {
       throw const AccountException(
         AccountError.accountExists,
@@ -120,8 +130,16 @@ class FakeAuthBackend implements AuthBackend {
     }
     final user = _newPlayer(email);
     _passwordUsers[email] = (password: password, user: user);
-    _setUser(user);
-    return user;
+    if (!signUpNeedsConfirmation) {
+      _setUser(user);
+      _otpEmail = null;
+    } else {
+      _otpEmail = email;
+    }
+    return SignUpResult(
+      user: user,
+      needsConfirmation: signUpNeedsConfirmation,
+    );
   }
 
   @override
