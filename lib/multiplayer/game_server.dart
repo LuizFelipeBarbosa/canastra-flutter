@@ -31,6 +31,14 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 enum _ConnState { idle, authorizing, seated, spectating }
 
+/// What `authorize_room_join` answers for a code it has no row for.
+///
+/// The wording is the contract: it is the one refusal the host reads as "this
+/// table was never registered" rather than "you may not sit here". Changing the
+/// string in `supabase/migrations/0002_rooms.sql` without changing it here
+/// turns every casual table into a closed door.
+const _unregisteredRoom = 'no such room';
+
 class _MatchRecorder {
   final GameBackend backend;
   final String roomCode;
@@ -429,7 +437,9 @@ class GameServer {
                 '[${spectate.roomCode}] room authorization unavailable; '
                 'allowing spectator',
               );
-            } else if (authorization['ok'] != true) {
+            } else if (authorization['ok'] != true &&
+                authorization['reason'] != _unregisteredRoom) {
+              // An unregistered code is not a refusal — see the join path.
               final reason = authorization['reason'];
               channel.sink.add(
                 jsonEncode(
@@ -527,15 +537,24 @@ class GameServer {
               );
             } else if (authorization['ok'] != true) {
               final reason = authorization['reason'];
-              channel.sink.add(
-                jsonEncode(
-                  ServerError(
-                    message: reason is String ? reason : 'room join refused',
-                  ).toJson(),
-                ),
-              );
-              await channel.sink.close();
-              return;
+              if (reason == _unregisteredRoom) {
+                // Not a refusal: a table nobody registered. Players who agree
+                // on a name and meet there are the casual path this game
+                // shipped with, so they get the same open, unranked seating a
+                // backend outage gives. Every real refusal — expired, full,
+                // not invited — still ends the connection.
+                authorization = null;
+              } else {
+                channel.sink.add(
+                  jsonEncode(
+                    ServerError(
+                      message: reason is String ? reason : 'room join refused',
+                    ).toJson(),
+                  ),
+                );
+                await channel.sink.close();
+                return;
+              }
             }
           }
           if (connectionClosed) return;

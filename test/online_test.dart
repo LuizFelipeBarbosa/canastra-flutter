@@ -1413,6 +1413,45 @@ void main() {
       expect(client.events.whereType<Joined>(), isEmpty);
     });
 
+    test('an unregistered room code still seats a casual table', () async {
+      // The refusal the database gives for a code nobody created. Players who
+      // agree on a table name and meet there predate rooms entirely, so this
+      // one reason has to mean "open table", not "go away".
+      final backend = _RecordingBackend(
+        authorizationResponse: {'ok': false, 'reason': 'no such room'},
+      );
+      final server = GameServer(verifier: _StubVerifier(), backend: backend);
+      final hosted = await _serveServer(server);
+      addTearDown(() async {
+        await hosted.http.close(force: true);
+        await server.dispose();
+      });
+      final client = _Client(
+        WebSocketTransport(
+          endpoint: hosted.endpoint,
+          roomCode: 'mesa-1',
+          playerName: 'Ana',
+          authToken: () async => 'good-token',
+          profileId: 'buraco',
+          numPlayers: 2,
+          matchTarget: 1500,
+          maxRetries: 0,
+        ),
+      );
+      addTearDown(client.transport.dispose);
+      final joined = _nextEvent<Joined>(client);
+      final lobby = _nextEvent<LobbyUpdate>(client);
+
+      await client.transport.connect();
+
+      expect((await joined).seat, equals(0));
+      // The client's own declaration stands, exactly as on an open host.
+      final update = await lobby;
+      expect(update.profile, equals('buraco'));
+      expect(update.matchTarget, equals(1500));
+      expect(client.events.whereType<ServerError>(), isEmpty);
+    });
+
     test('an unreachable room backend falls back to open seating', () async {
       final backend = _RecordingBackend();
       final server = GameServer(verifier: _StubVerifier(), backend: backend);
