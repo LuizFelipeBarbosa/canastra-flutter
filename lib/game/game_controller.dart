@@ -270,12 +270,22 @@ class GameController extends ChangeNotifier {
   // --- picking cards up ---------------------------------------------------
 
   /// Pick a card up, or put it back down.
-  void toggleCard(CardId card) {
+  ///
+  /// A two-deck game can hold the same card type twice, and the selection keeps
+  /// one entry per copy. The type alone cannot say which way a tap on a
+  /// duplicate should go, so [selected] carries whether the tapped copy was
+  /// already picked up. Without it, the first copy of the type toggles.
+  void toggleCard(CardId card, {bool? selected}) {
     if (_blockSpectatorAction()) return;
     if (!myTurn || busy) return;
     _notice = null;
     _refusal = null;
-    if (!_selection.remove(card)) _selection.add(card);
+    final putDown = selected ?? _selection.contains(card);
+    if (putDown) {
+      _selection.remove(card);
+    } else {
+      _selection.add(card);
+    }
     _replan();
     notifyListeners();
   }
