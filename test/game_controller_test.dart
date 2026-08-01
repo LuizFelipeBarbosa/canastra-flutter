@@ -254,17 +254,31 @@ void main() {
     // The table reports which copy a tap landed on: a copy still resting in
     // the hand picks up, a lifted one goes back down. Tapping the second
     // resting copy must add it, not put its twin back down.
-    controller.toggleCard(fiveClubs, selected: false);
+    controller.toggleCard(fiveClubs, selected: false, copy: 0);
     expect(controller.selection, equals([fiveClubs]));
 
-    controller.toggleCard(fiveClubs, selected: false);
+    controller.toggleCard(fiveClubs, selected: false, copy: 1);
     expect(controller.selection, equals([fiveClubs, fiveClubs]));
 
-    controller.toggleCard(fiveClubs, selected: true);
+    controller.toggleCard(fiveClubs, selected: true, copy: 0);
     expect(controller.selection, equals([fiveClubs]));
 
-    controller.toggleCard(fiveClubs, selected: true);
+    controller.toggleCard(fiveClubs, selected: true, copy: 1);
     expect(controller.selection, isEmpty);
+  });
+
+  test('tapping the second twin lifts that copy, not the first', () async {
+    final table = await _table(
+      rig: (host) => _setPlayHand(host, [fiveClubs, fiveClubs, ...ballast]),
+    );
+    final controller = table.controller;
+
+    controller.toggleCard(fiveClubs, selected: false, copy: 1);
+    expect(controller.picked, equals([(ct: fiveClubs, copy: 1)]));
+
+    // Putting the untouched first copy's twin down leaves nothing lifted.
+    controller.toggleCard(fiveClubs, selected: true, copy: 1);
+    expect(controller.picked, isEmpty);
   });
 
   test(

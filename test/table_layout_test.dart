@@ -2,6 +2,7 @@
 library;
 
 import 'package:canastra/engine/cards.dart';
+import 'package:canastra/game/game_controller.dart' show PickedCard;
 import 'package:canastra/game/move_index.dart';
 import 'package:canastra/multiplayer/table_view.dart';
 import 'package:canastra/ui/widgets/playing_card.dart';
@@ -97,6 +98,7 @@ const _words = ZoneWords(
 /// wants and not the shape a real round produces.
 TableLayout _crowdedTableLayout({
   List<CardId> hand = const [],
+  List<PickedCard> selection = const [],
   List<CardId>? handOverride,
   TableMetrics metrics = TableMetrics.landscape,
   List<int> handSizes = const [0, 0],
@@ -174,7 +176,7 @@ TableLayout _crowdedTableLayout({
       moves: MoveIndex.empty,
       metrics: metrics,
       handOverride: handOverride,
-      selection: const [],
+      selection: selection,
       openSlots: const {},
       canMeld: false,
       canDiscard: false,
@@ -187,6 +189,23 @@ TableLayout _crowdedTableLayout({
 }
 
 void main() {
+  group('a hand holding the same card twice', () {
+    test('the copy the selection names is the one that rises', () {
+      final layout = _crowdedTableLayout(
+        hand: const [4, 4, 5],
+        selection: const [(ct: 4, copy: 1)],
+      );
+      final spots = layout.cards.where((s) => s.inHand).toList();
+
+      expect(spots.map((s) => s.copy), equals([0, 1, 0]));
+      expect(
+        spots.map((s) => s.selected),
+        equals([false, true, false]),
+        reason: 'the second twin was tapped, so the second twin lifts',
+      );
+    });
+  });
+
   group('CardIdentityTracker', () {
     test('carries a middle discard from hand to pile', () {
       final tracker = CardIdentityTracker();

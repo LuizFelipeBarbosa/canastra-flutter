@@ -269,7 +269,7 @@ class _GameScreenState extends State<GameScreen> {
             handOverride: prefs.handOrder == HandOrder.rank
                 ? ([...view.hand]..sort(rankMajorOrder))
                 : null,
-            selection: c.selection,
+            selection: c.picked,
             openSlots: c.openSlots,
             canMeld: c.canMeldSelection,
             canDiscard: c.discardMove != null,
@@ -503,8 +503,11 @@ class _GameScreenState extends State<GameScreen> {
               alignment: Alignment.topLeft,
               child: spot.inHand
                   ? Hoverable(
-                      onTap: () =>
-                          c.toggleCard(spot.card, selected: spot.selected),
+                      onTap: () => c.toggleCard(
+                        spot.card,
+                        selected: spot.selected,
+                        copy: spot.copy,
+                      ),
                       builder: (_) => PlayingCard(
                         card: spot.card,
                         palette: p,
