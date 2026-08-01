@@ -21,6 +21,7 @@ import 'package:flutter_test/flutter_test.dart';
 // Suit-major card ids, spelled out so the tests read like a hand of cards.
 const aceClubs = 0;
 const twoClubs = 1;
+const threeClubs = 2;
 const fiveClubs = 4;
 const sixClubs = 5;
 const sevenClubs = 6;
@@ -276,6 +277,49 @@ void main() {
         Refusal.doesNotFit,
       );
       expect(match.round.melds.single.size, equals(3));
+    });
+
+    test('a wild bridges the meld to naturals held above it', () {
+      // 2♦ + 9♣ + 10♣ onto 5-6-7♣: the wild must land as the 8, not as a 4,
+      // or the 9 and 10 never attach.
+      final held = [twoDiamonds, nineClubs, tenClubs];
+      final match = withRunDown(held);
+      final plan = _expectReady(
+        planExtendMeld(match.cfg, _viewOf(match), 0, held),
+      );
+
+      final adds = [
+        for (final step in plan.steps)
+          (decodeAction(step, match.cfg.meld.maxMeldSlots) as AddToMeld).ct,
+      ];
+      expect(adds, equals([twoDiamonds, nineClubs, tenClubs]));
+      _replay(match, plan);
+      final meld = match.round.melds.single;
+      expect(meld.size, equals(6));
+      expect(meld.startPos, equals(5), reason: 'the wild went high, not low');
+    });
+
+    test('a wild bridges the meld to a natural held below it', () {
+      final held = [twoDiamonds, threeClubs];
+      final match = withRunDown(held);
+      final plan = _expectReady(
+        planExtendMeld(match.cfg, _viewOf(match), 0, held),
+      );
+
+      _replay(match, plan);
+      final meld = match.round.melds.single;
+      expect(meld.size, equals(5));
+      expect(meld.startPos, equals(3), reason: 'the wild went low, as the 4');
+    });
+
+    test('a lone wild with nothing to bridge to still goes low', () {
+      final match = withRunDown([twoDiamonds]);
+      final plan = _expectReady(
+        planExtendMeld(match.cfg, _viewOf(match), 0, [twoDiamonds]),
+      );
+
+      _replay(match, plan);
+      expect(match.round.melds.single.startPos, equals(4));
     });
 
     test('a run grows to a canastra in one gesture', () {
