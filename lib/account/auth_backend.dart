@@ -391,9 +391,29 @@ class RoomInviteEntry {
   int get hashCode => Object.hash(id, roomCode, inviterName);
 }
 
+/// What a sign-up produced.
+///
+/// [needsConfirmation] means the account exists but nothing is signed in: the
+/// caller has to collect the emailed code before this player can do anything.
+class SignUpResult {
+  final AuthUser user;
+  final bool needsConfirmation;
+
+  const SignUpResult({required this.user, required this.needsConfirmation});
+}
+
 abstract class AuthBackend {
   /// Restore a persisted session. Null when signed out. Must not throw.
   Future<AuthUser?> restore();
+
+  /// The current session's bearer token, or null when signed out.
+  ///
+  /// The game host verifies this to learn who is claiming a seat, which is what
+  /// lets a finished match be recorded against real profiles. Read fresh on
+  /// every connection attempt so a reconnect after a token refresh carries the
+  /// new one. Must not throw — an unauthenticated socket is still allowed to
+  /// play on a host that does not require auth.
+  Future<String?> accessToken();
 
   Future<AuthUser> signInAnonymously();
 
@@ -405,7 +425,11 @@ abstract class AuthBackend {
   /// verified as a plain sign-in code (and vice versa).
   Future<AuthUser> verifyOtp(String email, String code, {bool upgrading});
   Future<AuthUser> signInWithPassword(String email, String password);
-  Future<AuthUser> signUpWithPassword(String email, String password);
+
+  /// Creates the account. The result says whether it is usable yet: with email
+  /// confirmation on, the user exists but has no session until the emailed code
+  /// is redeemed.
+  Future<SignUpResult> signUpWithPassword(String email, String password);
   Future<void> sendPasswordReset(String email);
 
   /// Starts an anonymous-to-permanent upgrade without changing the user id.

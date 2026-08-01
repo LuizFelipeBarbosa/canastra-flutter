@@ -108,8 +108,30 @@ class Account extends ChangeNotifier {
     if (revision == _backendRevision) _setUser(restored);
   }
 
+  /// The bearer token an online table should present when claiming a seat.
+  ///
+  /// Deliberately outside [_run]: a missing token is not a user-facing error,
+  /// it just means this player joins unidentified.
+  Future<String?> accessToken() async {
+    try {
+      return await _backend.accessToken();
+    } on Object {
+      return null;
+    }
+  }
+
   Future<void> signInAnonymously() async {
     _setUser(await _run(_backend.signInAnonymously));
+  }
+
+  /// Guarantees an identity, without asking the player for one.
+  ///
+  /// An online table has to be able to name who sat down before it can record
+  /// what they did, and a guest session costs nothing to mint. An existing
+  /// session — guest or permanent — is left exactly as it is.
+  Future<void> ensureSession() async {
+    if (signedIn) return;
+    await signInAnonymously();
   }
 
   Future<void> sendOtp(String email) => _run(() => _backend.sendOtp(email));
@@ -128,8 +150,18 @@ class Account extends ChangeNotifier {
     _setUser(await _run(() => _backend.signInWithPassword(email, password)));
   }
 
-  Future<void> signUpWithPassword(String email, String password) async {
-    _setUser(await _run(() => _backend.signUpWithPassword(email, password)));
+  /// Creates an account, returning whether it is already usable.
+  ///
+  /// False means the project requires email confirmation: the account exists,
+  /// nothing is signed in, and the caller should collect the emailed code —
+  /// [verifyOtp] redeems it exactly like a sign-in code.
+  Future<bool> signUpWithPassword(String email, String password) async {
+    final result = await _run(
+      () => _backend.signUpWithPassword(email, password),
+    );
+    if (result.needsConfirmation) return false;
+    _setUser(result.user);
+    return true;
   }
 
   Future<void> sendPasswordReset(String email) =>

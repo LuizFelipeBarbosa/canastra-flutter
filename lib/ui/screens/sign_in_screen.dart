@@ -108,6 +108,45 @@ class _SignInScreenState extends State<SignInScreen> {
     }
   }
 
+  /// Creates the account, then goes wherever the project's settings left it.
+  ///
+  /// A project that confirms addresses hands back no session, so the new player
+  /// is not signed in yet — they finish on the same code screen the emailed
+  /// sign-in code uses, because a confirmation code redeems the same way.
+  Future<void> _createAccount() async {
+    if (_pushing) return;
+
+    final email = _email.text.trim();
+    final auth = context.copy.auth;
+    final account = context.account;
+    final navigator = Navigator.of(context);
+    bool? confirmed;
+
+    setState(() {
+      _pushing = true;
+      _error = null;
+      _confirmation = null;
+    });
+    try {
+      confirmed = await account.signUpWithPassword(email, _password.text);
+    } on AccountException catch (exception) {
+      if (mounted) {
+        setState(() => _error = _authError(auth, exception.error));
+      }
+    } finally {
+      if (mounted) setState(() => _pushing = false);
+    }
+
+    if (confirmed == null || !mounted) return;
+    if (confirmed) {
+      navigator.popUntil((route) => route.isFirst);
+    } else {
+      await navigator.push(
+        MaterialPageRoute<void>(builder: (_) => OtpScreen(email: email)),
+      );
+    }
+  }
+
   Future<void> _resetPassword() async {
     if (_pushing) return;
 
@@ -251,12 +290,7 @@ class _SignInScreenState extends State<SignInScreen> {
                     child: TextLink(
                       label: l.auth.createAccount,
                       palette: p,
-                      onTap: () => _completeSignIn(
-                        (account) => account.signUpWithPassword(
-                          _email.text.trim(),
-                          _password.text,
-                        ),
-                      ),
+                      onTap: _createAccount,
                     ),
                   ),
                   const SizedBox(width: 20),

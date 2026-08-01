@@ -141,6 +141,7 @@ class _QueueScreenState extends State<QueueScreen> {
             endpoint: uri,
             roomCode: roomCode,
             playerName: playerName,
+            authToken: context.account.accessToken,
           ),
     );
 

@@ -35,6 +35,14 @@ class _NeverRestoringBackend extends FakeAuthBackend {
   Future<AuthUser?> restore() => Completer<AuthUser?>().future;
 }
 
+class _ThrowingTokenBackend extends FakeAuthBackend {
+  bool throwing = true;
+
+  @override
+  Future<String?> accessToken() =>
+      throwing ? Future.error(StateError('no session')) : super.accessToken();
+}
+
 void main() {
   _roomTests();
 
@@ -47,6 +55,61 @@ void main() {
     expect(account.state, isA<Guest>());
     expect(account.user, user);
     expect(account.signedIn, isTrue);
+  });
+
+  test('sign-up awaiting confirmation does not sign anyone in', () async {
+    final backend = FakeAuthBackend()..signUpNeedsConfirmation = true;
+    final account = _accountFor(backend);
+    await account.restore();
+
+    expect(await account.signUpWithPassword('ana@example.com', 'secret1'), isFalse);
+    expect(account.state, isA<SignedOut>());
+    expect(account.signedIn, isFalse);
+
+    // The emailed code is what finishes it, exactly like a sign-in code.
+    await account.verifyOtp('ana@example.com', '000000');
+    expect(account.state, isA<Player>());
+  });
+
+  test('sign-up with no confirmation required signs in directly', () async {
+    final account = _accountFor(FakeAuthBackend());
+    await account.restore();
+
+    expect(await account.signUpWithPassword('ana@example.com', 'secret1'), isTrue);
+    expect(account.state, isA<Player>());
+  });
+
+  test('ensureSession mints a guest only when there is no session', () async {
+    final account = _accountFor(FakeAuthBackend());
+    await account.restore();
+    expect(account.state, isA<SignedOut>());
+
+    await account.ensureSession();
+    expect(account.state, isA<Guest>());
+
+    // A session already in hand is left alone, guest or permanent alike.
+    final guest = account.user;
+    await account.ensureSession();
+    expect(account.user, guest);
+
+    final player = _accountFor(FakeAuthBackend(initialUser: _user(anonymous: false)));
+    await player.restore();
+    await player.ensureSession();
+    expect(player.state, isA<Player>());
+  });
+
+  test('the access token follows the session, and never throws', () async {
+    final backend = _ThrowingTokenBackend();
+    final account = _accountFor(backend);
+    expect(await account.accessToken(), isNull, reason: 'signed out');
+
+    backend.throwing = false;
+    await account.signInAnonymously();
+    expect(await account.accessToken(), startsWith('fake-token-'));
+
+    // A backend that fails to produce one must not break joining a table.
+    backend.throwing = true;
+    expect(await account.accessToken(), isNull);
   });
 
   test('restore with a persisted player lands in player', () async {
