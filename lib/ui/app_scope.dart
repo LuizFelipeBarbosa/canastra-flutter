@@ -25,9 +25,6 @@ enum HandOrder {
   suit,
   rank;
 
-  HandOrder get other =>
-      this == HandOrder.suit ? HandOrder.rank : HandOrder.suit;
-
   static HandOrder byName(String? name) => HandOrder.values.firstWhere(
     (o) => o.name == name,
     orElse: () => HandOrder.suit,
@@ -175,7 +172,6 @@ class AppPrefs extends ChangeNotifier {
   void setVariant(String id) => _set(() => _variant = id);
   void setPlayers(int players) => _set(() => _players = players);
   void setHandOrder(HandOrder order) => _set(() => _handOrder = order);
-  void toggleHandOrder() => _set(() => _handOrder = _handOrder.other);
   void markLegacySent() => _set(() => _legacySent = true);
 
   /// Record a finished match. Only a win extends the streak; anything else ends
