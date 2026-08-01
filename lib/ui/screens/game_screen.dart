@@ -503,7 +503,8 @@ class _GameScreenState extends State<GameScreen> {
               alignment: Alignment.topLeft,
               child: spot.inHand
                   ? Hoverable(
-                      onTap: () => c.toggleCard(spot.card),
+                      onTap: () =>
+                          c.toggleCard(spot.card, selected: spot.selected),
                       builder: (_) => PlayingCard(
                         card: spot.card,
                         palette: p,

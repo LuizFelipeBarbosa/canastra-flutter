@@ -245,6 +245,28 @@ void main() {
     await _settle();
   });
 
+  test('both copies of a twice-held card can be picked up', () async {
+    final table = await _table(
+      rig: (host) => _setPlayHand(host, [fiveClubs, fiveClubs, ...ballast]),
+    );
+    final controller = table.controller;
+
+    // The table reports which copy a tap landed on: a copy still resting in
+    // the hand picks up, a lifted one goes back down. Tapping the second
+    // resting copy must add it, not put its twin back down.
+    controller.toggleCard(fiveClubs, selected: false);
+    expect(controller.selection, equals([fiveClubs]));
+
+    controller.toggleCard(fiveClubs, selected: false);
+    expect(controller.selection, equals([fiveClubs, fiveClubs]));
+
+    controller.toggleCard(fiveClubs, selected: true);
+    expect(controller.selection, equals([fiveClubs]));
+
+    controller.toggleCard(fiveClubs, selected: true);
+    expect(controller.selection, isEmpty);
+  });
+
   test(
     'a duplicate single-step submission is ignored until a view arrives',
     () async {

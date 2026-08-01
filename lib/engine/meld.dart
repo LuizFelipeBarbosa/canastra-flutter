@@ -485,8 +485,24 @@ AddPlan? planAdd(RulesConfig cfg, Map<CardId, int> hand, Meld meld, CardId ct) {
     return null; // meld spans the full run; no home for the freed wild
   }
 
-  // 3. Wild placement on an open end (low end first).
+  // 3. Wild placement on an open end. The action names no end, so the engine
+  //    chooses: with both ends open, the wild goes where the hand can keep the
+  //    run growing — held 9-10 behind a 4..7 meld put the wild at 8, not 3.
+  //    The low end wins ties, which keeps the old behavior everywhere else.
   if (tables.wild[ct] && meld.wildCount < cfg.wildcard.wildcardLimitPerMeld) {
+    if (lowOpen && highOpen) {
+      // Whether the hand holds the natural for the position just past a wild
+      // placed at this end — discounting the wild being played, which may
+      // itself be that natural's card type.
+      bool growsPast(int pos) {
+        if (!tables.posOk[pos] || !tables.naturalOk[suit][pos]) return false;
+        final natural = nat(pos, suit);
+        return (hand[natural] ?? 0) - (natural == ct ? 1 : 0) > 0;
+      }
+
+      final atLow = growsPast(st - 2) || !growsPast(en + 2);
+      return AddPlan(kind: AddKind.extend, role: SlotRole.wild, atLow: atLow);
+    }
     if (lowOpen) {
       return const AddPlan(
         kind: AddKind.extend,

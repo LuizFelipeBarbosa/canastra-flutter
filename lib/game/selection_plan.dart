@@ -148,10 +148,17 @@ PlanResult planNewMeld(
       continue;
     }
 
+    // The whole hand less what the create consumed, which is what the host
+    // resolves the follow-up adds against.
+    final hand = _multiset(view.hand);
+    for (final s in created.slots) {
+      _removeOne(hand, s.card);
+    }
     final drain = _drainOnto(
       cfg,
-      pool,
+      hand,
       created,
+      budget: pool,
       guard: guard,
       handSize: view.hand.length - created.size,
       pendingPileCard: view.pendingPileCard,
@@ -192,12 +199,12 @@ PlanResult planExtendMeld(
     return const PlanRefused(Refusal.doesNotFit);
   }
 
-  final pool = _multiset(selection);
   final guard = _StrandGuard(cfg: cfg, view: view, replacing: slot);
   final drain = _drainOnto(
     cfg,
-    pool,
+    _multiset(view.hand),
     meldFromView(view.myMelds[slot]),
+    budget: _multiset(selection),
     guard: guard,
     handSize: view.hand.length,
     pendingPileCard: view.pendingPileCard,
@@ -302,28 +309,31 @@ class _StrandGuard {
       : Refusal.needCanastra;
 }
 
-/// Greedily add every card in [pool] onto [meld], mutating both.
+/// Greedily add every card in [budget] onto [meld], mutating [hand] and [meld].
 ///
 /// Repeated passes rather than one, because order decides legality: on a first
 /// pass over 8-9 onto 5-6-7 only the 8 fits, and the 9 becomes legal because of
 /// it. The loop stops when a whole pass adds nothing, which is when the leftovers
 /// genuinely do not belong.
 ///
-/// The budget is what the pool held on entry, not the pool itself: extending over
-/// a wild can hand that wild back, and a card the player never picked up must not
-/// then be played on.
+/// [hand] is the player's whole remaining hand, not just the selection: the
+/// engine resolves each add against the hand it is played from — a wild lands on
+/// the end the hand can grow past — so simulating from a smaller hand would plan
+/// steps the host then resolves differently. [budget] is what may be spent:
+/// only picked-up cards are played, and a wild handed back by a swap must not
+/// be played on.
 _Drain _drainOnto(
   RulesConfig cfg,
-  Map<CardId, int> pool,
+  Map<CardId, int> hand,
   Meld meld, {
+  required Map<CardId, int> budget,
   required _StrandGuard guard,
   required int handSize,
   CardId? pendingPileCard,
 }) {
-  final budget = Map.of(pool);
   final spent = <CardId, int>{};
   final added = <CardId>[];
-  var hand = handSize;
+  var size = handSize;
   var stranded = false;
 
   var progress = true;
@@ -338,15 +348,15 @@ _Drain _drainOnto(
     // Low card first, so a run grows from one end in a single pass.
     for (final ct in candidates) {
       if ((spent[ct] ?? 0) >= budget[ct]!) continue;
-      final plan = planAdd(cfg, pool, meld, ct);
+      final plan = planAdd(cfg, hand, meld, ct);
       if (plan == null) continue;
 
       // The engine judges each add on the state it would leave behind, so the
       // simulation has to as well — including a swap that hands a wild back and
       // leaves the hand the size it was.
-      final resulting = hand - 1 + (plan.wildToHand ? 1 : 0);
+      final resulting = size - 1 + (plan.wildToHand ? 1 : 0);
       final after = meld.copy();
-      final probe = Map.of(pool);
+      final probe = Map.of(hand);
       try {
         applyAdd(cfg, probe, after, ct);
       } on MeldError {
@@ -357,8 +367,8 @@ _Drain _drainOnto(
         continue;
       }
 
-      applyAdd(cfg, pool, meld, ct);
-      hand = resulting;
+      applyAdd(cfg, hand, meld, ct);
+      size = resulting;
       spent[ct] = (spent[ct] ?? 0) + 1;
       added.add(ct);
       progress = true;
@@ -393,4 +403,13 @@ Map<CardId, int> _multiset(Iterable<CardId> cards) {
     counts[c] = (counts[c] ?? 0) + 1;
   }
   return counts;
+}
+
+void _removeOne(Map<CardId, int> counts, CardId ct) {
+  final n = counts[ct] ?? 0;
+  if (n <= 1) {
+    counts.remove(ct);
+  } else {
+    counts[ct] = n - 1;
+  }
 }
