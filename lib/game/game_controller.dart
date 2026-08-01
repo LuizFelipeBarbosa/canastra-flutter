@@ -26,6 +26,11 @@ import '../multiplayer/transport.dart';
 import 'move_index.dart';
 import 'selection_plan.dart';
 
+/// One picked-up card: the type, and which of the hand's identically-typed
+/// copies it is (0 = leftmost). A two-deck game holds a type twice, and the
+/// copy is what tells those twins apart on the table.
+typedef PickedCard = ({CardId ct, int copy});
+
 class GameController extends ChangeNotifier {
   RulesConfig _cfg;
   final GameTransport transport;
@@ -37,6 +42,10 @@ class GameController extends ChangeNotifier {
   bool _spectating = false;
   MoveIndex _moves = MoveIndex.empty;
   final List<CardId> _selection = [];
+
+  /// Parallel to [_selection]: which of the hand's identically-typed copies
+  /// each entry lifted, counted from the left.
+  final List<int> _selectionCopies = [];
   List<int> _queue = [];
   Refusal? _refusal;
   String? _notice;
@@ -79,6 +88,14 @@ class GameController extends ChangeNotifier {
 
   /// The cards you have picked up, in the order you picked them.
   List<CardId> get selection => List.unmodifiable(_selection);
+
+  /// The same selection with each entry naming the copy it lifted, which is
+  /// what lets the table raise exactly the card that was tapped when the hand
+  /// holds a type twice.
+  List<PickedCard> get picked => List.unmodifiable([
+    for (var i = 0; i < _selection.length; i++)
+      (ct: _selection[i], copy: _selectionCopies[i]),
+  ]);
 
   /// Why the last thing you tried is not allowed.
   Refusal? get refusal => _refusal;
@@ -159,6 +176,7 @@ class GameController extends ChangeNotifier {
         if (previous != null &&
             (previous.turnNumber != view.turnNumber || tookMortoThisTurn)) {
           _selection.clear();
+          _selectionCopies.clear();
           _queue = [];
           _refusal = null;
           _notice = null;
@@ -231,16 +249,38 @@ class GameController extends ChangeNotifier {
   }
 
   void _retainHeld(TableView view) {
-    final remaining = <CardId, int>{};
+    final held = <CardId, int>{};
     for (final ct in view.hand) {
-      remaining[ct] = (remaining[ct] ?? 0) + 1;
+      held[ct] = (held[ct] ?? 0) + 1;
     }
-    _selection.retainWhere((ct) {
-      final n = remaining[ct] ?? 0;
-      if (n == 0) return false;
-      remaining[ct] = n - 1;
-      return true;
-    });
+    // Keep the first entries per type that the hand still covers. A copy index
+    // the shrunken hand no longer has slides down to the lowest free one — the
+    // copies are physically identical, so which twin stays lifted only has to
+    // be consistent, not remembered.
+    final keptCards = <CardId>[];
+    final keptCopies = <int>[];
+    final used = <CardId, Set<int>>{};
+    for (var i = 0; i < _selection.length; i++) {
+      final ct = _selection[i];
+      final taken = used.putIfAbsent(ct, () => {});
+      if (taken.length >= (held[ct] ?? 0)) continue;
+      var copy = _selectionCopies[i];
+      if (copy >= held[ct]! || taken.contains(copy)) {
+        copy = 0;
+        while (taken.contains(copy)) {
+          copy++;
+        }
+      }
+      taken.add(copy);
+      keptCards.add(ct);
+      keptCopies.add(copy);
+    }
+    _selection
+      ..clear()
+      ..addAll(keptCards);
+    _selectionCopies
+      ..clear()
+      ..addAll(keptCopies);
   }
 
   /// Send the next step of a queued plan, if the host will still take it.
@@ -274,20 +314,54 @@ class GameController extends ChangeNotifier {
   /// A two-deck game can hold the same card type twice, and the selection keeps
   /// one entry per copy. The type alone cannot say which way a tap on a
   /// duplicate should go, so [selected] carries whether the tapped copy was
-  /// already picked up. Without it, the first copy of the type toggles.
-  void toggleCard(CardId card, {bool? selected}) {
+  /// already picked up, and [copy] which of the type's copies it was — that is
+  /// what makes the tapped twin the one that rises. Without them, the first
+  /// copy of the type toggles.
+  void toggleCard(CardId card, {bool? selected, int? copy}) {
     if (_blockSpectatorAction()) return;
     if (!myTurn || busy) return;
     _notice = null;
     _refusal = null;
     final putDown = selected ?? _selection.contains(card);
     if (putDown) {
-      _selection.remove(card);
+      _putDown(card, copy);
     } else {
-      _selection.add(card);
+      _pickUp(card, copy);
     }
     _replan();
     notifyListeners();
+  }
+
+  void _putDown(CardId card, int? copy) {
+    var i = -1;
+    if (copy != null) {
+      for (var j = 0; j < _selection.length; j++) {
+        if (_selection[j] == card && _selectionCopies[j] == copy) {
+          i = j;
+          break;
+        }
+      }
+    }
+    // An untracked copy falls back to the type's first entry.
+    if (i < 0) i = _selection.indexOf(card);
+    if (i < 0) return;
+    _selection.removeAt(i);
+    _selectionCopies.removeAt(i);
+  }
+
+  void _pickUp(CardId card, int? copy) {
+    final used = <int>{
+      for (var j = 0; j < _selection.length; j++)
+        if (_selection[j] == card) _selectionCopies[j],
+    };
+    // Without a tapped copy, the leftmost one still resting picks up.
+    var c = copy ?? 0;
+    while (copy == null && used.contains(c)) {
+      c++;
+    }
+    if (used.contains(c)) return;
+    _selection.add(card);
+    _selectionCopies.add(c);
   }
 
   void clearSelection() {
@@ -295,6 +369,7 @@ class GameController extends ChangeNotifier {
     if (busy) return;
     if (_selection.isEmpty && _refusal == null) return;
     _selection.clear();
+    _selectionCopies.clear();
     _refusal = null;
     _replan();
     notifyListeners();

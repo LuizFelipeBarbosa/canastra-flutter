@@ -14,6 +14,7 @@ library;
 import 'dart:ui' show Size;
 
 import '../../engine/cards.dart';
+import '../../game/game_controller.dart' show PickedCard;
 import '../../game/move_index.dart';
 import '../../multiplayer/table_view.dart';
 import 'playing_card.dart';
@@ -326,6 +327,11 @@ class CardSpot {
   /// In your hand, and therefore something you can pick up.
   final bool inHand;
 
+  /// Which of the hand's identically-typed copies this is (0 = leftmost).
+  /// Hand cards only; it is what a tap reports so the tapped twin is the one
+  /// that rises.
+  final int copy;
+
   const CardSpot({
     required this.key,
     required this.card,
@@ -337,6 +343,7 @@ class CardSpot {
     this.asWild = false,
     this.selected = false,
     this.inHand = false,
+    this.copy = 0,
   });
 
   CardSpot _withKey(String key) => CardSpot(
@@ -350,6 +357,7 @@ class CardSpot {
     asWild: asWild,
     selected: selected,
     inHand: inHand,
+    copy: copy,
   );
 
   CardSpot onTheStock(TableMetrics m) => CardSpot(
@@ -639,7 +647,10 @@ class LayoutInput {
   /// Display only — everything else still speaks [TableView.hand]'s cards.
   final List<CardId>? handOverride;
 
-  final List<CardId> selection;
+  /// What is picked up, each entry naming the copy it lifted so the exact
+  /// tapped twin rises when the hand holds a type twice.
+  final List<PickedCard> selection;
+
   final Set<int> openSlots;
   final bool canMeld;
 
@@ -1065,10 +1076,13 @@ List<CardSpot> _hands(LayoutInput input) {
   final step = hand.isEmpty ? 60.0 : _min(60, m.handSpan / hand.length);
   final startX = m.size.width / 2 - (step * (hand.length - 1) + kCardWidth) / 2;
   final unpicked = [...input.selection];
+  final copies = <CardId, int>{};
   for (var i = 0; i < hand.length; i++) {
-    // Selection is by card type and a type can be held twice, so the first
-    // copies encountered are the picked-up ones.
-    final picked = unpicked.remove(hand[i]);
+    // Each selection entry names its copy, so of two identical cards exactly
+    // the tapped one rises.
+    final copy = copies[hand[i]] ?? 0;
+    copies[hand[i]] = copy + 1;
+    final picked = unpicked.remove((ct: hand[i], copy: copy));
     final spot = CardSpot(
       key: 'hand:$i',
       card: hand[i],
@@ -1079,6 +1093,7 @@ List<CardSpot> _hands(LayoutInput input) {
       faceUp: true,
       selected: picked,
       inHand: true,
+      copy: copy,
     );
     spots.add(landed(0, i) ? spot : spot.onTheStock(m));
   }
