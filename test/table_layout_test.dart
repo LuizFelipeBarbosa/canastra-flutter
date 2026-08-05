@@ -1,23 +1,25 @@
-/// Tests for stable physical-card identities across pure table-layout frames.
+/// Tests for stable physical-card identities and the surviving hand ordering.
 library;
 
 import 'package:canastra/engine/cards.dart';
-import 'package:canastra/game/game_controller.dart' show PickedCard;
-import 'package:canastra/game/move_index.dart';
-import 'package:canastra/multiplayer/table_view.dart';
-import 'package:canastra/ui/widgets/playing_card.dart';
-import 'package:canastra/ui/widgets/stage.dart';
 import 'package:canastra/ui/widgets/table_layout.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 CardSpot _spot(String key, CardId card) =>
     CardSpot(key: key, card: card, x: 0, y: 0, scale: 1, z: 0, faceUp: true);
 
-/// A spot still staged on the stock, the way `_hands` draws an undealt card —
+/// A spot still staged on the stock, the way the solver draws an undealt card —
 /// same key and card, different everything else, exactly the shape
 /// [CardIdentityTracker] is required to see through.
-CardSpot _staged(String key, CardId card) =>
-    _spot(key, card).onTheStock(TableMetrics.landscape);
+CardSpot _staged(String key, CardId card) => CardSpot(
+  key: key,
+  card: card,
+  x: 17,
+  y: 23,
+  scale: 0.42,
+  z: 9,
+  faceUp: false,
+);
 
 List<CardSpot> _hand(List<CardId> cards) => [
   for (var i = 0; i < cards.length; i++) _spot('hand:$i', cards[i]),
@@ -27,185 +29,7 @@ Map<CardId, String> _keysByCard(Iterable<CardSpot> spots) => {
   for (final spot in spots) spot.card: spot.key,
 };
 
-String _count(int value) => '$value';
-
-/// The far edge of the felt, with a float's worth of slack: a row whose scale
-/// was solved to fill its span exactly lands on the margin, and does not land
-/// on it in binary.
-Matcher _withinFelt(TableMetrics m) =>
-    lessThanOrEqualTo(m.size.width - m.margin + 1e-9);
-
-/// Every card the layout drew into a meld, in the order it drew them.
-List<CardSpot> _meldedCards(TableLayout layout) => [
-  for (final spot in layout.cards)
-    if (spot.key.startsWith('meld:')) spot,
-];
-
-/// Every meld box and every card in one is inside the felt, and nothing was
-/// shrunk past what the stage allows.
-///
-/// A stage clips, so a meld box past the edge is not an untidy overflow but a
-/// meld the player cannot see at all — which makes this the one thing a crowded
-/// row is not allowed to trade away.
-///
-/// Your own melds owe one thing more. They are drop targets, and on a wide
-/// table they share their row with the play area, so stopping at the felt is
-/// not enough: a box that merely reaches the edge has been drawn underneath a
-/// tap target, which is the reason your row is handed a narrower span to
-/// compress into in the first place.
-void _expectOnTheFelt(TableLayout layout, TableMetrics m, String where) {
-  for (final meld in layout.melds) {
-    expect(meld.x, greaterThanOrEqualTo(m.margin), reason: where);
-    expect(meld.x + meld.width, _withinFelt(m), reason: where);
-    if (meld.mine) {
-      expect(
-        meld.x + meld.width,
-        lessThanOrEqualTo(m.margin + m.myMeldSpan + 1e-9),
-        reason: where,
-      );
-    }
-  }
-  for (final spot in _meldedCards(layout)) {
-    expect(spot.x + kCardWidth * spot.scale, _withinFelt(m), reason: where);
-    expect(spot.scale, greaterThanOrEqualTo(m.minMeldScale), reason: where);
-  }
-}
-
-const _words = ZoneWords(
-  stock: 'stock',
-  pile: 'pile',
-  morto: 'morto',
-  playArea: 'play',
-  playIdle: 'idle',
-  playReady: 'ready',
-  pileDiscard: 'discard',
-  pileBatida: 'out',
-  empty: 'empty',
-  waiting: 'waiting',
-  taken: 'taken',
-  left: _count,
-  cards: _count,
-);
-
-/// A table with a whole side's worth of melds down.
-///
-/// [owner] is the side that laid them: 0 is yours, and anything else is the
-/// opponent's row, which is laid out on its own terms and was for a long time
-/// never exercised here at all.
-///
-/// [meldSizes] lays a row of melds of stated sizes; without it the row is
-/// [meldCount] melds of [meldSize] each, which is the shape a swept matrix
-/// wants and not the shape a real round produces.
-TableLayout _crowdedTableLayout({
-  List<CardId> hand = const [],
-  List<PickedCard> selection = const [],
-  List<CardId>? handOverride,
-  TableMetrics metrics = TableMetrics.landscape,
-  List<int> handSizes = const [0, 0],
-  int numPlayers = 2,
-  int owner = 0,
-  int meldCount = 9,
-  int meldSize = 7,
-  List<int>? meldSizes,
-}) {
-  final sizes = meldSizes ?? List.filled(meldCount, meldSize);
-  final melds = [
-    for (var slot = 0; slot < sizes.length; slot++)
-      MeldView(
-        owner: owner,
-        isSequence: false,
-        suit: null,
-        // A row can be longer than there are ranks, so the rank wraps: the fit
-        // is geometry and does not care which cards these are, but `cardId`
-        // does, and a rank past the twelfth would leave the deck entirely.
-        rank: slot % 13,
-        startPos: null,
-        cards: [
-          for (var copy = 0; copy < sizes[slot]; copy++)
-            cardId(slot % 13, copy % Suit.values.length),
-        ],
-        wildIndices: const [],
-        isCanastra: true,
-        isClean: true,
-        points: 100,
-      ),
-  ];
-  final view = TableView(
-    seat: 0,
-    side: 0,
-    numPlayers: numPlayers,
-    numSides: 2,
-    partnerSeat: null,
-    playerNames: const ['You', 'Them'],
-    profile: 'buraco',
-    matchTarget: 3000,
-    canastraMinSize: 7,
-    hand: hand,
-    handSizes: handSizes,
-    melds: melds,
-    trash: const [],
-    stockCount: 0,
-    mortoTaken: const [false, false],
-    mortoSizes: const [0, 0],
-    redThrees: const [[], []],
-    currentPlayer: 0,
-    phase: 'play',
-    turnNumber: 0,
-    frozen: false,
-    pileBlocked: false,
-    pendingPileCard: null,
-    boughtSolePileCard: null,
-    initialMeldDone: const [true, true],
-    initialMeldMin: const [0, 0],
-    stagedPoints: 0,
-    publicScores: const [0, 0],
-    matchScores: const [0, 0],
-    matchNumber: 0,
-    roundOver: false,
-    matchOver: false,
-    wentOutSide: null,
-    winnerSide: null,
-    roundIndex: 0,
-    roundResult: null,
-    legalActions: const [],
-    history: const [],
-  );
-  return layOutTable(
-    LayoutInput(
-      view: view,
-      moves: MoveIndex.empty,
-      metrics: metrics,
-      handOverride: handOverride,
-      selection: selection,
-      openSlots: const {},
-      canMeld: false,
-      canDiscard: false,
-      discardGoesOut: false,
-      dealt: 0,
-      dealDone: true,
-      words: _words,
-    ),
-  );
-}
-
 void main() {
-  group('a hand holding the same card twice', () {
-    test('the copy the selection names is the one that rises', () {
-      final layout = _crowdedTableLayout(
-        hand: const [4, 4, 5],
-        selection: const [(ct: 4, copy: 1)],
-      );
-      final spots = layout.cards.where((s) => s.inHand).toList();
-
-      expect(spots.map((s) => s.copy), equals([0, 1, 0]));
-      expect(
-        spots.map((s) => s.selected),
-        equals([false, true, false]),
-        reason: 'the second twin was tapped, so the second twin lifts',
-      );
-    });
-  });
-
   group('CardIdentityTracker', () {
     test('carries a middle discard from hand to pile', () {
       final tracker = CardIdentityTracker();
@@ -278,7 +102,7 @@ void main() {
     test('keeps identities while dealt cards land from the stock', () {
       final tracker = CardIdentityTracker();
       // Mid-deal: every hand card is still staged on the stock, but already
-      // carries its eventual `hand:$i` key, exactly as `_hands` draws it.
+      // carries its eventual `hand:$i` key, exactly as the solver draws it.
       final staged = tracker.assign([
         _staged('hand:0', 11),
         _staged('hand:1', 12),
@@ -336,212 +160,6 @@ void main() {
     });
   });
 
-  test('a fully compressed play zone keeps the stage right gutter', () {
-    final play = _crowdedTableLayout().zones.singleWhere(
-      (zone) => zone.id == 'play',
-    );
-
-    expect(play.x, 1030);
-    expect(play.width, 190);
-    expect(kStageLandscape.width - (play.x + play.width), 20);
-  });
-
-  test('the landscape play area is exactly a meld row tall', () {
-    // The metric is written out rather than derived, so that it cannot quietly
-    // drift away from the row it shares.
-    const m = TableMetrics.landscape;
-    expect(m.playHeight, m.meldBoxHeight);
-    expect(m.playY, m.myRowY);
-  });
-
-  // The geometric invariants that have to hold on either stage. Melds are the
-  // documented exception: a row compressed to its floor is allowed to run off
-  // the felt rather than become unreadable, so they are checked separately.
-  for (final (name, m) in const [
-    ('a wide table', TableMetrics.landscape),
-    ('a phone held upright', TableMetrics.portrait),
-  ]) {
-    test('every zone keeps the felt margins on $name', () {
-      for (final zone in _crowdedTableLayout(metrics: m).zones) {
-        expect(zone.x, greaterThanOrEqualTo(m.margin), reason: zone.id);
-        expect(
-          zone.x + zone.width,
-          lessThanOrEqualTo(m.size.width - m.margin),
-          reason: zone.id,
-        );
-        expect(
-          zone.y + zone.height,
-          lessThanOrEqualTo(m.size.height),
-          reason: zone.id,
-        );
-      }
-    });
-
-    test('a hand of any size fans inside $name', () {
-      for (final size in const [11, 15, 30]) {
-        final hand = [for (var i = 0; i < size; i++) cardId(i % 13, i % 4)];
-        final spots = _crowdedTableLayout(
-          hand: hand,
-          metrics: m,
-        ).cards.where((spot) => spot.inHand).toList();
-
-        expect(spots.length, size);
-        expect(spots.first.x, greaterThanOrEqualTo(0), reason: '$size cards');
-        expect(
-          spots.last.x + kCardWidth,
-          lessThanOrEqualTo(m.size.width),
-          reason: '$size cards',
-        );
-        expect(
-          spots.first.y + kCardHeight,
-          lessThanOrEqualTo(m.size.height),
-          reason: '$size cards',
-        );
-      }
-    });
-
-    test('the hand-order toggle sits below the hand on $name', () {
-      expect(m.handY + kCardHeight, lessThanOrEqualTo(m.handOrderY));
-      expect(m.handOrderY + kHandOrderHeight, lessThanOrEqualTo(m.size.height));
-    });
-
-    test('three opponents fan inside $name', () {
-      final spots = _crowdedTableLayout(
-        metrics: m,
-        numPlayers: 4,
-        handSizes: const [0, 11, 11, 11],
-      ).cards.where((spot) => spot.key.startsWith('seat')).toList();
-
-      expect(spots.length, 33);
-      for (final spot in spots) {
-        expect(spot.x, greaterThanOrEqualTo(m.margin));
-        // The last fan may lean into the margin — a three-handed fan shares one
-        // band — but never off the stage.
-        expect(
-          spot.x + kCardWidth * kOpponentScale,
-          lessThanOrEqualTo(m.size.width),
-        );
-      }
-    });
-  }
-
-  test('nine melds take two rows on a phone, and stay on the felt', () {
-    const m = TableMetrics.portrait;
-    final mine = _crowdedTableLayout(
-      metrics: m,
-    ).melds.where((meld) => meld.mine).toList();
-
-    expect(mine.length, 9);
-    // Filled evenly: five on the first row, four on the second.
-    expect(mine.map((meld) => meld.y).toSet().length, 2);
-    expect(mine.where((meld) => meld.y == m.myRowY).length, 5);
-    expect(mine.every((meld) => meld.compact), isTrue);
-
-    // Wrapping is what buys this: nine spread melds do not fit any row at any
-    // compression, so on a phone they must stay inside the felt without it.
-    for (final meld in mine) {
-      expect(meld.x, greaterThanOrEqualTo(m.margin));
-      expect(meld.x + meld.width, lessThanOrEqualTo(m.size.width - m.margin));
-      expect(meld.y + meld.height, lessThanOrEqualTo(m.playY));
-    }
-  });
-
-  // One to sixteen melds down, of three to fourteen cards each, on either side.
-  // Sixteen is not a guess at a ceiling: a bot round in the golden suite ends
-  // with fifteen melds on one row, so a row of ten was never the range the fit
-  // had to survive.
-  const counts = 16;
-  const sizes = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
-
-  // The most cards one side can hold in front of it, counted rather than
-  // guessed at. Buraco deals from two decks — a hundred and four cards — and
-  // the other side's morto is eleven of them that this side can never touch,
-  // while an opponent still in the round holds at least one. Ninety-two is
-  // what remains. Past it the arithmetic of the deck says the row cannot
-  // happen, and a row that cannot happen is welcome to overflow.
-  const mostOneSideCanMeld = 92;
-
-  for (final (name, m) in const [
-    ('a wide table', TableMetrics.landscape),
-    ('a phone held upright', TableMetrics.portrait),
-  ]) {
-    test('every meld a side can lay stays on the felt on $name', () {
-      for (var count = 1; count <= counts; count++) {
-        for (final size in sizes) {
-          if (count * size > mostOneSideCanMeld) continue;
-          // The opponent is the harder of the two on a phone — their melds get
-          // one row and yours get two — and the easier on a wide table, where
-          // yours give up the play area's width and theirs do not.
-          for (final owner in const [0, 1]) {
-            final layout = _crowdedTableLayout(
-              metrics: m,
-              owner: owner,
-              meldCount: count,
-              meldSize: size,
-            );
-            final where = 'side $owner, $count melds of $size';
-
-            expect(layout.melds.length, count, reason: where);
-            _expectOnTheFelt(layout, m, where);
-          }
-        }
-      }
-    });
-  }
-
-  test('the round the goldens play out stays on the felt', () {
-    // Not a shape anyone chose. The `round sheet` golden plays a seeded buraco
-    // round out against a normal bot, and this is what the bot's side is
-    // holding when it goes out: fifteen melds, eighty-two cards, uneven the way
-    // a real row is and nothing like a swept matrix of equal melds. It is also
-    // the round that caught this bug — the golden it shot was a picture of five
-    // melds clipped off the edge of the felt and a sixth sliced in half.
-    //
-    // Reproduce with `flutter test --run-skipped test/golden_test.dart`.
-    const seed21 = [8, 5, 7, 8, 6, 6, 7, 4, 7, 5, 4, 4, 4, 4, 3];
-    for (final (name, m) in const [
-      ('a wide table', TableMetrics.landscape),
-      ('a phone held upright', TableMetrics.portrait),
-    ]) {
-      for (final owner in const [0, 1]) {
-        final layout = _crowdedTableLayout(
-          metrics: m,
-          owner: owner,
-          meldSizes: seed21,
-        );
-        final where = '$name, side $owner';
-
-        expect(layout.melds.length, seed21.length, reason: where);
-        _expectOnTheFelt(layout, m, where);
-      }
-    }
-  });
-
-  test('a stack is no wider at fourteen cards than at seven', () {
-    const m = TableMetrics.portrait;
-    List<double> widths(int size) => [
-      for (final meld in _crowdedTableLayout(
-        metrics: m,
-        meldCount: 5,
-        meldSize: size,
-      ).melds)
-        meld.width,
-    ];
-
-    expect(widths(14), widths(7));
-
-    // Every card in the stack is still its own spot, so melding one has
-    // somewhere to glide to. The ones past the thickness simply arrive
-    // underneath the card on top.
-    final drawn = _meldedCards(
-      _crowdedTableLayout(metrics: m, meldCount: 1, meldSize: 14),
-    );
-    expect(drawn.length, 14);
-    expect(drawn.map((spot) => spot.key).toSet().length, 14);
-    expect(drawn.last.x, drawn[m.meldStackDepth].x);
-    expect(drawn[m.meldStackDepth].x, greaterThan(drawn.first.x));
-  });
-
   test('rank-major order groups ranks, ties by suit, jokers last', () {
     final hand = [
       kJoker,
@@ -562,18 +180,5 @@ void main() {
       kJoker,
       kJoker,
     ]);
-  });
-
-  test('the layout draws the hand in the override order', () {
-    final layout = _crowdedTableLayout(
-      hand: [cardId(3, 2), kJoker, cardId(3, 0)],
-      handOverride: [cardId(3, 0), cardId(3, 2), kJoker],
-    );
-    final drawn = [
-      for (final spot in layout.cards)
-        if (spot.inHand) spot.card,
-    ];
-
-    expect(drawn, [cardId(3, 0), cardId(3, 2), kJoker]);
   });
 }

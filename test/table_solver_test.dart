@@ -1,10 +1,13 @@
 /// Tests for the pure-Dart fluid table solver.
 library;
 
-import 'dart:ui' show Size;
+import 'dart:ui' show Rect, Size;
 
+import 'package:canastra/engine/cards.dart';
+import 'package:canastra/game/game_controller.dart' show PickedCard;
 import 'package:canastra/multiplayer/table_view.dart';
-import 'package:canastra/ui/widgets/playing_card.dart' show kCardWidth;
+import 'package:canastra/ui/widgets/playing_card.dart'
+    show kCardHeight, kCardWidth;
 import 'package:canastra/ui/widgets/table_solver.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -53,6 +56,7 @@ TableView _tableView({
   required int handSize,
   required List<MeldView> myMelds,
   required List<MeldView> theirMelds,
+  List<CardId>? hand,
 }) => TableView(
   seat: 0,
   side: 0,
@@ -63,8 +67,8 @@ TableView _tableView({
   profile: '',
   matchTarget: 0,
   canastraMinSize: 7,
-  hand: List.generate(handSize, (index) => index % 52),
-  handSizes: [handSize, 0],
+  hand: hand ?? List.generate(handSize, (index) => index % 52),
+  handSizes: [hand?.length ?? handSize, 0],
   melds: [...myMelds, ...theirMelds],
   trash: const [3, 14, 25],
   stockCount: 40,
@@ -111,18 +115,27 @@ TableView _demoView() {
   );
 }
 
-TableSolution _solve(TableView view, Size viewport, {double cardBoost = 1}) {
+TableSolution _solve(
+  TableView view,
+  Size viewport, {
+  double cardBoost = 1,
+  List<PickedCard> selection = const [],
+  List<CardId>? handOverride,
+  String Function(MeldView meld)? meldLabeler,
+}) {
   TableSolution? solution;
   expect(
     () => solution = solveTable(
       TableSolverInput(
         viewport: viewport,
         view: view,
-        selection: const [],
+        selection: selection,
         openSlots: const {},
         dealt: 0,
         dealDone: true,
         cardBoost: cardBoost,
+        handOverride: handOverride,
+        meldLabeler: meldLabeler,
       ),
     ),
     returnsNormally,
@@ -137,6 +150,33 @@ TableSolution _solve(TableView view, Size viewport, {double cardBoost = 1}) {
 bool _blocksFit(TableSolution solution) =>
     solution.theirBlock.height + solution.myBlock.height <=
     solution.midInner + 0.5;
+
+void _expectInside(Rect rect, Size viewport, String where) {
+  expect(rect.left, greaterThanOrEqualTo(-0.5), reason: where);
+  expect(rect.top, greaterThanOrEqualTo(-0.5), reason: where);
+  expect(
+    rect.right,
+    lessThanOrEqualTo(viewport.width + 0.5),
+    reason: where,
+  );
+  expect(
+    rect.bottom,
+    lessThanOrEqualTo(viewport.height + 0.5),
+    reason: where,
+  );
+}
+
+void _expectMeldsInside(
+  TableSolution solution,
+  Size viewport,
+  String where, {
+  bool allowFullDegradation = false,
+}) {
+  if (allowFullDegradation && solution.degradation == 4) return;
+  for (final meld in solution.melds) {
+    _expectInside(meld.rect, viewport, '$where, meld ${meld.slot}');
+  }
+}
 
 ({String zone, String slot}) _cardLocationFromKey(String key) {
   final parts = key.split(':');
@@ -315,5 +355,263 @@ void main() {
     final boosted = _solve(view, const Size(1440, 900), cardBoost: 1.35);
 
     expect(boosted.cw, greaterThan(regular.cw));
+  });
+
+  test('a caller-supplied meld label reserves its displayed width', () {
+    const longLabel = 'A VERY LONG MELD CAPTION LABEL';
+    final view = _demoView();
+    final target = view.myMelds.first;
+    final regular = _solve(view, const Size(1440, 900));
+    final labelled = _solve(
+      view,
+      const Size(1440, 900),
+      meldLabeler: (meld) => identical(meld, target)
+          ? longLabel
+          : tableSolverMeldLabel(meld),
+    );
+    final regularTarget = regular.melds.singleWhere(
+      (solution) => identical(solution.meld, target),
+    );
+    final labelledTarget = labelled.melds.singleWhere(
+      (solution) => identical(solution.meld, target),
+    );
+
+    expect(labelledTarget.label, longLabel);
+    expect(
+      labelledTarget.captionMinimumWidth,
+      greaterThan(regularTarget.captionMinimumWidth),
+    );
+    expect(labelledTarget.rect.width, greaterThan(regularTarget.rect.width));
+  });
+
+  test('the copy the selection names is the one that rises', () {
+    final view = _tableView(
+      handSize: 3,
+      hand: const [4, 4, 5],
+      myMelds: const [],
+      theirMelds: const [],
+    );
+    final solution = _solve(
+      view,
+      const Size(1440, 900),
+      selection: const [(ct: 4, copy: 1)],
+    );
+    final spots = solution.cards.where((spot) => spot.inHand).toList();
+
+    expect(spots.map((spot) => spot.copy), equals([0, 1, 0]));
+    expect(
+      spots.map((spot) => spot.selected),
+      equals([false, true, false]),
+      reason: 'the second twin was tapped, so the second twin lifts',
+    );
+  });
+
+  test('every rect the solver returns stays inside the viewport', () {
+    for (final viewport in const [
+      Size(1440, 900),
+      Size(874, 402),
+      Size(402, 874),
+    ]) {
+      final solution = _solve(_demoView(), viewport);
+      final rects = <String, Rect>{
+        'header': solution.header,
+        'their strip': solution.theirStrip,
+        'their shelf': solution.theirShelf,
+        'their block': solution.theirBlock,
+        'my strip': solution.myStrip,
+        'my shelf': solution.myShelf,
+        'my block': solution.myBlock,
+        'pile band': solution.pileBand,
+        'new meld slot': solution.newMeldSlot,
+        'hand': solution.hand,
+      };
+
+      for (final rect in rects.entries) {
+        _expectInside(rect.value, viewport, '$viewport, ${rect.key}');
+      }
+    }
+  });
+
+  test('a hand of any size fans inside the viewport', () {
+    for (final viewport in const [Size(900, 420), Size(420, 840)]) {
+      for (final size in const [11, 15, 30]) {
+        final hand = [
+          for (var i = 0; i < size; i++) cardId(i % 13, i % 4),
+        ];
+        final view = _tableView(
+          handSize: size,
+          hand: hand,
+          myMelds: const [],
+          theirMelds: const [],
+        );
+        final spots = _solve(
+          view,
+          viewport,
+        ).cards.where((spot) => spot.inHand).toList();
+
+        expect(spots, hasLength(size), reason: '$viewport, $size cards');
+        for (final spot in spots) {
+          expect(
+            spot.x,
+            greaterThanOrEqualTo(-0.5),
+            reason: '$viewport, $size cards',
+          );
+          expect(
+            spot.x + kCardWidth * spot.scale,
+            lessThanOrEqualTo(viewport.width + 0.5),
+            reason: '$viewport, $size cards',
+          );
+          expect(
+            spot.y,
+            greaterThanOrEqualTo(-0.5),
+            reason: '$viewport, $size cards',
+          );
+          expect(
+            spot.y + kCardHeight * spot.scale,
+            lessThanOrEqualTo(viewport.height + 0.5),
+            reason: '$viewport, $size cards',
+          );
+        }
+      }
+    }
+  });
+
+  test(
+    'every meld a side can lay stays inside the viewport or fully degrades',
+    () {
+      for (final viewport in const [Size(1280, 820), Size(420, 840)]) {
+        for (final count in const [1, 5, 9, 12, 16]) {
+          for (final size in const [3, 7, 10, 14]) {
+            if (count * size > 92) continue;
+            final specs = List<_MeldSpec>.filled(
+              count,
+              (
+                cards: size,
+                points: 100,
+                canastra: size >= 7,
+                clean: true,
+              ),
+            );
+            for (final owner in const [0, 1]) {
+              final melds = _meldsForSide(
+                owner: owner,
+                specs: specs,
+                sequenceSlots: const {},
+              );
+              final view = _tableView(
+                handSize: 15,
+                myMelds: owner == 0 ? melds : const [],
+                theirMelds: owner == 1 ? melds : const [],
+              );
+              final solution = _solve(view, viewport);
+              final where = '$viewport, side $owner, $count melds of $size';
+
+              expect(solution.melds, hasLength(count), reason: where);
+              _expectMeldsInside(
+                solution,
+                viewport,
+                where,
+                allowFullDegradation: true,
+              );
+            }
+          }
+        }
+      }
+    },
+  );
+
+  test('the round the goldens play out stays inside the viewport', () {
+    const seed21 = [8, 5, 7, 8, 6, 6, 7, 4, 7, 5, 4, 4, 4, 4, 3];
+    final specs = [
+      for (final size in seed21)
+        (
+          cards: size,
+          points: 100,
+          canastra: size >= 7,
+          clean: true,
+        ),
+    ];
+
+    for (final viewport in const [Size(1280, 820), Size(420, 840)]) {
+      for (final owner in const [0, 1]) {
+        final melds = _meldsForSide(
+          owner: owner,
+          specs: specs,
+          sequenceSlots: const {},
+        );
+        final view = _tableView(
+          handSize: 15,
+          myMelds: owner == 0 ? melds : const [],
+          theirMelds: owner == 1 ? melds : const [],
+        );
+        final solution = _solve(view, viewport);
+        final where = '$viewport, side $owner';
+
+        expect(solution.melds, hasLength(seed21.length), reason: where);
+        _expectMeldsInside(solution, viewport, where);
+      }
+    }
+  });
+
+  test('a stack is no wider at fourteen cards than at seven', () {
+    TableSolution stacked(int size) {
+      final specs = List<_MeldSpec>.filled(
+        16,
+        (cards: size, points: 0, canastra: false, clean: true),
+      );
+      final view = _tableView(
+        handSize: 15,
+        myMelds: _meldsForSide(
+          owner: 0,
+          specs: specs,
+          sequenceSlots: const {},
+        ),
+        theirMelds: const [],
+      );
+      return _solve(view, const Size(250, 568));
+    }
+
+    final seven = stacked(7);
+    final fourteen = stacked(14);
+    expect(seven.degradation, greaterThanOrEqualTo(3));
+    expect(fourteen.degradation, greaterThanOrEqualTo(3));
+    expect(seven.stackedMelds, isTrue);
+    expect(fourteen.stackedMelds, isTrue);
+
+    final sevenMeld = seven.melds.singleWhere(
+      (meld) => meld.mine && meld.slot == 0,
+    );
+    final fourteenMeld = fourteen.melds.singleWhere(
+      (meld) => meld.mine && meld.slot == 0,
+    );
+    expect(fourteenMeld.rect.width, closeTo(sevenMeld.rect.width, 0.001));
+
+    final drawn = fourteenMeld.cards;
+    expect(drawn, hasLength(14));
+    expect(drawn.map((spot) => spot.key).toSet(), hasLength(14));
+    expect(drawn.last.x, drawn[2].x);
+    expect(drawn[2].x, greaterThan(drawn.first.x));
+  });
+
+  test('the solver draws the hand in the override order', () {
+    final natural = [cardId(3, 2), kJoker, cardId(3, 0)];
+    final override = [cardId(3, 0), cardId(3, 2), kJoker];
+    final view = _tableView(
+      handSize: natural.length,
+      hand: natural,
+      myMelds: const [],
+      theirMelds: const [],
+    );
+    final solution = _solve(
+      view,
+      const Size(1440, 900),
+      handOverride: override,
+    );
+    final drawn = [
+      for (final spot in solution.cards)
+        if (spot.inHand) spot.card,
+    ];
+
+    expect(drawn, override);
   });
 }

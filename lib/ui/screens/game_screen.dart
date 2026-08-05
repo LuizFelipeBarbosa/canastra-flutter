@@ -270,6 +270,7 @@ class _GameScreenState extends State<GameScreen> {
           openSlots: c.openSlots,
           dealt: _dealt,
           dealDone: _dealt >= _dealTotal,
+          meldLabeler: (m) => shortMeldLabel(prefs.lang, m),
           handOverride: prefs.handOrder == HandOrder.rank
               ? ([...view.hand]..sort(rankMajorOrder))
               : null,

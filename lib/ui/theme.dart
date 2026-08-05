@@ -198,8 +198,8 @@ class Palette {
   static const light = Palette(
     shell: Color(0xFFE8DFCB),
     ground: [Color(0xFFFEFAF0), Color(0xFFF2E8D4), Color(0xFFDBC9A8)],
-    // The sun table inverts the motif rather than recolouring it, so the arcs
-    // go from a white ghost to a black one at the same 3.5% contrast.
+    // On the sun table the motif is a faint blue-slate ink, echoing the tile
+    // blue elsewhere in the palette at a low, roughly 7% contrast.
     motifInk: Color(0x12123A5C),
     text: Color(0xFF0F1A25),
     ash: Color(0xFF41586C),

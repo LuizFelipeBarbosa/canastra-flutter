@@ -1,8 +1,8 @@
 /// Fluid table geometry for an arbitrary viewport.
 ///
-/// This is the formula-driven sibling of [layOutTable]. It knows nothing about
-/// widgets: one pass chooses readable card sizes, packs both meld shelves, and
-/// returns every rectangle and card position the eventual screen needs.
+/// It knows nothing about widgets: one pass chooses readable card sizes, packs
+/// both meld shelves, and returns every rectangle and card position the
+/// eventual screen needs.
 library;
 
 import 'dart:ui' show Offset, Rect, Size;
@@ -36,6 +36,9 @@ class TableSolverInput {
   /// Your hand in display order. The authoritative cards remain [TableView.hand].
   final List<CardId>? handOverride;
 
+  /// The caption whose width each meld reserves. Null keeps the solver label.
+  final String Function(MeldView meld)? meldLabeler;
+
   const TableSolverInput({
     required this.viewport,
     required this.view,
@@ -45,6 +48,7 @@ class TableSolverInput {
     required this.dealDone,
     this.cardBoost = 1,
     this.handOverride,
+    this.meldLabeler,
   });
 }
 
@@ -281,16 +285,25 @@ String tableSolverMeldLabel(MeldView meld) {
   return first == null ? '?' : kRankNames[first];
 }
 
+String _labelFor(
+  MeldView meld,
+  String Function(MeldView meld)? labeler,
+) => labeler == null ? tableSolverMeldLabel(meld) : labeler(meld);
+
 double tableSolverMeldCaptionFontSize(double cardWidth) =>
     _clamp(12.5, cardWidth * 0.20, 17);
 
 /// The minimum framed width needed by a meld's caption and optional seal.
-double tableSolverMeldCaptionMinimumWidth(MeldView meld, double cardWidth) {
+double tableSolverMeldCaptionMinimumWidth(
+  MeldView meld,
+  double cardWidth, {
+  String Function(MeldView meld)? labeler,
+}) {
   final fontSize = tableSolverMeldCaptionFontSize(cardWidth);
   final characterWidth = fontSize * 0.68;
   final captionGap = _max(4, cardWidth * 0.09);
   var caption =
-      tableSolverMeldLabel(meld).length * characterWidth +
+      _labelFor(meld, labeler).length * characterWidth +
       captionGap +
       meld.points.toString().length * characterWidth;
   if (meld.isCanastra) {
@@ -320,6 +333,7 @@ TableSolution solveTable(TableSolverInput input) {
     theirMelds: theirMelds,
     myMelds: myMelds,
     cardBoost: input.cardBoost,
+    labeler: input.meldLabeler,
   );
   final q = scales.metrics;
   final meldGap = scales.mcw * _meldGap;
@@ -331,6 +345,7 @@ TableSolution solveTable(TableSolverInput input) {
     extra: false,
     geometry: scales.geometry,
     stepFactor: scales.stepFactor,
+    labeler: input.meldLabeler,
   );
   final myRows = _rowsOf(
     myMelds,
@@ -339,6 +354,7 @@ TableSolution solveTable(TableSolverInput input) {
     extra: true,
     geometry: scales.geometry,
     stepFactor: scales.stepFactor,
+    labeler: input.meldLabeler,
   );
 
   final midTop = q.pad + q.hdrH + q.g;
@@ -412,6 +428,7 @@ TableSolution solveTable(TableSolverInput input) {
     cardWidth: scales.mcw,
     geometry: scales.geometry,
     stepFactor: scales.stepFactor,
+    labeler: input.meldLabeler,
   );
   final myLayout = _layOutMelds(
     melds: myMelds,
@@ -421,6 +438,7 @@ TableSolution solveTable(TableSolverInput input) {
     cardWidth: scales.mcw,
     geometry: scales.geometry,
     stepFactor: scales.stepFactor,
+    labeler: input.meldLabeler,
     includeNewMeld: true,
   );
   final piles = _layOutPiles(view, pileBand, q, landscape);
@@ -708,18 +726,33 @@ _ScaleSolution _solveScales({
   required List<MeldView> theirMelds,
   required List<MeldView> myMelds,
   required double cardBoost,
+  String Function(MeldView meld)? labeler,
 }) {
   final pad = _clamp(10, size.width * 0.024, 24);
   final cwByWidth =
       (size.width - 2 * pad) / (1 + 0.44 * (handCount - 1));
 
-  if (_fitsCw(26, size, landscape, theirMelds, myMelds)) {
+  if (_fitsCw(
+    26,
+    size,
+    landscape,
+    theirMelds,
+    myMelds,
+    labeler: labeler,
+  )) {
     var low = 26.0;
     var high = _max(26, _min(cwByWidth, 132));
     var cw = 26.0;
     for (var i = 0; i < 26; i++) {
       final middle = (low + high) / 2;
-      if (_fitsCw(middle, size, landscape, theirMelds, myMelds)) {
+      if (_fitsCw(
+        middle,
+        size,
+        landscape,
+        theirMelds,
+        myMelds,
+        labeler: labeler,
+      )) {
         cw = middle;
         low = middle;
       } else {
@@ -741,6 +774,7 @@ _ScaleSolution _solveScales({
       myMelds: myMelds,
       geometry: _MeldGeometry.spread,
       stepFactor: _meldStep,
+      labeler: labeler,
     );
     final mOne = _biggestMeld(
       cw: cw,
@@ -751,6 +785,7 @@ _ScaleSolution _solveScales({
       myMelds: myMelds,
       geometry: _MeldGeometry.spread,
       stepFactor: _meldStep,
+      labeler: labeler,
     );
     if (mAny > 0) {
       return _ScaleSolution(
@@ -775,6 +810,7 @@ _ScaleSolution _solveScales({
     myMelds: myMelds,
     geometry: _MeldGeometry.spread,
     stepFactor: _meldStep,
+    labeler: labeler,
   );
   final levelOneOne = _biggestMeld(
     cw: cw,
@@ -785,6 +821,7 @@ _ScaleSolution _solveScales({
     myMelds: myMelds,
     geometry: _MeldGeometry.spread,
     stepFactor: _meldStep,
+    labeler: labeler,
   );
   if (levelOneAny > 0) {
     return _ScaleSolution(
@@ -807,6 +844,7 @@ _ScaleSolution _solveScales({
       myMelds: myMelds,
       geometry: _MeldGeometry.spread,
       stepFactor: stepFactor,
+      labeler: labeler,
     );
     if (mAny > 0) {
       return _ScaleSolution(
@@ -829,6 +867,7 @@ _ScaleSolution _solveScales({
     myMelds: myMelds,
     geometry: _MeldGeometry.stacked,
     stepFactor: 0.12,
+    labeler: labeler,
   );
   if (stacked > 0) {
     return _ScaleSolution(
@@ -856,8 +895,9 @@ bool _fitsCw(
   Size size,
   bool landscape,
   List<MeldView> theirMelds,
-  List<MeldView> myMelds,
-) {
+  List<MeldView> myMelds, {
+  String Function(MeldView meld)? labeler,
+}) {
   final q = _metrics(cw, size, landscape);
   final meldWidth = _max(24, cw * 0.55);
   final theirRows = _rowsOf(
@@ -867,6 +907,7 @@ bool _fitsCw(
     extra: false,
     geometry: _MeldGeometry.spread,
     stepFactor: _meldStep,
+    labeler: labeler,
   );
   final myRows = _rowsOf(
     myMelds,
@@ -875,6 +916,7 @@ bool _fitsCw(
     extra: true,
     geometry: _MeldGeometry.spread,
     stepFactor: _meldStep,
+    labeler: labeler,
   );
   if (theirRows > 2 || myRows > 2) return false;
   final height =
@@ -892,6 +934,7 @@ double _biggestMeld({
   required List<MeldView> myMelds,
   required _MeldGeometry geometry,
   required double stepFactor,
+  String Function(MeldView meld)? labeler,
 }) {
   final ceiling = _min(cw * 0.92, 104);
   if (ceiling < floor ||
@@ -903,6 +946,7 @@ double _biggestMeld({
         myMelds,
         geometry,
         stepFactor,
+        labeler: labeler,
       )) {
     return 0;
   }
@@ -920,6 +964,7 @@ double _biggestMeld({
       myMelds,
       geometry,
       stepFactor,
+      labeler: labeler,
     )) {
       best = middle;
       low = middle;
@@ -937,8 +982,9 @@ bool _meldFits(
   List<MeldView> theirMelds,
   List<MeldView> myMelds,
   _MeldGeometry geometry,
-  double stepFactor,
-) {
+  double stepFactor, {
+  String Function(MeldView meld)? labeler,
+}) {
   final theirRows = _rowsOf(
     theirMelds,
     cardWidth,
@@ -946,6 +992,7 @@ bool _meldFits(
     extra: false,
     geometry: geometry,
     stepFactor: stepFactor,
+    labeler: labeler,
   );
   final myRows = _rowsOf(
     myMelds,
@@ -954,6 +1001,7 @@ bool _meldFits(
     extra: true,
     geometry: geometry,
     stepFactor: stepFactor,
+    labeler: labeler,
   );
   return theirRows <= rowCap &&
       myRows <= rowCap &&
@@ -997,11 +1045,16 @@ double _meldWidth(
   MeldView meld,
   double cardWidth,
   _MeldGeometry geometry,
-  double stepFactor,
-) =>
+  double stepFactor, {
+  String Function(MeldView meld)? labeler,
+}) =>
     _max(
       _meldUnits(meld.cards.length, geometry, stepFactor) * cardWidth,
-      tableSolverMeldCaptionMinimumWidth(meld, cardWidth),
+      tableSolverMeldCaptionMinimumWidth(
+        meld,
+        cardWidth,
+        labeler: labeler,
+      ),
     );
 
 double _newMeldWidth(double cardWidth) {
@@ -1016,10 +1069,17 @@ int _rowsOf(
   required bool extra,
   required _MeldGeometry geometry,
   required double stepFactor,
+  String Function(MeldView meld)? labeler,
 }) {
   final widths = [
     for (final meld in melds)
-      _meldWidth(meld, cardWidth, geometry, stepFactor),
+      _meldWidth(
+        meld,
+        cardWidth,
+        geometry,
+        stepFactor,
+        labeler: labeler,
+      ),
     if (extra) _newMeldWidth(cardWidth),
   ];
   return _packRows(widths, cardWidth * _meldGap, shelfWidth - 4);
@@ -1089,11 +1149,18 @@ _MeldLayout _layOutMelds({
   required double cardWidth,
   required _MeldGeometry geometry,
   required double stepFactor,
+  String Function(MeldView meld)? labeler,
   bool includeNewMeld = false,
 }) {
   final widths = [
     for (final meld in melds)
-      _meldWidth(meld, cardWidth, geometry, stepFactor),
+      _meldWidth(
+        meld,
+        cardWidth,
+        geometry,
+        stepFactor,
+        labeler: labeler,
+      ),
     if (includeNewMeld) _newMeldWidth(cardWidth),
   ];
   final gap = cardWidth * _meldGap;
@@ -1142,11 +1209,12 @@ _MeldLayout _layOutMelds({
         hot: mine && openSlots.contains(slot),
         sealed: meld.isCanastra,
         clean: meld.isClean,
-        label: tableSolverMeldLabel(meld),
+        label: _labelFor(meld, labeler),
         captionFontSize: tableSolverMeldCaptionFontSize(cardWidth),
         captionMinimumWidth: tableSolverMeldCaptionMinimumWidth(
           meld,
           cardWidth,
+          labeler: labeler,
         ),
         cards: cards,
       ),

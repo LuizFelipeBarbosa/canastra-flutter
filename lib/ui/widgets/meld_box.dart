@@ -15,9 +15,9 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../engine/cards.dart';
-import '../../game/move_index.dart';
 import '../../multiplayer/table_view.dart';
 import '../app_scope.dart';
+import '../copy.dart';
 import '../theme.dart';
 import 'controls.dart';
 
@@ -188,7 +188,9 @@ class _MeldBoxState extends State<MeldBox> with TickerProviderStateMixin {
                       Flexible(
                         fit: FlexFit.loose,
                         child: Text(
-                          widget.compact ? '×${meld.size}' : meldLabel(meld),
+                          widget.compact
+                              ? '×${meld.size}'
+                              : shortMeldLabel(context.prefs.lang, meld),
                           overflow: TextOverflow.ellipsis,
                           softWrap: false,
                           style: mono(
