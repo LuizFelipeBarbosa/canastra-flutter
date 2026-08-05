@@ -92,6 +92,21 @@ class Palette {
   final Color markFill;
   final Color markVoid;
 
+  /// The multiplier applied to card corner radii.
+  final double cardRadiusFactor;
+
+  /// The card border stroke width.
+  final double cardBorderW;
+
+  /// The centre of the felt radial gradient.
+  final Alignment groundCenter;
+
+  /// The radius of the felt radial gradient.
+  final double groundRadius;
+
+  /// The stops of the felt radial gradient.
+  final List<double> groundStops;
+
   const Palette({
     required this.shell,
     required this.ground,
@@ -127,88 +142,103 @@ class Palette {
     required this.avatarInk,
     required this.markFill,
     required this.markVoid,
+    required this.cardRadiusFactor,
+    required this.cardBorderW,
+    required this.groundCenter,
+    required this.groundRadius,
+    required this.groundStops,
   });
 
   /// `mesa noite`.
   static const dark = Palette(
     shell: Color(0xFF06101D),
-    ground: [Color(0xFF17496F), Color(0xFF123A5C), Color(0xFF0A1628)],
-    motifInk: Color(0x09FFFFFF),
-    text: Color(0xFFF4EFE6),
-    ash: Color(0xFF8FA6BC),
-    ashDim: Color(0xFF5A7189),
-    line: Color(0x22FFFFFF),
-    panel: Color(0x33000000),
-    panelHot: Color(0x1A000000),
+    ground: [Color(0xFF1D5C88), Color(0xFF123A5C), Color(0xFF071322)],
+    motifInk: Color(0x0BFFFFFF),
+    text: Color(0xFFF7F2E8),
+    ash: Color(0xFFA8BECF),
+    ashDim: Color(0xFF7C93A8),
+    line: Color(0x26FFFFFF),
+    panel: Color(0x57040E1A),
+    panelHot: Color(0x213BE9B8),
     strip: Color(0x4D000000),
     sheet: Color(0xFF0A1628),
     scrim: Color(0x8A000000),
     sealBg: Color(0xFF0A1628),
-    cardBg: Color(0xFFF4EFE6),
-    cardEdge: Color(0xFFDCD3C4),
-    cardBack: Color(0xFF0D2E4A),
+    cardBg: Color(0xFFF8F3E9),
+    cardEdge: Color(0x1F000000),
+    cardBack: Color(0xFF0C2A44),
     backLine: Color(0x4D35E0B0),
-    backA: Color(0x1A35E0B0),
-    backB: Color(0x1AFF2E88),
+    backA: Color(0x2E3BE9B8),
+    backB: Color(0x2EFF3D93),
     cardShadow: [
       BoxShadow(color: Color(0x59000000), blurRadius: 6, offset: Offset(0, 3)),
     ],
-    mint: Color(0xFF35E0B0),
-    mintInk: Color(0xFF0A1628),
+    mint: Color(0xFF3BE9B8),
+    mintInk: Color(0xFF06131F),
     gold: Color(0xFFFFC93C),
-    goldInk: Color(0xFF0A1628),
-    pink: Color(0xFFFF2E88),
+    goldInk: Color(0xFF06131F),
+    pink: Color(0xFFFF3D93),
     goldLine: Color(0x73FFC93C),
     goldWash: Color(0x1AFFC93C),
-    glow: Color(0x6135E0B0),
-    suitBlack: Color(0xFF16202B),
-    suitRed: Color(0xFFD92B2B),
+    glow: Color(0x613BE9B8),
+    suitBlack: Color(0xFF141E28),
+    suitRed: Color(0xFFD42B2B),
     avatar: Color(0x1FFFFFFF),
     avatarInk: Color(0xFFF4EFE6),
     markFill: Color(0xFFF4EFE6),
     markVoid: Color(0xFF123A5C),
+    cardRadiusFactor: 1.0,
+    cardBorderW: 1.5,
+    groundCenter: Alignment(0, -0.64),
+    groundRadius: 1.135,
+    groundStops: [0.0, 0.54, 1.0],
   );
 
   /// `mesa de sol`.
   static const light = Palette(
     shell: Color(0xFFE8DFCB),
-    ground: [Color(0xFFFBF6EA), Color(0xFFEFE6D3), Color(0xFFE0D4BC)],
+    ground: [Color(0xFFFEFAF0), Color(0xFFF2E8D4), Color(0xFFDBC9A8)],
     // The sun table inverts the motif rather than recolouring it, so the arcs
     // go from a white ghost to a black one at the same 3.5% contrast.
-    motifInk: Color(0x09000000),
-    text: Color(0xFF16202B),
-    ash: Color(0xFF54677A),
-    ashDim: Color(0xFF8496A6),
-    line: Color(0x29123A5C),
-    panel: Color(0x0D123A5C),
-    panelHot: Color(0x120E9E79),
+    motifInk: Color(0x12123A5C),
+    text: Color(0xFF0F1A25),
+    ash: Color(0xFF41586C),
+    ashDim: Color(0xFF6B7E90),
+    line: Color(0x33123A5C),
+    panel: Color(0x94FFFFFF),
+    panelHot: Color(0x240B8E6C),
     strip: Color(0x0F123A5C),
     sheet: Color(0xFFFFFDF7),
     scrim: Color(0x66281E0A),
     sealBg: Color(0xFFFFFDF7),
     cardBg: Color(0xFFFFFFFF),
-    cardEdge: Color(0xFFCFC3AC),
+    cardEdge: Color(0x2E123A5C),
     cardBack: Color(0xFF123A5C),
     backLine: Color(0x59F4EFE6),
-    backA: Color(0x3835E0B0),
-    backB: Color(0x2EFF2E88),
+    backA: Color(0x520B8E6C),
+    backB: Color(0x42CE0F63),
     cardShadow: [
       BoxShadow(color: Color(0x293C2D14), blurRadius: 8, offset: Offset(0, 3)),
     ],
-    mint: Color(0xFF0E9E79),
+    mint: Color(0xFF0B8E6C),
     mintInk: Color(0xFFFFFFFF),
-    gold: Color(0xFFA97900),
+    gold: Color(0xFF9C6E00),
     goldInk: Color(0xFFFFFDF7),
-    pink: Color(0xFFD8146A),
-    goldLine: Color(0x59A97900),
-    goldWash: Color(0x14A97900),
-    glow: Color(0x730E9E79),
-    suitBlack: Color(0xFF16202B),
+    pink: Color(0xFFCE0F63),
+    goldLine: Color(0x599C6E00),
+    goldWash: Color(0x149C6E00),
+    glow: Color(0x730B8E6C),
+    suitBlack: Color(0xFF14202B),
     suitRed: Color(0xFFC61F1F),
     avatar: Color(0x1F123A5C),
     avatarInk: Color(0xFF123A5C),
     markFill: Color(0xFF123A5C),
     markVoid: Color(0xFFF3EBDA),
+    cardRadiusFactor: 1.1,
+    cardBorderW: 1.5,
+    groundCenter: Alignment(0, -0.68),
+    groundRadius: 1.15,
+    groundStops: [0.0, 0.52, 1.0],
   );
 
   /// A mint halo, for whatever is currently a legal destination.
@@ -217,13 +247,12 @@ class Palette {
   ];
 }
 
-/// The table's own gradient. The mock draws it as an 860px circle centred a
-/// little above the middle, which is where the light would fall on a real table.
+/// Each palette carries the felt gradient shape for its NOITE or SOL direction.
 RadialGradient groundGradient(Palette p) => RadialGradient(
-  center: const Alignment(0, -0.48),
-  radius: 860 / 790,
+  center: p.groundCenter,
+  radius: p.groundRadius,
   colors: p.ground,
-  stops: const [0.0, 0.55, 1.0],
+  stops: p.groundStops,
 );
 
 /// Archivo is variable; weight comes from a font variation rather than a

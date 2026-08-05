@@ -180,7 +180,7 @@ class Room extends StatelessWidget {
 /// tiled. It sits at very low contrast — it should be felt more than seen, and
 /// must never compete with a card.
 class AzulejoPainter extends CustomPainter {
-  static const double tile = 56;
+  static const double tile = 104;
   final Color ink;
 
   const AzulejoPainter({required this.ink});
@@ -189,7 +189,7 @@ class AzulejoPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0
+      ..strokeWidth = 3
       ..color = ink;
 
     final cols = (size.width / tile).ceil() + 1;
