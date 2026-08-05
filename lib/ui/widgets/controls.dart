@@ -58,6 +58,9 @@ class Pill extends StatelessWidget {
   final Color? color;
   final bool round;
 
+  /// Uses the filled mint table-action treatment without changing chrome pills.
+  final bool filled;
+
   const Pill({
     super.key,
     required this.label,
@@ -65,6 +68,7 @@ class Pill extends StatelessWidget {
     required this.onTap,
     this.color,
     this.round = false,
+    this.filled = false,
   });
 
   @override
@@ -78,15 +82,26 @@ class Pill extends StatelessWidget {
             ? const EdgeInsets.symmetric(horizontal: 10, vertical: 5)
             : const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(round ? 999 : 8),
-          border: Border.all(color: hovered ? palette.mint : palette.line),
+          color: filled
+              ? (hovered ? brighten(palette.mint, 1.08) : palette.mint)
+              : null,
+          borderRadius: BorderRadius.circular(round || filled ? 999 : 8),
+          border: filled
+              ? null
+              : Border.all(color: hovered ? palette.mint : palette.line),
         ),
         child: Text(
           label,
-          style: mono(
-            round ? 10 : 11,
-            color: hovered ? palette.mint : (color ?? palette.ash),
-          ),
+          style: filled
+              ? mono(
+                  round ? 10 : 11,
+                  tracking: (round ? 10 : 11) * 0.12,
+                  color: palette.mintInk,
+                )
+              : mono(
+                  round ? 10 : 11,
+                  color: hovered ? palette.mint : (color ?? palette.ash),
+                ),
         ),
       ),
     ),
@@ -232,6 +247,9 @@ class GoldButton extends StatelessWidget {
   /// Fill the row rather than hug the label.
   final bool wide;
 
+  /// Draws the quieter transparent, gold-keyline table action.
+  final bool outline;
+
   const GoldButton({
     super.key,
     required this.label,
@@ -240,6 +258,7 @@ class GoldButton extends StatelessWidget {
     this.fontSize = 18,
     this.padding = const EdgeInsets.symmetric(horizontal: 34, vertical: 18),
     this.wide = false,
+    this.outline = false,
   });
 
   @override
@@ -247,21 +266,33 @@ class GoldButton extends StatelessWidget {
     button: true,
     child: Hoverable(
       onTap: onTap,
-      builder: (hovered) => AnimatedContainer(
-        duration: Motion.of(context, Motion.quick),
-        width: wide ? double.infinity : null,
-        padding: padding,
-        alignment: wide ? Alignment.center : null,
-        decoration: BoxDecoration(
-          color: hovered ? brighten(palette.gold, 1.08) : palette.gold,
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Text(
-          label,
-          textAlign: TextAlign.center,
-          style: T.display(fontSize, tracking: -0.4, color: palette.goldInk),
-        ),
-      ),
+      builder: (hovered) {
+        final activeGold = hovered
+            ? brighten(palette.gold, 1.08)
+            : palette.gold;
+        return AnimatedContainer(
+          duration: Motion.of(context, Motion.quick),
+          width: wide ? double.infinity : null,
+          padding: padding,
+          alignment: wide ? Alignment.center : null,
+          decoration: BoxDecoration(
+            color: outline ? Colors.transparent : activeGold,
+            borderRadius: BorderRadius.circular(outline ? 999 : 14),
+            border: outline ? Border.all(color: activeGold, width: 1.5) : null,
+          ),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: outline
+                ? mono(
+                    fontSize,
+                    tracking: fontSize * 0.14,
+                    color: activeGold,
+                  ).copyWith(fontWeight: FontWeight.w500)
+                : T.display(fontSize, tracking: -0.4, color: palette.goldInk),
+          ),
+        );
+      },
     ),
   );
 }
@@ -291,9 +322,16 @@ class MintButton extends StatelessWidget {
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: hovered ? brighten(palette.mint, 1.08) : palette.mint,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(999),
         ),
-        child: Text(label, style: T.title(15, color: palette.mintInk)),
+        child: Text(
+          label,
+          style: mono(
+            15,
+            tracking: 15 * 0.12,
+            color: palette.mintInk,
+          ).copyWith(fontWeight: FontWeight.w500),
+        ),
       ),
     ),
   );
@@ -315,12 +353,16 @@ class BackLink extends StatelessWidget {
   /// of a screen.
   final bool showLabel;
 
+  /// Adds panel chrome for compact back controls while bare links stay bare.
+  final bool boxed;
+
   const BackLink({
     super.key,
     required this.label,
     required this.palette,
     required this.onTap,
     this.showLabel = true,
+    this.boxed = false,
   });
 
   @override
@@ -331,7 +373,7 @@ class BackLink extends StatelessWidget {
       onTap: onTap,
       builder: (hovered) {
         final tint = hovered ? palette.mint : palette.ash;
-        return Row(
+        final content = Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.arrow_back, size: 12, color: tint),
@@ -340,6 +382,23 @@ class BackLink extends StatelessWidget {
               Text(label, style: mono(11, color: tint)),
             ],
           ],
+        );
+        if (!boxed) return content;
+
+        return AnimatedContainer(
+          duration: Motion.of(context, Motion.quick),
+          width: showLabel ? null : 30,
+          height: 30,
+          padding: showLabel
+              ? const EdgeInsets.symmetric(horizontal: 9)
+              : EdgeInsets.zero,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: palette.panel,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: hovered ? palette.mint : palette.line),
+          ),
+          child: content,
         );
       },
     ),

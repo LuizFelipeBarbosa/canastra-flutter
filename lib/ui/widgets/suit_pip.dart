@@ -53,31 +53,36 @@ class _SuitPainter extends CustomPainter {
     final h = s.height;
     switch (suit) {
       case Suit.diamonds:
+        // M50 4 L90 50 L50 96 L10 50 Z
         return Path()
           ..moveTo(w * 0.5, h * 0.04)
-          ..lineTo(w * 0.90, h * 0.5)
+          ..lineTo(w * 0.9, h * 0.5)
           ..lineTo(w * 0.5, h * 0.96)
-          ..lineTo(w * 0.10, h * 0.5)
+          ..lineTo(w * 0.1, h * 0.5)
           ..close();
 
       case Suit.hearts:
+        // M50 95 C-10 52 10 2 50 28 C90 2 110 52 50 95 Z
         return Path()
           ..moveTo(w * 0.5, h * 0.95)
-          ..cubicTo(w * -0.10, h * 0.52, w * 0.10, h * 0.02, w * 0.5, h * 0.28)
-          ..cubicTo(w * 0.90, h * 0.02, w * 1.10, h * 0.52, w * 0.5, h * 0.95)
+          ..cubicTo(w * -0.1, h * 0.52, w * 0.1, h * 0.02, w * 0.5, h * 0.28)
+          ..cubicTo(w * 0.9, h * 0.02, w * 1.1, h * 0.52, w * 0.5, h * 0.95)
           ..close();
 
       case Suit.spades:
-        final body = Path()
+        // M50 5 C110 46 90 86 50 66 C10 86 -10 46 50 5 Z, then the stem.
+        return Path()
           ..moveTo(w * 0.5, h * 0.05)
-          ..cubicTo(w * 1.10, h * 0.46, w * 0.90, h * 0.86, w * 0.5, h * 0.66)
-          ..cubicTo(w * 0.10, h * 0.86, w * -0.10, h * 0.46, w * 0.5, h * 0.05)
-          ..close();
-        return Path.combine(PathOperation.union, body, _stem(w, h));
+          ..cubicTo(w * 1.1, h * 0.46, w * 0.9, h * 0.86, w * 0.5, h * 0.66)
+          ..cubicTo(w * 0.1, h * 0.86, w * -0.1, h * 0.46, w * 0.5, h * 0.05)
+          ..close()
+          ..addPath(_stem(w, h), Offset.zero);
 
       default: // clubs
+        // The SVG's nearly coincident arc endpoints describe full circles.
+        // Their intended centres match the existing clover geometry exactly.
         final r = w * 0.21;
-        final clover = Path()
+        return Path()
           ..addOval(
             Rect.fromCircle(center: Offset(w * 0.5, h * 0.24), radius: r),
           )
@@ -86,12 +91,12 @@ class _SuitPainter extends CustomPainter {
           )
           ..addOval(
             Rect.fromCircle(center: Offset(w * 0.76, h * 0.56), radius: r),
-          );
-        return Path.combine(PathOperation.union, clover, _stem(w, h));
+          )
+          ..addPath(_stem(w, h), Offset.zero);
     }
   }
 
-  /// The tapered stem shared by spades and clubs.
+  /// Ports `M42 98 ... Z`, shared verbatim by the spade and club paths.
   static Path _stem(double w, double h) => Path()
     ..moveTo(w * 0.42, h * 0.98)
     ..cubicTo(w * 0.50, h * 0.80, w * 0.50, h * 0.72, w * 0.48, h * 0.55)
