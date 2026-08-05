@@ -179,14 +179,11 @@ class _MeldBoxState extends State<MeldBox> with TickerProviderStateMixin {
                   left: captionPad,
                   right: captionPad,
                   bottom: captionBottom,
-                  // Every variable-width child below is Flexible (loose) so
-                  // the row can only ever be squeezed, never overflow: a
-                  // heuristically undersized box must degrade the caption to
-                  // ellipsis, not throw a RenderFlex overflow.
+                  // The solver reserves the rigid points width. The label gets
+                  // the remaining room and only ellipsizes under real pressure.
                   child: Row(
                     children: [
-                      Flexible(
-                        fit: FlexFit.loose,
+                      Expanded(
                         child: Text(
                           widget.compact
                               ? '×${meld.size}'
@@ -214,21 +211,15 @@ class _MeldBoxState extends State<MeldBox> with TickerProviderStateMixin {
                         ),
                         SizedBox(width: captionGap),
                       ],
-                      Flexible(
-                        fit: FlexFit.loose,
-                        child: Align(
-                          alignment: Alignment.centerRight,
-                          child: Text(
-                            '${meld.points}',
-                            overflow: TextOverflow.ellipsis,
-                            softWrap: false,
-                            textAlign: TextAlign.right,
-                            style: mono(
-                              capFs,
-                              color: meld.isCanastra ? accent : p.ashDim,
-                            ).copyWith(fontWeight: FontWeight.w500),
-                          ),
-                        ),
+                      Text(
+                        '${meld.points}',
+                        overflow: TextOverflow.ellipsis,
+                        softWrap: false,
+                        textAlign: TextAlign.right,
+                        style: mono(
+                          capFs,
+                          color: meld.isCanastra ? accent : p.ashDim,
+                        ).copyWith(fontWeight: FontWeight.w500),
                       ),
                     ],
                   ),

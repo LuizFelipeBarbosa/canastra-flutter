@@ -19,6 +19,14 @@ const double _meldStep = 0.48;
 const double _meldMinimumUnits = 2.35;
 const double _meldGap = 0.17;
 
+/// Space reserved for the hand-order control below the cards.
+///
+/// This mirrors the control's previous 40px footprint in `game_screen.dart`:
+/// a 24px pill plus `2 * kHandOrderHitPad` (8px on each side) from
+/// `controls.dart`. This file deliberately stays independent of widgets, so the
+/// control must keep matching the solver's reservation.
+const double kHandOrderBandHeight = 40;
+
 /// What changes from one solve to the next, beyond the public table view.
 class TableSolverInput {
   final Size viewport;
@@ -36,7 +44,10 @@ class TableSolverInput {
   /// Your hand in display order. The authoritative cards remain [TableView.hand].
   final List<CardId>? handOverride;
 
-  /// The caption whose width each meld reserves. Null keeps the solver label.
+  /// The caption whose width each spread meld reserves.
+  ///
+  /// Stacked melds reserve the compact `×N` caption that `MeldBox` displays.
+  /// Null keeps the solver label for spread melds.
   final String Function(MeldView meld)? meldLabeler;
 
   const TableSolverInput({
@@ -153,10 +164,12 @@ class MeldSolution {
   final bool hot;
   final bool sealed;
   final bool clean;
+
+  /// The exact caption label displayed for this solution's geometry.
   final String label;
   final double captionFontSize;
 
-  /// The full caption estimate, including frame padding and four pixels of air.
+  /// The full displayed-caption estimate, including frame padding and air.
   final double captionMinimumWidth;
   final List<CardSpot> cards;
 
@@ -183,6 +196,8 @@ class TableSolution {
   final bool narrowAct;
   final bool tight;
   final bool veryTight;
+
+  /// Index into the degradation ladder documented by [solveTable].
   final int degradation;
   final double cw;
   final double mcw;
@@ -212,6 +227,7 @@ class TableSolution {
   final Rect pileBand;
   final Rect newMeldSlot;
   final Rect hand;
+  final Rect handOrderToggle;
 
   final List<MeldSolution> melds;
   final PileSolution stock;
@@ -252,6 +268,7 @@ class TableSolution {
     required this.pileBand,
     required this.newMeldSlot,
     required this.hand,
+    required this.handOrderToggle,
     required this.melds,
     required this.stock,
     required this.discard,
@@ -285,15 +302,17 @@ String tableSolverMeldLabel(MeldView meld) {
   return first == null ? '?' : kRankNames[first];
 }
 
-String _labelFor(
-  MeldView meld,
-  String Function(MeldView meld)? labeler,
-) => labeler == null ? tableSolverMeldLabel(meld) : labeler(meld);
+String _labelFor(MeldView meld, String Function(MeldView meld)? labeler) =>
+    labeler == null ? tableSolverMeldLabel(meld) : labeler(meld);
 
 double tableSolverMeldCaptionFontSize(double cardWidth) =>
     _clamp(12.5, cardWidth * 0.20, 17);
 
-/// The minimum framed width needed by a meld's caption and optional seal.
+/// The minimum framed width needed by a meld's displayed caption and seal.
+///
+/// [labeler] must return the same label that the widget paints. The solver's
+/// geometry plumbing preserves that invariant for both spread captions and
+/// stacked `×N` captions.
 double tableSolverMeldCaptionMinimumWidth(
   MeldView meld,
   double cardWidth, {
@@ -302,20 +321,29 @@ double tableSolverMeldCaptionMinimumWidth(
   final fontSize = tableSolverMeldCaptionFontSize(cardWidth);
   final characterWidth = fontSize * 0.68;
   final captionGap = _max(4, cardWidth * 0.09);
+  final label = _labelFor(meld, labeler);
+  final points = meld.points.toString();
   var caption =
-      _labelFor(meld, labeler).length * characterWidth +
+      label.length * (characterWidth + fontSize * 0.05) +
       captionGap +
-      meld.points.toString().length * characterWidth;
+      // MeldBox leaves points on mono()'s default 1.2px tracking.
+      points.length * (characterWidth + 1.2);
   if (meld.isCanastra) {
+    // The chip renders at 0.86x the caption size but adds 0.09em tracking per
+    // glyph, so its advance is a hair over one caption character — reserving
+    // 0.92x used to shave the seal down to "SUJ…" on compact shelves.
     caption +=
         captionGap +
-        (meld.isClean ? 5 : 4) * characterWidth * 0.92 +
+        (meld.isClean ? 5 : 4) * characterWidth * 1.0 +
         _max(8, cardWidth * 0.18);
   }
   return caption + 2 * cardWidth * _meldPadding + 4;
 }
 
-/// Solve the table using the mockup formulas and their fixed degradation order.
+/// Solve the table using five negotiated levels before the fixed give-up floor.
+///
+/// The order is spread with two rows, spread with three rows, tighter spread,
+/// stacked with three rows, stacked bounded only by height, then fixed fallback.
 TableSolution solveTable(TableSolverInput input) {
   final view = input.view;
   final size = input.viewport;
@@ -358,67 +386,66 @@ TableSolution solveTable(TableSolverInput input) {
   );
 
   final midTop = q.pad + q.hdrH + q.g;
-  final theirShelfHeight =
-      theirRows * meldHeight + (theirRows - 1) * meldGap;
-  final theirStrip = Rect.fromLTWH(q.pad, midTop, q.shelfW, q.stripH);
+  final theirShelfHeight = theirRows * meldHeight + (theirRows - 1) * meldGap;
+  final theirBlockHeight = q.stripH + 4 + theirShelfHeight;
+  final myShelfHeight = myRows * meldHeight + (myRows - 1) * meldGap;
+  final myBlockHeight = q.myStripH + 4 + myShelfHeight;
+  final midItems = [theirBlockHeight, myBlockHeight, if (!landscape) q.bankH];
+  final midSlack = _max(
+    0.0,
+    q.midH - midItems.fold(0.0, (sum, height) => sum + height),
+  );
+  final evenGap = midSlack / (midItems.length + 1);
+
+  final theirBlock = Rect.fromLTWH(
+    q.pad,
+    midTop + evenGap,
+    q.shelfW,
+    theirBlockHeight,
+  );
+  final theirStrip = Rect.fromLTWH(q.pad, theirBlock.top, q.shelfW, q.stripH);
   final theirShelf = Rect.fromLTWH(
     q.pad,
     theirStrip.bottom + 4,
     q.shelfW,
     theirShelfHeight,
   );
-  final theirBlock = Rect.fromLTWH(
-    q.pad,
-    midTop,
-    q.shelfW,
-    q.stripH + 4 + theirShelfHeight,
-  );
 
-  final myShelfHeight = myRows * meldHeight + (myRows - 1) * meldGap;
-  final myStrip = Rect.fromLTWH(
+  final myBlock = Rect.fromLTWH(
     q.pad,
-    theirBlock.bottom,
+    theirBlock.bottom + evenGap,
     q.shelfW,
-    q.myStripH,
+    myBlockHeight,
   );
+  final myStrip = Rect.fromLTWH(q.pad, myBlock.top, q.shelfW, q.myStripH);
   final myShelf = Rect.fromLTWH(
     q.pad,
     myStrip.bottom + 4,
     q.shelfW,
     myShelfHeight,
   );
-  final myBlock = Rect.fromLTWH(
-    q.pad,
-    myStrip.top,
-    q.shelfW,
-    q.myStripH + 4 + myShelfHeight,
-  );
 
   final pileBand = landscape
-      ? Rect.fromLTWH(
-          size.width - q.pad - q.railW,
-          midTop,
-          q.railW,
-          q.midInner,
-        )
+      ? Rect.fromLTWH(size.width - q.pad - q.railW, midTop, q.railW, q.midInner)
       : Rect.fromLTWH(
           q.pad,
-          midTop + q.midInner + q.g,
+          myBlock.bottom + evenGap,
           size.width - 2 * q.pad,
           q.bankH,
         );
   final hand = Rect.fromLTWH(
     q.pad,
-    size.height - q.pad - q.handH,
+    size.height - q.pad - q.handH - q.handToggleGap - kHandOrderBandHeight,
     size.width - 2 * q.pad,
     q.handH,
   );
-  final header = Rect.fromLTWH(
+  final handOrderToggle = Rect.fromLTWH(
     q.pad,
-    q.pad,
+    hand.bottom + q.handToggleGap,
     size.width - 2 * q.pad,
-    q.hdrH,
+    kHandOrderBandHeight,
   );
+  final header = Rect.fromLTWH(q.pad, q.pad, size.width - 2 * q.pad, q.hdrH);
 
   final theirLayout = _layOutMelds(
     melds: theirMelds,
@@ -530,6 +557,7 @@ TableSolution solveTable(TableSolverInput input) {
     pileBand: pileBand,
     newMeldSlot: myLayout.newMeldSlot,
     hand: hand,
+    handOrderToggle: handOrderToggle,
     melds: [...theirLayout.melds, ...myLayout.melds],
     stock: piles.stock,
     discard: piles.discard,
@@ -546,6 +574,7 @@ class _Metrics {
   final double g;
   final double hdrH;
   final double handH;
+  final double handToggleGap;
   final double stripH;
   final double actLine;
   final bool narrowAct;
@@ -570,6 +599,7 @@ class _Metrics {
     required this.g,
     required this.hdrH,
     required this.handH,
+    required this.handToggleGap,
     required this.stripH,
     required this.actLine,
     required this.narrowAct,
@@ -598,11 +628,18 @@ _Metrics _metrics(double cw, Size size, bool landscape) {
   final gap = _max(7, cw * 0.12);
   final headerHeight = _max(44, cw * 0.44);
   final handHeight = cw * _cardHeightFactor + cw * 0.14;
+  final handToggleGap = _max(6, cw * 0.08);
   final stripHeight = _max(24, cw * 0.30);
   final actionLine = _max(28, cw * 0.34);
   final middleHeight = _max(
     110,
-    height - 2 * pad - headerHeight - handHeight - 2 * gap,
+    height -
+        2 * pad -
+        headerHeight -
+        handHeight -
+        handToggleGap -
+        kHandOrderBandHeight -
+        2 * gap,
   );
   final pileLabelFs = _clamp(12, cw * 0.145, 15);
   final pileValueFs = _clamp(13.5, cw * 0.17, 17);
@@ -624,18 +661,13 @@ _Metrics _metrics(double cw, Size size, bool landscape) {
     );
   }
   railLabelWidth += 6;
-  final railChrome =
-      2 * pileBoxPadX + gap + railLabelWidth + 4;
+  final railChrome = 2 * pileBoxPadX + gap + railLabelWidth + 4;
   final stackSlack = 9 + 2 * gap;
   final pileCandidate = landscape
       ? _min(
           cw * 0.66,
           _min(
-            (middleHeight -
-                    2 * gap -
-                    6 * pileBoxPad -
-                    15 -
-                    stackSlack) /
+            (middleHeight - 2 * gap - 6 * pileBoxPad - 15 - stackSlack) /
                 (3 * _cardHeightFactor),
             (width * 0.23 - railChrome) / 1.28,
           ),
@@ -669,17 +701,15 @@ _Metrics _metrics(double cw, Size size, bool landscape) {
       2 * groupPadding;
   final narrowAct =
       identityWidth + coachWidth + chipsWidth + 2 * groupPadding > shelfWidth;
-  final myStripHeight = narrowAct
-      ? stripHeight + 8 + actionLine
-      : actionLine;
-  final middleInner =
-      middleHeight - (landscape ? 0 : bankHeight + gap) - gap;
+  final myStripHeight = narrowAct ? stripHeight + 8 + actionLine : actionLine;
+  final middleInner = middleHeight - (landscape ? 0 : bankHeight + gap) - gap;
 
   return _Metrics(
     pad: pad,
     g: gap,
     hdrH: headerHeight,
     handH: handHeight,
+    handToggleGap: handToggleGap,
     stripH: stripHeight,
     actLine: actionLine,
     narrowAct: narrowAct,
@@ -729,40 +759,21 @@ _ScaleSolution _solveScales({
   String Function(MeldView meld)? labeler,
 }) {
   final pad = _clamp(10, size.width * 0.024, 24);
-  final cwByWidth =
-      (size.width - 2 * pad) / (1 + 0.44 * (handCount - 1));
+  final cwByWidth = (size.width - 2 * pad) / (1 + 0.44 * (handCount - 1));
 
-  if (_fitsCw(
-    26,
-    size,
-    landscape,
-    theirMelds,
-    myMelds,
-    labeler: labeler,
-  )) {
-    var low = 26.0;
-    var high = _max(26, _min(cwByWidth, 132));
-    var cw = 26.0;
-    for (var i = 0; i < 26; i++) {
-      final middle = (low + high) / 2;
-      if (_fitsCw(
-        middle,
-        size,
-        landscape,
-        theirMelds,
-        myMelds,
-        labeler: labeler,
-      )) {
-        cw = middle;
-        low = middle;
-      } else {
-        high = middle;
-      }
-    }
-    cw = _clamp(
-      26,
-      cw * cardBoost,
-      _min(cwByWidth * 1.15, 190),
+  {
+    final cw = _solveCwAt(
+      size: size,
+      landscape: landscape,
+      cwByWidth: cwByWidth,
+      cardBoost: cardBoost,
+      theirMelds: theirMelds,
+      myMelds: myMelds,
+      rowCap: 2,
+      meldFloor: 24,
+      geometry: _MeldGeometry.spread,
+      stepFactor: _meldStep,
+      labeler: labeler,
     );
     final q = _metrics(cw, size, landscape);
     final mAny = _biggestMeld(
@@ -799,7 +810,19 @@ _ScaleSolution _solveScales({
     }
   }
 
-  const cw = 26.0;
+  final cw = _solveCwAt(
+    size: size,
+    landscape: landscape,
+    cwByWidth: cwByWidth,
+    cardBoost: cardBoost,
+    theirMelds: theirMelds,
+    myMelds: myMelds,
+    rowCap: 3,
+    meldFloor: 18,
+    geometry: _MeldGeometry.spread,
+    stepFactor: _meldStep,
+    labeler: labeler,
+  );
   final q = _metrics(cw, size, landscape);
   final levelOneAny = _biggestMeld(
     cw: cw,
@@ -835,6 +858,20 @@ _ScaleSolution _solveScales({
   }
 
   for (final stepFactor in const [0.40, 0.34, 0.28]) {
+    final cw = _solveCwAt(
+      size: size,
+      landscape: landscape,
+      cwByWidth: cwByWidth,
+      cardBoost: cardBoost,
+      theirMelds: theirMelds,
+      myMelds: myMelds,
+      rowCap: 3,
+      meldFloor: 18,
+      geometry: _MeldGeometry.spread,
+      stepFactor: stepFactor,
+      labeler: labeler,
+    );
+    final q = _metrics(cw, size, landscape);
     final mAny = _biggestMeld(
       cw: cw,
       floor: 18,
@@ -858,11 +895,25 @@ _ScaleSolution _solveScales({
     }
   }
 
+  final stackedCw = _solveCwAt(
+    size: size,
+    landscape: landscape,
+    cwByWidth: cwByWidth,
+    cardBoost: cardBoost,
+    theirMelds: theirMelds,
+    myMelds: myMelds,
+    rowCap: 3,
+    meldFloor: 18,
+    geometry: _MeldGeometry.stacked,
+    stepFactor: 0.12,
+    labeler: labeler,
+  );
+  final stackedMetrics = _metrics(stackedCw, size, landscape);
   final stacked = _biggestMeld(
-    cw: cw,
+    cw: stackedCw,
     floor: 18,
     rowCap: 3,
-    q: q,
+    q: stackedMetrics,
     theirMelds: theirMelds,
     myMelds: myMelds,
     geometry: _MeldGeometry.stacked,
@@ -871,23 +922,117 @@ _ScaleSolution _solveScales({
   );
   if (stacked > 0) {
     return _ScaleSolution(
-      cw: cw,
+      cw: stackedCw,
       mcw: stacked,
       degradation: 3,
       stepFactor: 0.12,
       geometry: _MeldGeometry.stacked,
-      metrics: q,
+      metrics: stackedMetrics,
     );
   }
 
+  final heightBoundedStackedCw = _solveCwAt(
+    size: size,
+    landscape: landscape,
+    cwByWidth: cwByWidth,
+    cardBoost: cardBoost,
+    theirMelds: theirMelds,
+    myMelds: myMelds,
+    rowCap: null,
+    meldFloor: 18,
+    geometry: _MeldGeometry.stacked,
+    stepFactor: 0.12,
+    labeler: labeler,
+  );
+  final heightBoundedStackedMetrics = _metrics(
+    heightBoundedStackedCw,
+    size,
+    landscape,
+  );
+  final heightBoundedStacked = _biggestMeld(
+    cw: heightBoundedStackedCw,
+    floor: 18,
+    rowCap: null,
+    q: heightBoundedStackedMetrics,
+    theirMelds: theirMelds,
+    myMelds: myMelds,
+    geometry: _MeldGeometry.stacked,
+    stepFactor: 0.12,
+    labeler: labeler,
+  );
+  if (heightBoundedStacked > 0) {
+    return _ScaleSolution(
+      cw: heightBoundedStackedCw,
+      mcw: heightBoundedStacked,
+      degradation: 4,
+      stepFactor: 0.12,
+      geometry: _MeldGeometry.stacked,
+      metrics: heightBoundedStackedMetrics,
+    );
+  }
+
+  const fallbackCw = 26.0;
   return _ScaleSolution(
-    cw: cw,
+    cw: fallbackCw,
     mcw: 18,
-    degradation: 4,
+    degradation: 5,
     stepFactor: 0.12,
     geometry: _MeldGeometry.stacked,
-    metrics: q,
+    metrics: _metrics(fallbackCw, size, landscape),
   );
+}
+
+double _solveCwAt({
+  required Size size,
+  required bool landscape,
+  required double cwByWidth,
+  required double cardBoost,
+  required List<MeldView> theirMelds,
+  required List<MeldView> myMelds,
+  required int? rowCap,
+  required double meldFloor,
+  required _MeldGeometry geometry,
+  required double stepFactor,
+  String Function(MeldView meld)? labeler,
+}) {
+  if (!_fitsCw(
+    26,
+    size,
+    landscape,
+    theirMelds,
+    myMelds,
+    rowCap: rowCap,
+    meldFloor: meldFloor,
+    geometry: geometry,
+    stepFactor: stepFactor,
+    labeler: labeler,
+  )) {
+    return 26;
+  }
+  var low = 26.0;
+  var high = _max(26, _min(cwByWidth, 132));
+  var cw = 26.0;
+  for (var i = 0; i < 26; i++) {
+    final middle = (low + high) / 2;
+    if (_fitsCw(
+      middle,
+      size,
+      landscape,
+      theirMelds,
+      myMelds,
+      rowCap: rowCap,
+      meldFloor: meldFloor,
+      geometry: geometry,
+      stepFactor: stepFactor,
+      labeler: labeler,
+    )) {
+      cw = middle;
+      low = middle;
+    } else {
+      high = middle;
+    }
+  }
+  return _clamp(26, cw * cardBoost, _min(cwByWidth * 1.15, 190));
 }
 
 bool _fitsCw(
@@ -896,39 +1041,30 @@ bool _fitsCw(
   bool landscape,
   List<MeldView> theirMelds,
   List<MeldView> myMelds, {
+  required int? rowCap,
+  required double meldFloor,
+  required _MeldGeometry geometry,
+  required double stepFactor,
   String Function(MeldView meld)? labeler,
 }) {
   final q = _metrics(cw, size, landscape);
-  final meldWidth = _max(24, cw * 0.55);
-  final theirRows = _rowsOf(
+  final meldWidth = _max(meldFloor, cw * 0.55);
+  return _meldFits(
+    meldWidth,
+    rowCap,
+    q,
     theirMelds,
-    meldWidth,
-    q.shelfW,
-    extra: false,
-    geometry: _MeldGeometry.spread,
-    stepFactor: _meldStep,
-    labeler: labeler,
-  );
-  final myRows = _rowsOf(
     myMelds,
-    meldWidth,
-    q.shelfW,
-    extra: true,
-    geometry: _MeldGeometry.spread,
-    stepFactor: _meldStep,
+    geometry,
+    stepFactor,
     labeler: labeler,
   );
-  if (theirRows > 2 || myRows > 2) return false;
-  final height =
-      _blockHeight(theirRows, meldWidth, q.stripH) +
-      _blockHeight(myRows, meldWidth, q.myStripH);
-  return height <= q.midInner;
 }
 
 double _biggestMeld({
   required double cw,
   required double floor,
-  required int rowCap,
+  required int? rowCap,
   required _Metrics q,
   required List<MeldView> theirMelds,
   required List<MeldView> myMelds,
@@ -977,7 +1113,7 @@ double _biggestMeld({
 
 bool _meldFits(
   double cardWidth,
-  int rowCap,
+  int? rowCap,
   _Metrics q,
   List<MeldView> theirMelds,
   List<MeldView> myMelds,
@@ -1003,8 +1139,10 @@ bool _meldFits(
     stepFactor: stepFactor,
     labeler: labeler,
   );
-  return theirRows <= rowCap &&
-      myRows <= rowCap &&
+  // Null deliberately leaves the existing height check as the only bound.
+  final rowsAreWithinCap =
+      rowCap == null || (theirRows <= rowCap && myRows <= rowCap);
+  return rowsAreWithinCap &&
       _blockHeight(theirRows, cardWidth, q.stripH) +
               _blockHeight(myRows, cardWidth, q.myStripH) <=
           q.midInner;
@@ -1020,20 +1158,12 @@ double _blockHeight(int rows, double cardWidth, double stripHeight) =>
     (rows - 1) * cardWidth * _meldGap;
 
 double _meldBoxHeight(double cardWidth) =>
-    cardWidth * (0.09 + _cardHeightFactor) +
-    _max(cardWidth * 0.46, 21);
+    cardWidth * (0.09 + _cardHeightFactor) + _max(cardWidth * 0.46, 21);
 
-double _meldUnits(
-  int count,
-  _MeldGeometry geometry,
-  double stepFactor,
-) {
+double _meldUnits(int count, _MeldGeometry geometry, double stepFactor) {
   if (geometry == _MeldGeometry.stacked) {
     final visible = count < 3 ? count : 3;
-    return _max(
-      _meldMinimumUnits,
-      _meldPadding * 2 + 1 + 0.12 * (visible - 1),
-    );
+    return _max(_meldMinimumUnits, _meldPadding * 2 + 1 + 0.12 * (visible - 1));
   }
   return _max(
     _meldMinimumUnits,
@@ -1041,21 +1171,39 @@ double _meldUnits(
   );
 }
 
+String _compactMeldLabel(MeldView meld) => '×${meld.size}';
+
+String _displayedMeldLabel(
+  MeldView meld,
+  _MeldGeometry geometry,
+  String Function(MeldView meld)? labeler,
+) => geometry == _MeldGeometry.stacked
+    ? _compactMeldLabel(meld)
+    : _labelFor(meld, labeler);
+
+double _captionMinimumWidthForLabel(
+  MeldView meld,
+  double cardWidth,
+  String displayedLabel,
+) => tableSolverMeldCaptionMinimumWidth(
+  meld,
+  cardWidth,
+  labeler: (_) => displayedLabel,
+);
+
 double _meldWidth(
   MeldView meld,
   double cardWidth,
   _MeldGeometry geometry,
   double stepFactor, {
   String Function(MeldView meld)? labeler,
-}) =>
-    _max(
-      _meldUnits(meld.cards.length, geometry, stepFactor) * cardWidth,
-      tableSolverMeldCaptionMinimumWidth(
-        meld,
-        cardWidth,
-        labeler: labeler,
-      ),
-    );
+}) {
+  final displayedLabel = _displayedMeldLabel(meld, geometry, labeler);
+  return _max(
+    _meldUnits(meld.cards.length, geometry, stepFactor) * cardWidth,
+    _captionMinimumWidthForLabel(meld, cardWidth, displayedLabel),
+  );
+}
 
 double _newMeldWidth(double cardWidth) {
   final fontSize = _clamp(12, cardWidth * 0.19, 16);
@@ -1073,13 +1221,7 @@ int _rowsOf(
 }) {
   final widths = [
     for (final meld in melds)
-      _meldWidth(
-        meld,
-        cardWidth,
-        geometry,
-        stepFactor,
-        labeler: labeler,
-      ),
+      _meldWidth(meld, cardWidth, geometry, stepFactor, labeler: labeler),
     if (extra) _newMeldWidth(cardWidth),
   ];
   return _packRows(widths, cardWidth * _meldGap, shelfWidth - 4);
@@ -1154,13 +1296,7 @@ _MeldLayout _layOutMelds({
 }) {
   final widths = [
     for (final meld in melds)
-      _meldWidth(
-        meld,
-        cardWidth,
-        geometry,
-        stepFactor,
-        labeler: labeler,
-      ),
+      _meldWidth(meld, cardWidth, geometry, stepFactor, labeler: labeler),
     if (includeNewMeld) _newMeldWidth(cardWidth),
   ];
   final gap = cardWidth * _meldGap;
@@ -1172,6 +1308,7 @@ _MeldLayout _layOutMelds({
 
   for (var slot = 0; slot < melds.length; slot++) {
     final meld = melds[slot];
+    final displayedLabel = _displayedMeldLabel(meld, geometry, labeler);
     final position = positions[slot];
     final rect = Rect.fromLTWH(
       shelf.left + position.x,
@@ -1180,9 +1317,8 @@ _MeldLayout _layOutMelds({
       boxHeight,
     );
     final cards = <CardSpot>[];
-    final cardStep = cardWidth * (geometry == _MeldGeometry.stacked
-        ? 0.12
-        : stepFactor);
+    final cardStep =
+        cardWidth * (geometry == _MeldGeometry.stacked ? 0.12 : stepFactor);
     for (var i = 0; i < meld.cards.length; i++) {
       final thickness = geometry == _MeldGeometry.stacked && i > 2 ? 2 : i;
       cards.add(
@@ -1209,12 +1345,12 @@ _MeldLayout _layOutMelds({
         hot: mine && openSlots.contains(slot),
         sealed: meld.isCanastra,
         clean: meld.isClean,
-        label: _labelFor(meld, labeler),
+        label: displayedLabel,
         captionFontSize: tableSolverMeldCaptionFontSize(cardWidth),
-        captionMinimumWidth: tableSolverMeldCaptionMinimumWidth(
+        captionMinimumWidth: _captionMinimumWidthForLabel(
           meld,
           cardWidth,
-          labeler: labeler,
+          displayedLabel,
         ),
         cards: cards,
       ),
@@ -1275,9 +1411,11 @@ _PileLayout _layOutPiles(
   final miniPacketWidth = miniWidth + 2 * 1.4;
   final mortoGroupWidth = nonEmptyMortoSides.isEmpty
       ? q.pileCW * 1.28
-      : miniPacketWidth +
-            (nonEmptyMortoSides.length - 1) * q.pileCW * 0.50;
-  final basePortraitWidth = _max(q.pileCW * 1.28, q.railLabelW);
+      : miniPacketWidth + (nonEmptyMortoSides.length - 1) * q.pileCW * 0.50;
+  final basePortraitWidth = _max(
+    q.pileCW * 1.28,
+    q.railLabelW + 2 * q.pileBoxPadX,
+  );
   final portraitWidths = [
     basePortraitWidth,
     basePortraitWidth,
@@ -1306,12 +1444,20 @@ _PileLayout _layOutPiles(
     return Rect.fromLTWH(x, band.top, portraitWidths[index], band.height);
   }
 
+  // In the stacked (portrait) orientation, TableZone draws its label at a
+  // fixed 8px inset from the box's top edge (see table_zone.dart's stacked
+  // branch) — the card art is a separate layer drawn independently of that
+  // widget, so it must be pushed down far enough to clear the label's own
+  // line, or the two visually collide (the label reads as if it were cut
+  // off, when it is actually just painted over).
+  final stackedLabelClearance = 8 + q.pileLabelFs * 1.3;
+
   Offset stackOrigin(Rect box, double width, double height) => landscape
-      ? Offset(
-          box.left + q.pileBoxPadX,
-          box.top + (box.height - height) / 2,
-        )
-      : Offset(box.left + (box.width - width) / 2, box.top + q.pileBoxPad);
+      ? Offset(box.left + q.pileBoxPadX, box.top + (box.height - height) / 2)
+      : Offset(
+          box.left + (box.width - width) / 2,
+          box.top + _max(q.pileBoxPad, stackedLabelClearance),
+        );
 
   final orientation = landscape
       ? PileTextOrientation.horizontal
@@ -1481,8 +1627,7 @@ _HandsLayout _layOutHands({
   ];
 
   bool landed(int order, int index) =>
-      input.dealDone ||
-      input.dealt >= index * dealSeats.length + order + 1;
+      input.dealDone || input.dealt >= index * dealSeats.length + order + 1;
 
   final spots = <CardSpot>[];
   final unpicked = [...input.selection];

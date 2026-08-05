@@ -1,17 +1,32 @@
 /// Tests for the pure-Dart fluid table solver.
 library;
 
-import 'dart:ui' show Rect, Size;
+import 'dart:ui' show Rect, Size, TextDirection;
 
 import 'package:canastra/engine/cards.dart';
 import 'package:canastra/game/game_controller.dart' show PickedCard;
 import 'package:canastra/multiplayer/table_view.dart';
+import 'package:canastra/ui/copy.dart' show Lang, shortMeldLabel;
+import 'package:canastra/ui/theme.dart' show mono;
 import 'package:canastra/ui/widgets/playing_card.dart'
     show kCardHeight, kCardWidth;
 import 'package:canastra/ui/widgets/table_solver.dart';
+import 'package:flutter/painting.dart' show TextPainter, TextSpan;
+import 'package:flutter/services.dart' show FontLoader, rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 
 typedef _MeldSpec = ({int cards, int points, bool canastra, bool clean});
+
+Future<void> _loadDmMonoFonts() async {
+  final loader = FontLoader('DMMono');
+  for (final path in const [
+    'assets/fonts/DMMono-Regular.ttf',
+    'assets/fonts/DMMono-Medium.ttf',
+  ]) {
+    loader.addFont(rootBundle.load(path));
+  }
+  await loader.load();
+}
 
 List<MeldView> _meldsForSide({
   required int owner,
@@ -154,16 +169,8 @@ bool _blocksFit(TableSolution solution) =>
 void _expectInside(Rect rect, Size viewport, String where) {
   expect(rect.left, greaterThanOrEqualTo(-0.5), reason: where);
   expect(rect.top, greaterThanOrEqualTo(-0.5), reason: where);
-  expect(
-    rect.right,
-    lessThanOrEqualTo(viewport.width + 0.5),
-    reason: where,
-  );
-  expect(
-    rect.bottom,
-    lessThanOrEqualTo(viewport.height + 0.5),
-    reason: where,
-  );
+  expect(rect.right, lessThanOrEqualTo(viewport.width + 0.5), reason: where);
+  expect(rect.bottom, lessThanOrEqualTo(viewport.height + 0.5), reason: where);
 }
 
 void _expectMeldsInside(
@@ -172,7 +179,7 @@ void _expectMeldsInside(
   String where, {
   bool allowFullDegradation = false,
 }) {
-  if (allowFullDegradation && solution.degradation == 4) return;
+  if (allowFullDegradation && solution.degradation == 5) return;
   for (final meld in solution.melds) {
     _expectInside(meld.rect, viewport, '$where, meld ${meld.slot}');
   }
@@ -202,6 +209,62 @@ bool _isSolverZone(String zone) {
 }
 
 void main() {
+  setUpAll(() async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    await _loadDmMonoFonts();
+  });
+
+  test('a relaxed meld level recovers portrait hand width', () {
+    final specs = List<_MeldSpec>.generate(9, (slot) {
+      final cards = 4 + slot % 5;
+      final canastra = cards >= 7;
+      return (
+        cards: cards,
+        points: 40 + slot * 5,
+        canastra: canastra,
+        clean: canastra && slot.isEven,
+      );
+    });
+    final view = _tableView(
+      handSize: 11,
+      myMelds: const [],
+      theirMelds: _meldsForSide(owner: 1, specs: specs),
+    );
+
+    final solution = _solve(view, const Size(402, 874));
+
+    expect(solution.degradation, greaterThan(0));
+    expect(solution.cw, greaterThan(45));
+  });
+
+  test('the crowded golden fixture recovers a usable card width', () {
+    const specs = <_MeldSpec>[
+      (cards: 8, points: 100, canastra: true, clean: true),
+      (cards: 4, points: 40, canastra: false, clean: false),
+      (cards: 7, points: 100, canastra: true, clean: false),
+      (cards: 5, points: 50, canastra: false, clean: false),
+      (cards: 5, points: 50, canastra: false, clean: false),
+      (cards: 4, points: 40, canastra: false, clean: false),
+      (cards: 4, points: 40, canastra: false, clean: false),
+      (cards: 3, points: 30, canastra: false, clean: false),
+      (cards: 3, points: 30, canastra: false, clean: false),
+    ];
+    final view = _tableView(
+      handSize: 11,
+      myMelds: const [],
+      theirMelds: _meldsForSide(owner: 1, specs: specs),
+    );
+
+    final solution = _solve(
+      view,
+      const Size(420, 840),
+      meldLabeler: (meld) => shortMeldLabel(Lang.en, meld),
+    );
+
+    expect(solution.degradation, isNot(5));
+    expect(solution.cw, greaterThanOrEqualTo(45));
+  });
+
   test('nine melds per side and fifteen cards survive compact viewports', () {
     const specs = <_MeldSpec>[
       (cards: 3, points: 30, canastra: false, clean: false),
@@ -240,7 +303,7 @@ void main() {
     ]) {
       final solution = _solve(view, viewport);
 
-      expect(solution.degradation, lessThanOrEqualTo(3), reason: '$viewport');
+      expect(solution.degradation, lessThanOrEqualTo(4), reason: '$viewport');
       for (final meld in solution.melds) {
         expect(
           meld.rect.width,
@@ -249,7 +312,7 @@ void main() {
         );
       }
       expect(
-        _blocksFit(solution) || solution.degradation == 4,
+        _blocksFit(solution) || solution.degradation == 5,
         isTrue,
         reason: '$viewport',
       );
@@ -289,7 +352,7 @@ void main() {
     final solution = _solve(view, const Size(320, 568));
 
     expect(solution.handStep, greaterThanOrEqualTo(8 - 0.001));
-    expect(_blocksFit(solution) || solution.degradation == 4, isTrue);
+    expect(_blocksFit(solution) || solution.degradation == 5, isTrue);
   });
 
   test('the demo state solves without degradation in landscape', () {
@@ -365,9 +428,8 @@ void main() {
     final labelled = _solve(
       view,
       const Size(1440, 900),
-      meldLabeler: (meld) => identical(meld, target)
-          ? longLabel
-          : tableSolverMeldLabel(meld),
+      meldLabeler: (meld) =>
+          identical(meld, target) ? longLabel : tableSolverMeldLabel(meld),
     );
     final regularTarget = regular.melds.singleWhere(
       (solution) => identical(solution.meld, target),
@@ -382,6 +444,35 @@ void main() {
       greaterThan(regularTarget.captionMinimumWidth),
     );
     expect(labelledTarget.rect.width, greaterThan(regularTarget.rect.width));
+  });
+
+  test('caption budget covers a measured extra points digit', () {
+    const cardWidth = 75.0;
+    final twoDigitMeld = _meldsForSide(
+      owner: 0,
+      specs: const [(cards: 5, points: 99, canastra: false, clean: false)],
+    ).single;
+    final threeDigitMeld = _meldsForSide(
+      owner: 0,
+      specs: const [(cards: 5, points: 999, canastra: false, clean: false)],
+    ).single;
+    final budgetPerDigit =
+        tableSolverMeldCaptionMinimumWidth(threeDigitMeld, cardWidth) -
+        tableSolverMeldCaptionMinimumWidth(twoDigitMeld, cardWidth);
+    final fontSize = tableSolverMeldCaptionFontSize(cardWidth);
+
+    double measuredWidth(String text) {
+      final painter = TextPainter(
+        text: TextSpan(text: text, style: mono(fontSize, tracking: 1.2)),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final width = painter.width;
+      painter.dispose();
+      return width;
+    }
+
+    final measuredPerDigit = measuredWidth('999') - measuredWidth('99');
+    expect(budgetPerDigit, greaterThanOrEqualTo(measuredPerDigit - 0.01));
   });
 
   test('the copy the selection names is the one that rises', () {
@@ -424,6 +515,7 @@ void main() {
         'pile band': solution.pileBand,
         'new meld slot': solution.newMeldSlot,
         'hand': solution.hand,
+        'hand order toggle': solution.handOrderToggle,
       };
 
       for (final rect in rects.entries) {
@@ -435,9 +527,7 @@ void main() {
   test('a hand of any size fans inside the viewport', () {
     for (final viewport in const [Size(900, 420), Size(420, 840)]) {
       for (final size in const [11, 15, 30]) {
-        final hand = [
-          for (var i = 0; i < size; i++) cardId(i % 13, i % 4),
-        ];
+        final hand = [for (var i = 0; i < size; i++) cardId(i % 13, i % 4)];
         final view = _tableView(
           handSize: size,
           hand: hand,
@@ -483,15 +573,12 @@ void main() {
         for (final count in const [1, 5, 9, 12, 16]) {
           for (final size in const [3, 7, 10, 14]) {
             if (count * size > 92) continue;
-            final specs = List<_MeldSpec>.filled(
-              count,
-              (
-                cards: size,
-                points: 100,
-                canastra: size >= 7,
-                clean: true,
-              ),
-            );
+            final specs = List<_MeldSpec>.filled(count, (
+              cards: size,
+              points: 100,
+              canastra: size >= 7,
+              clean: true,
+            ));
             for (final owner in const [0, 1]) {
               final melds = _meldsForSide(
                 owner: owner,
@@ -524,12 +611,7 @@ void main() {
     const seed21 = [8, 5, 7, 8, 6, 6, 7, 4, 7, 5, 4, 4, 4, 4, 3];
     final specs = [
       for (final size in seed21)
-        (
-          cards: size,
-          points: 100,
-          canastra: size >= 7,
-          clean: true,
-        ),
+        (cards: size, points: 100, canastra: size >= 7, clean: true),
     ];
 
     for (final viewport in const [Size(1280, 820), Size(420, 840)]) {
@@ -555,17 +637,15 @@ void main() {
 
   test('a stack is no wider at fourteen cards than at seven', () {
     TableSolution stacked(int size) {
-      final specs = List<_MeldSpec>.filled(
-        16,
-        (cards: size, points: 0, canastra: false, clean: true),
-      );
+      final specs = List<_MeldSpec>.filled(16, (
+        cards: size,
+        points: 0,
+        canastra: false,
+        clean: true,
+      ));
       final view = _tableView(
         handSize: 15,
-        myMelds: _meldsForSide(
-          owner: 0,
-          specs: specs,
-          sequenceSlots: const {},
-        ),
+        myMelds: _meldsForSide(owner: 0, specs: specs, sequenceSlots: const {}),
         theirMelds: const [],
       );
       return _solve(view, const Size(250, 568));
@@ -584,7 +664,28 @@ void main() {
     final fourteenMeld = fourteen.melds.singleWhere(
       (meld) => meld.mine && meld.slot == 0,
     );
-    expect(fourteenMeld.rect.width, closeTo(sevenMeld.rect.width, 0.001));
+    expect(seven.mcw, fourteen.mcw);
+
+    // Stacked melds show at most three card positions, so at the same mcw
+    // their card-geometry floor is identical. The ×7 caption sits below that
+    // floor, which lets its rectangle expose the shared geometry width.
+    expect(sevenMeld.captionMinimumWidth, lessThan(sevenMeld.rect.width));
+    final sharedCardGeometryWidth = sevenMeld.rect.width;
+    double widthIncludingCaption(MeldSolution meld) =>
+        meld.captionMinimumWidth > sharedCardGeometryWidth
+        ? meld.captionMinimumWidth
+        : sharedCardGeometryWidth;
+
+    expect(sevenMeld.rect.width, widthIncludingCaption(sevenMeld));
+    expect(fourteenMeld.rect.width, widthIncludingCaption(fourteenMeld));
+    expect(
+      fourteenMeld.captionMinimumWidth,
+      greaterThan(sevenMeld.captionMinimumWidth),
+    );
+    expect(
+      fourteenMeld.rect.width - sevenMeld.rect.width,
+      fourteenMeld.captionMinimumWidth - sharedCardGeometryWidth,
+    );
 
     final drawn = fourteenMeld.cards;
     expect(drawn, hasLength(14));

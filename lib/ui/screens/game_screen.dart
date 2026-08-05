@@ -40,7 +40,6 @@ import '../widgets/table_zone.dart';
 /// How fast the opening deal lands, per card.
 const Duration kDealTick = Duration(milliseconds: 52);
 
-const double _kHandOrderHeight = 24;
 const double _kMeldSheetCardScale = 0.575;
 
 class GameScreen extends StatefulWidget {
@@ -1055,25 +1054,24 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   /// Keeps the way your hand is ordered directly beneath the cards it moves.
-  Widget _handOrder(TableSolution solution, AppPrefs prefs, Palette p, Copy l) {
-    final hand = solution.hand;
-    return Positioned(
-      left: 0,
-      right: 0,
-      top: hand.bottom - _kHandOrderHeight / 2 - kHandOrderHitPad,
-      height: _kHandOrderHeight + 2 * kHandOrderHitPad,
-      child: Center(
-        child: HandOrderToggle(
-          suitLabel: l.orderBySuit,
-          rankLabel: l.orderByRank,
-          rankSelected: prefs.handOrder == HandOrder.rank,
-          palette: p,
-          onChanged: (rank) =>
-              prefs.setHandOrder(rank ? HandOrder.rank : HandOrder.suit),
-        ),
+  Widget _handOrder(
+    TableSolution solution,
+    AppPrefs prefs,
+    Palette p,
+    Copy l,
+  ) => Positioned.fromRect(
+    rect: solution.handOrderToggle,
+    child: Center(
+      child: HandOrderToggle(
+        suitLabel: l.orderBySuit,
+        rankLabel: l.orderByRank,
+        rankSelected: prefs.handOrder == HandOrder.rank,
+        palette: p,
+        onChanged: (rank) =>
+            prefs.setHandOrder(rank ? HandOrder.rank : HandOrder.suit),
       ),
-    );
-  }
+    ),
+  );
 
   String _coach(TableView view, Copy l) {
     if (view.roundOver || view.matchOver) return '';
