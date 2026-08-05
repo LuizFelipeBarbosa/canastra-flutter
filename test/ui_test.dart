@@ -3,10 +3,10 @@
 /// Flutter reports overflows and layout failures as test exceptions, so pumping
 /// each screen catches the class of bug that static analysis cannot see.
 ///
-/// Every screen is laid out at one fixed size and scaled to fit, so the interesting
-/// axis is no longer the viewport — it is the *content*: a hand of 15 rather than
-/// 11, four seats rather than two, a row of melds long enough to crowd the play
-/// area. Those are what can still overflow, so those are what is pumped here.
+/// The table is solved against each real viewport, while the other screens keep
+/// their established stage or room behavior. Both viewport and content matter:
+/// a hand of 15 rather than 11, four seats rather than two, and a row of melds
+/// long enough to crowd the play area are all pumped here.
 library;
 
 import 'package:canastra/account/account.dart';
@@ -41,14 +41,13 @@ import 'package:canastra/ui/widgets/table_layout.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// Life size, where the stage does not scale at all.
+/// A desktop-sized viewport.
 const _desktop = Size(1280, 820);
 
-/// Upright, where the narrow stage applies.
+/// An upright phone viewport.
 const _phone = Size(390, 844);
 
-/// The smallest phone the design claims to serve, where the portrait stage no
-/// longer fits at life size and everything on it is scaled down.
+/// The smallest phone viewport the fluid table claims to serve.
 const _smallPhone = Size(320, 568);
 
 Future<AppPrefs> _pumpAt(
@@ -184,6 +183,42 @@ void main() {
     expect(en.countLeft(24), '24 left');
     expect(pt.countLeft(1), 'resta 1');
     expect(pt.countLeft(24), 'restam 24');
+  });
+
+  test('compact table copy names melds in both languages', () {
+    final run = MeldView(
+      owner: 0,
+      isSequence: true,
+      suit: Suit.hearts,
+      rank: null,
+      startPos: 5,
+      cards: List.filled(7, cardId(Rank.five, Suit.hearts)),
+      wildIndices: const [],
+      isCanastra: true,
+      isClean: true,
+      points: 100,
+    );
+    final set = MeldView(
+      owner: 0,
+      isSequence: false,
+      suit: null,
+      rank: Rank.three,
+      startPos: null,
+      cards: List.filled(3, cardId(Rank.three, Suit.clubs)),
+      wildIndices: const [],
+      isCanastra: false,
+      isClean: true,
+      points: 9,
+    );
+
+    expect(Copy.of(Lang.en).yourTurn, 'YOUR TURN');
+    expect(Copy.of(Lang.pt).yourTurn, 'SUA VEZ');
+    expect(Copy.of(Lang.en).newMeldLabel, 'NEW MELD');
+    expect(Copy.of(Lang.pt).newMeldLabel, 'NOVO JOGO');
+    expect(shortMeldLabel(Lang.en, run), '5–J HEARTS');
+    expect(shortMeldLabel(Lang.pt, run), '5–J COPAS');
+    expect(shortMeldLabel(Lang.en, set), '3× THREES');
+    expect(shortMeldLabel(Lang.pt, set), '3× TRÊS');
   });
 
   test('an unknown variant gets a readable localized fallback', () {
@@ -530,8 +565,8 @@ void main() {
     expect(find.text(prefs.copy.stock), findsOneWidget);
     expect(tester.takeException(), isNull);
 
-    // Rotating swaps the stage under a live table, which is the moment a card's
-    // identity has to survive being laid out somewhere completely different.
+    // Resizing re-solves a live table, which is the moment a card's identity has
+    // to survive being laid out somewhere completely different.
     tester.view.physicalSize = _desktop;
     await tester.pump();
 

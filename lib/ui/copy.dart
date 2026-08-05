@@ -8,6 +8,9 @@
 /// The rules themselves live in `engine/`; this file only names them.
 library;
 
+import '../engine/cards.dart' show kPosMax, kPosMin, kRankNames, rankAt;
+import '../multiplayer/table_view.dart' show MeldView;
+
 /// The two languages, as the toggle sees them.
 enum Lang {
   en,
@@ -50,6 +53,7 @@ class Copy {
   // --- the table's chrome ---
   final String you;
   final String them;
+  final String yourTurn;
   final String thinking;
   final String reconnecting;
   final String watching;
@@ -65,6 +69,7 @@ class Copy {
   final String theirMelds;
   final String myMelds;
   final String playArea;
+  final String newMeldLabel;
   final String playIdle;
   final String playReady;
   final String pileDiscard;
@@ -217,6 +222,7 @@ class Copy {
     required this.levels,
     required this.you,
     required this.them,
+    required this.yourTurn,
     required this.thinking,
     required this.reconnecting,
     required this.watching,
@@ -228,6 +234,7 @@ class Copy {
     required this.theirMelds,
     required this.myMelds,
     required this.playArea,
+    required this.newMeldLabel,
     required this.playIdle,
     required this.playReady,
     required this.pileDiscard,
@@ -362,6 +369,7 @@ class Copy {
     levels: ['Loose', 'Steady', 'Sharp'],
     you: 'YOU',
     them: 'THEM',
+    yourTurn: 'YOUR TURN',
     thinking: 'THINKING',
     reconnecting: 'Reconnecting…',
     watching: 'WATCHING',
@@ -373,6 +381,7 @@ class Copy {
     theirMelds: 'THEIR MELDS',
     myMelds: 'YOUR MELDS',
     playArea: 'THE TABLE',
+    newMeldLabel: 'NEW MELD',
     playIdle: 'play cards here',
     playReady: 'click to lay it down',
     pileDiscard: 'click to discard',
@@ -508,6 +517,7 @@ class Copy {
     levels: ['Solto', 'Firme', 'Afiado'],
     you: 'VOCÊ',
     them: 'ELES',
+    yourTurn: 'SUA VEZ',
     thinking: 'PENSANDO',
     reconnecting: 'Reconectando…',
     watching: 'ASSISTINDO',
@@ -519,6 +529,7 @@ class Copy {
     theirMelds: 'JOGOS DELES',
     myMelds: 'SEUS JOGOS',
     playArea: 'A MESA',
+    newMeldLabel: 'NOVO JOGO',
     playIdle: 'baixe as cartas aqui',
     playReady: 'clique para baixar',
     pileDiscard: 'clique para descartar',
@@ -1057,6 +1068,65 @@ const _ptAuth = AuthCopy(
   offline: 'Sem conexão. Dá para jogar offline do mesmo jeito.',
   somethingBroke: 'Não deu certo. Tente de novo daqui a pouco.',
 );
+
+/// The compact caption on a meld's frame on the table: a rank set counts its
+/// cards ("3× ACES"), a run names its endpoints and suit ("5–J HEARTS"). This
+/// is deliberately terser than [Copy.runName] and [Copy.setName], which stay
+/// the full spoken names used for accessibility.
+String shortMeldLabel(Lang lang, MeldView meld) {
+  final rankPlural = lang == Lang.pt ? _ptRankPlural : _enRankPlural;
+  final suitPlain = lang == Lang.pt ? _ptSuitPlain : _enSuitPlain;
+  if (meld.isSequence) {
+    final start = meld.startPos;
+    final end = start == null ? null : start + meld.size - 1;
+    if (start != null && end != null && start >= kPosMin && end <= kPosMax) {
+      final low = kRankNames[rankAt(start)];
+      final high = kRankNames[rankAt(end)];
+      final range = low == high ? low : '$low–$high';
+      return '$range ${suitPlain(meld.suit!)}';
+    }
+  } else if (meld.rank case final rank? when rank >= 0 && rank < 13) {
+    return '${meld.size}× ${rankPlural(rank)}';
+  }
+  return '${meld.size}×';
+}
+
+String _enRankPlural(int rank) => const [
+  'ACES',
+  'TWOS',
+  'THREES',
+  'FOURS',
+  'FIVES',
+  'SIXES',
+  'SEVENS',
+  'EIGHTS',
+  'NINES',
+  'TENS',
+  'JACKS',
+  'QUEENS',
+  'KINGS',
+][rank];
+
+String _ptRankPlural(int rank) => const [
+  'ASES',
+  'DOIS',
+  'TRÊS',
+  'QUATRO',
+  'CINCO',
+  'SEIS',
+  'SETE',
+  'OITO',
+  'NOVE',
+  'DEZ',
+  'VALETES',
+  'DAMAS',
+  'REIS',
+][rank];
+
+String _enSuitPlain(int suit) =>
+    const ['CLUBS', 'DIAMONDS', 'HEARTS', 'SPADES'][suit];
+String _ptSuitPlain(int suit) =>
+    const ['PAUS', 'OUROS', 'COPAS', 'ESPADAS'][suit];
 
 // Torn out as top-level functions because a const constructor cannot hold a
 // closure.
