@@ -129,6 +129,34 @@ class Stage extends StatelessWidget {
   );
 }
 
+/// The real-size fluid table, painted directly into the safe viewport.
+///
+/// Unlike [Stage], it has no fixed coordinate space to scale: its child solves
+/// itself against the actual room available and keeps text and tap targets at
+/// their rendered size.
+class FluidStage extends StatelessWidget {
+  final Palette palette;
+  final Widget Function(Size viewport) builder;
+
+  const FluidStage({super.key, required this.palette, required this.builder});
+
+  @override
+  Widget build(BuildContext context) => ColoredBox(
+    color: palette.shell,
+    child: SafeArea(
+      child: LayoutBuilder(
+        builder: (context, constraints) => DecoratedBox(
+          decoration: BoxDecoration(gradient: groundGradient(palette)),
+          child: CustomPaint(
+            painter: AzulejoPainter(ink: palette.motifInk),
+            child: SizedBox.expand(child: builder(constraints.biggest)),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
 /// The room the table sits in, for every screen that is not the table.
 ///
 /// In landscape it is the [Stage] with the screen floated on it, unchanged. In
@@ -180,7 +208,7 @@ class Room extends StatelessWidget {
 /// tiled. It sits at very low contrast — it should be felt more than seen, and
 /// must never compete with a card.
 class AzulejoPainter extends CustomPainter {
-  static const double tile = 56;
+  static const double tile = 104;
   final Color ink;
 
   const AzulejoPainter({required this.ink});
@@ -189,7 +217,7 @@ class AzulejoPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0
+      ..strokeWidth = 3
       ..color = ink;
 
     final cols = (size.width / tile).ceil() + 1;

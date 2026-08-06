@@ -7,9 +7,9 @@
 /// would reject, and when a play needs more than one action the controller submits
 /// them in order.
 ///
-/// The table is laid out absolutely, in one fixed coordinate space, by
-/// `table_layout.dart`. This file draws that result and nothing else, so the two
-/// hard problems — where things are, and what they look like — stay apart.
+/// The table is solved against the safe viewport by `table_solver.dart`. This
+/// file draws that result and nothing else, so the two hard problems — where
+/// things are, and what they look like — stay apart.
 library;
 
 import 'dart:async';
@@ -32,11 +32,15 @@ import '../widgets/playing_card.dart';
 import '../widgets/round_sheet.dart';
 import '../widgets/sheet.dart';
 import '../widgets/stage.dart';
-import '../widgets/table_layout.dart';
+import '../widgets/table_layout.dart'
+    show CardIdentityTracker, CardSpot, rankMajorOrder;
+import '../widgets/table_solver.dart';
 import '../widgets/table_zone.dart';
 
 /// How fast the opening deal lands, per card.
 const Duration kDealTick = Duration(milliseconds: 52);
+
+const double _kMeldSheetCardScale = 0.575;
 
 class GameScreen extends StatefulWidget {
   final GameController controller;
@@ -70,6 +74,7 @@ class _GameScreenState extends State<GameScreen> {
 
   final SoundBoard _sound = SoundBoard();
   final CardIdentityTracker _cardIdentities = CardIdentityTracker();
+  Size? _lastViewport;
   bool _matchRecorded = false;
   bool _confirmLeave = false;
 
@@ -251,85 +256,81 @@ class _GameScreenState extends State<GameScreen> {
       return _Message(text: '${l.deal}…', palette: p);
     }
 
-    // The stage decides which coordinate space this table is in, so the layout
-    // is computed inside it rather than guessed above it. Re-running the builder
-    // is safe: the identity tracker keys off card positions in the *table*, not
-    // on screen, so the same spots always come back with the same identities.
-    final table = Stage(
+    // The solver works in the real safe viewport. The identity tracker remains
+    // a build-time cache: it rewrites positional observations into the stable
+    // keys that let the same physical card glide between zones.
+    final table = FluidStage(
       palette: p,
-      children: (stage) {
-        final m = stage.portrait
-            ? TableMetrics.portrait
-            : TableMetrics.landscape;
-        final layout = layOutTable(
-          LayoutInput(
-            view: view,
-            moves: c.moves,
-            metrics: m,
-            handOverride: prefs.handOrder == HandOrder.rank
-                ? ([...view.hand]..sort(rankMajorOrder))
-                : null,
-            selection: c.picked,
-            openSlots: c.openSlots,
-            canMeld: c.canMeldSelection,
-            canDiscard: c.discardMove != null,
-            discardGoesOut: c.discardGoesOut,
-            dealt: _dealt,
-            dealDone: _dealt >= _dealTotal,
-            words: _zoneWords(l),
-          ),
+      builder: (viewport) {
+        final input = TableSolverInput(
+          viewport: viewport,
+          view: view,
+          selection: c.picked,
+          openSlots: c.openSlots,
+          dealt: _dealt,
+          dealDone: _dealt >= _dealTotal,
+          meldLabeler: (m) => shortMeldLabel(prefs.lang, m),
+          handOverride: prefs.handOrder == HandOrder.rank
+              ? ([...view.hand]..sort(rankMajorOrder))
+              : null,
         );
-        final cards = _cardIdentities.assign(layout.cards);
-        final inspected = _inspectedIn(layout);
+        final solution = solveTable(input);
+        final instant =
+            _lastViewport != null && _lastViewport != solution.viewport;
+        _lastViewport = solution.viewport;
+        final cards = _cardIdentities.assign(solution.cards);
+        final inspected = _inspectedIn(solution);
 
-        return [
-          ..._meldBoxes(layout, p),
-          ..._zones(layout, p),
-          ..._rowLabels(m, l, p),
-          ..._cards(cards, p),
-          _header(m, view, prefs, p, l),
-          _opponents(m, view, l, p),
-          if (!c.spectating) _strip(m, view, l, p),
-          if (!c.spectating) _handOrder(m, prefs, p, l),
-          _whyNot(m, l, p),
-          if (_settingsOpen)
-            Positioned.fill(
-              child: _SettingsSheet(
-                prefs: prefs,
-                palette: p,
-                copy: l,
-                onClose: () => setState(() => _settingsOpen = false),
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            ..._meldBoxes(solution, p),
+            ..._pileZones(solution, view, l, p),
+            _newMeldSlot(solution, l, p),
+            ..._cards(cards, p, instant),
+            _header(solution, view, prefs, p, l),
+            _theirStrip(solution, view, l, p),
+            if (!c.spectating) _myStrip(solution, view, l, p),
+            _handOrder(solution, prefs, p, l),
+            if (_settingsOpen)
+              Positioned.fill(
+                child: _SettingsSheet(
+                  prefs: prefs,
+                  palette: p,
+                  copy: l,
+                  onClose: () => setState(() => _settingsOpen = false),
+                ),
               ),
-            ),
-          if (inspected case final meld?)
-            Positioned.fill(
-              child: _MeldSheet(
-                meld: meld,
-                palette: p,
-                onClose: () => setState(() => _inspecting = null),
+            if (inspected case final meld?)
+              Positioned.fill(
+                child: _MeldSheet(
+                  meld: meld,
+                  palette: p,
+                  onClose: () => setState(() => _inspecting = null),
+                ),
               ),
-            ),
-          // The end of a round outranks anything the player opened over the
-          // table, so it comes last and covers them rather than arriving behind.
-          if (view.roundOver || view.matchOver)
-            Positioned.fill(
-              child: RoundSheet(
-                view: view,
-                palette: p,
-                copy: l,
-                onContinue: view.matchOver ? c.rematch : c.nextRound,
+            // The end of a round outranks anything the player opened over the
+            // table, so it comes last and covers them rather than arriving behind.
+            if (view.roundOver || view.matchOver)
+              Positioned.fill(
+                child: RoundSheet(
+                  view: view,
+                  palette: p,
+                  copy: l,
+                  onContinue: view.matchOver ? c.rematch : c.nextRound,
+                ),
               ),
-            ),
-          if (_confirmLeave)
-            Positioned.fill(
-              child: _ConfirmLeave(
-                palette: p,
-                copy: l,
-                onStay: () => setState(() => _confirmLeave = false),
-                onLeave: () => Navigator.of(context).pop(),
+            if (_confirmLeave)
+              Positioned.fill(
+                child: _ConfirmLeave(
+                  palette: p,
+                  copy: l,
+                  onStay: () => setState(() => _confirmLeave = false),
+                  onLeave: () => Navigator.of(context).pop(),
+                ),
               ),
-            ),
-        ];
+          ],
+        );
       },
     );
 
@@ -361,143 +362,163 @@ class _GameScreenState extends State<GameScreen> {
     );
   }
 
-  ZoneWords _zoneWords(Copy l) => ZoneWords(
-    stock: l.stock,
-    pile: l.pile,
-    morto: l.morto,
-    playArea: l.playArea,
-    playIdle: l.playIdle,
-    playReady: l.playReady,
-    pileDiscard: l.pileDiscard,
-    pileBatida: l.pileBatida,
-    empty: l.empty,
-    waiting: l.waiting,
-    taken: l.taken,
-    left: l.countLeft,
-    cards: l.countCards,
-  );
-
   // --- the felt ------------------------------------------------------------
 
-  List<Widget> _meldBoxes(TableLayout layout, Palette p) => [
-    for (final spot in layout.melds)
-      Positioned(
-        left: spot.x,
-        top: spot.y,
+  List<Widget> _meldBoxes(TableSolution solution, Palette p) => [
+    for (final meld in solution.melds)
+      Positioned.fromRect(
+        key: ValueKey('meld:${meld.mine}:${meld.slot}'),
+        rect: meld.rect,
         child: MeldBox(
-          key: ValueKey('meld:${spot.mine}:${spot.slot}'),
-          meld: spot.meld,
+          meld: meld.meld,
           palette: p,
-          width: spot.width,
-          height: spot.height,
-          bonus: spot.meld.isClean
+          width: meld.rect.width,
+          height: meld.rect.height,
+          meldCardWidth: solution.mcw,
+          captionFontSize: meld.captionFontSize,
+          bonus: meld.meld.isClean
               ? c.cfg.meld.canastraBonusClean
               : c.cfg.meld.canastraBonusDirty,
-          compact: spot.compact,
-          open: spot.open,
+          compact: solution.stackedMelds,
+          open: meld.hot,
           // Playing onto a meld comes first. A stack that cannot be played onto
           // is the one place a card in a meld is not visible, so tapping it
           // opens the meld instead of doing nothing.
-          onTap: spot.open
-              ? () => c.extendMeld(spot.slot)
-              : spot.compact
+          onTap: meld.hot
+              ? () => c.extendMeld(meld.slot)
+              : solution.stackedMelds
               ? () => setState(
-                  () => _inspecting = (mine: spot.mine, slot: spot.slot),
+                  () => _inspecting = (mine: meld.mine, slot: meld.slot),
                 )
               : null,
         ),
       ),
   ];
 
-  MeldView? _inspectedIn(TableLayout layout) {
+  MeldView? _inspectedIn(TableSolution solution) {
     final at = _inspecting;
     if (at == null) return null;
-    for (final spot in layout.melds) {
-      if (spot.mine == at.mine && spot.slot == at.slot) return spot.meld;
+    for (final meld in solution.melds) {
+      if (meld.mine == at.mine && meld.slot == at.slot) return meld.meld;
     }
     return null;
   }
 
-  List<Widget> _zones(TableLayout layout, Palette p) => [
-    for (final zone in layout.zones)
-      Positioned(
-        left: zone.x,
-        top: zone.y,
-        width: zone.width,
-        height: zone.height,
-        child: TableZone(
-          label: zone.label,
-          foot: zone.foot,
-          palette: p,
-          hot: zone.hot,
-          dashed: zone.dashed,
-          terminal: zone.terminal,
-          onTap: _zoneTap(zone),
-        ),
-      ),
-  ];
+  List<Widget> _pileZones(
+    TableSolution solution,
+    TableView view,
+    Copy l,
+    Palette p,
+  ) {
+    final zones = <Widget>[];
 
-  VoidCallback? _zoneTap(ZoneSpot zone) {
-    switch (zone.id) {
-      case 'stock':
-        final move = c.moves.firstWithTarget(MoveTarget.stock);
-        return move == null ? null : () => c.play(move);
-      case 'pile':
-        // In the play phase the pile is where a card goes; in the draw phase it
-        // is where a whole handful comes from.
-        if (c.selection.length == 1 && c.view?.phase == 'play') {
-          return c.discardSelection;
+    void zone(
+      PileSolution pile, {
+      required String label,
+      required String foot,
+      required bool hot,
+      required bool terminal,
+      VoidCallback? onTap,
+    }) {
+      zones.add(
+        Positioned.fromRect(
+          rect: pile.box,
+          child: TableZone(
+            label: label,
+            foot: foot,
+            palette: p,
+            hot: hot,
+            terminal: terminal,
+            horizontalText: pile.horizontal,
+            zoneCardWidth: solution.pileCardWidth,
+            onTap: onTap,
+          ),
+        ),
+      );
+    }
+
+    final stockMove = c.moves.firstWithTarget(MoveTarget.stock);
+    zone(
+      solution.stock,
+      label: l.stock,
+      foot: l.countLeft(view.stockCount),
+      hot: stockMove != null,
+      terminal: false,
+      onTap: stockMove == null ? null : () => c.play(stockMove),
+    );
+
+    final canDiscard = c.discardMove != null;
+    final takePile = c.moves.firstWithTarget(MoveTarget.pile);
+    VoidCallback? pileTap;
+    if (canDiscard || takePile != null) {
+      pileTap = () {
+        if (c.selection.length == 1 && view.phase == 'play') {
+          c.discardSelection();
+          return;
         }
         final take = c.moves.firstWithTarget(MoveTarget.pile);
-        return take == null ? null : () => c.play(take);
-      case 'play':
-        return c.selection.isEmpty ? null : c.meldSelection;
-      default:
-        return null;
+        if (take != null) c.play(take);
+      };
     }
+    zone(
+      solution.discard,
+      label: l.pile,
+      foot: canDiscard
+          ? (c.discardGoesOut ? l.pileBatida : l.pileDiscard)
+          : view.trash.isEmpty
+          ? l.empty
+          : l.countCards(view.trash.length),
+      hot: takePile != null || canDiscard,
+      terminal: canDiscard && c.discardGoesOut,
+      onTap: pileTap,
+    );
+
+    if (solution.mortos.isNotEmpty) {
+      final taken =
+          view.side < view.mortoTaken.length && view.mortoTaken[view.side];
+      zone(
+        solution.mortos.first,
+        label: l.morto,
+        foot: taken ? l.taken : l.waiting,
+        hot: false,
+        terminal: false,
+      );
+    }
+    return zones;
   }
 
-  List<Widget> _rowLabels(TableMetrics m, Copy l, Palette p) {
-    final open = c.openSlots.length;
-    return [
-      Positioned(
-        left: m.margin,
-        top: m.theirLabelY,
-        child: Text(l.theirMelds, style: mono(10, color: p.ashDim)),
-      ),
-      Positioned(
-        left: m.margin,
-        top: m.myLabelY,
-        child: Row(
-          children: [
-            Text(l.myMelds, style: mono(10, color: p.ashDim)),
-            if (open > 0) ...[
-              const SizedBox(width: 10),
-              Text(l.spotsOpen(open), style: mono(10, color: p.mint)),
-            ],
-          ],
+  Widget _newMeldSlot(TableSolution solution, Copy l, Palette p) =>
+      Positioned.fromRect(
+        rect: solution.newMeldSlot,
+        child: TableZone(
+          label: l.newMeldLabel,
+          foot: c.canMeldSelection ? l.playReady : l.playIdle,
+          palette: p,
+          hot: c.canMeldSelection,
+          dashed: true,
+          zoneCardWidth: solution.mcw,
+          onTap: c.selection.isEmpty ? null : c.meldSelection,
         ),
-      ),
-    ];
-  }
+      );
 
   /// Cards are drawn last within the felt and stacked by their own depth, so a
   /// hand overlaps a meld overlaps the felt. Everything except your own hand
   /// ignores taps, so clicking the pile reaches the pile rather than the card
   /// lying on it.
-  List<Widget> _cards(List<CardSpot> cards, Palette p) {
+  List<Widget> _cards(List<CardSpot> cards, Palette p, bool instant) {
+    final duration = instant ? Duration.zero : Motion.of(context, Motion.glide);
     final sorted = [...cards]..sort((a, b) => a.z.compareTo(b.z));
     return [
       for (final spot in sorted)
         if (!c.spectating || !spot.inHand)
           AnimatedPositioned(
             key: ValueKey(spot.key),
-            duration: Motion.of(context, Motion.glide),
+            duration: duration,
             curve: Motion.glideCurve,
             left: spot.x,
             top: spot.y,
             child: AnimatedScale(
-              duration: Motion.of(context, Motion.glide),
+              duration: duration,
               curve: Motion.glideCurve,
               scale: spot.scale,
               alignment: Alignment.topLeft,
@@ -512,6 +533,7 @@ class _GameScreenState extends State<GameScreen> {
                         card: spot.card,
                         palette: p,
                         selected: spot.selected,
+                        renderScale: spot.scale,
                       ),
                     )
                   : IgnorePointer(
@@ -520,6 +542,8 @@ class _GameScreenState extends State<GameScreen> {
                         palette: p,
                         faceDown: !spot.faceUp,
                         asWild: spot.asWild,
+                        flat: true,
+                        renderScale: spot.scale,
                       ),
                     ),
             ),
@@ -530,189 +554,281 @@ class _GameScreenState extends State<GameScreen> {
   // --- chrome --------------------------------------------------------------
 
   Widget _header(
-    TableMetrics m,
+    TableSolution solution,
     TableView view,
     AppPrefs prefs,
     Palette p,
     Copy l,
   ) {
-    final narrow = m.narrow;
-    return Positioned(
-      left: 0,
-      right: 0,
-      top: 0,
-      height: m.headerHeight,
-      child: Padding(
-        padding: EdgeInsets.symmetric(horizontal: m.margin),
-        child: Row(
-          children: [
-            BackLink(
-              // Narrow: the arrow alone. Every point here is a point the score
-              // cannot have.
-              label: l.back,
-              showLabel: !narrow,
-              palette: p,
-              onTap: () => Navigator.of(context).maybePop(),
-            ),
-            SizedBox(width: narrow ? 10 : 14),
-            if (!narrow) ...[
-              Hoverable(
+    final fonts = solution.fonts;
+    final gap = solution.veryTight ? 4.0 : 10.0;
+    return Positioned.fromRect(
+      rect: solution.header,
+      child: Row(
+        children: [
+          SizedBox(
+            key: ValueKey('back-${solution.veryTight}'),
+            width: solution.veryTight
+                ? fonts.backButtonSize
+                : fonts.backButtonSize * 2.2,
+            height: fonts.backButtonSize,
+            child: FittedBox(
+              fit: BoxFit.contain,
+              child: BackLink(
+                boxed: true,
+                label: l.back,
+                showLabel: !solution.veryTight,
+                palette: p,
                 onTap: () => Navigator.of(context).maybePop(),
-                builder: (_) => BrandMark(size: 30, palette: p, ring: 6),
               ),
-              const SizedBox(width: 14),
-            ],
-            // Capped rather than flexible: a second flexible child would split the
-            // slack with the [Spacer] and pull everything after it out of place.
-            ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: m.headerTitleWidth),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (c.spectating)
-                    Text(l.watching, style: mono(8, color: p.mint)),
-                  Text(
-                    view.profile.toUpperCase(),
-                    overflow: TextOverflow.ellipsis,
-                    softWrap: false,
-                    style: T.display(14, tracking: -0.4, color: p.text),
+            ),
+          ),
+          SizedBox(width: gap),
+          // Keeping the dynamic title widget mounted at zero width preserves a
+          // single header structure across resize while hiding it visually on
+          // the very-tight rung of the solver.
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: SizedBox(
+                width: solution.veryTight ? 0 : null,
+                child: ExcludeSemantics(
+                  excluding: solution.veryTight,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (c.spectating)
+                        Text(
+                          l.watching,
+                          overflow: TextOverflow.ellipsis,
+                          softWrap: false,
+                          style: mono(fonts.brandSubFs, color: p.mint),
+                        ),
+                      Text(
+                        view.profile.toUpperCase(),
+                        overflow: TextOverflow.ellipsis,
+                        softWrap: false,
+                        style: T.display(
+                          fonts.brandNameFs,
+                          tracking: -0.4,
+                          color: p.text,
+                        ),
+                      ),
+                      if (!solution.tight)
+                        Text(
+                          l.roundLine(view.roundIndex + 1, view.matchTarget),
+                          overflow: TextOverflow.ellipsis,
+                          softWrap: false,
+                          style: mono(
+                            fonts.brandSubFs,
+                            color: p.ashDim,
+                            height: 1.25,
+                          ),
+                        ),
+                    ],
                   ),
-                  Text(
-                    l.roundLine(view.roundIndex + 1, view.matchTarget),
-                    overflow: TextOverflow.ellipsis,
-                    softWrap: false,
-                    style: mono(9, color: p.ashDim, height: 1.4),
+                ),
+              ),
+            ),
+          ),
+          SizedBox(width: gap),
+          Flexible(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerRight,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _turnPill(solution, view, l, p),
+                  SizedBox(width: gap),
+                  _scoreRow(solution, view, l, p),
+                  if (prefs.streak > 0) ...[
+                    SizedBox(width: gap),
+                    _StreakBadge(streak: prefs.streak, palette: p, copy: l),
+                  ],
+                  SizedBox(width: gap),
+                  Pill(
+                    label: l.settings,
+                    palette: p,
+                    round: true,
+                    onTap: () => setState(() => _settingsOpen = true),
                   ),
                 ],
               ),
             ),
-            const Spacer(),
-            // A narrow table has room for the score and one way in to everything
-            // else. The streak is on the landing screen too, and the four toggles
-            // move into a sheet where they are also finally big enough to hit.
-            if (narrow) ...[
-              Pill(
-                label: l.settings,
-                palette: p,
-                onTap: () => setState(() => _settingsOpen = true),
-              ),
-              const SizedBox(width: 12),
-            ] else ...[
-              if (prefs.streak > 0) ...[
-                _StreakBadge(streak: prefs.streak, palette: p, copy: l),
-                const SizedBox(width: 14),
-              ],
-              Pill(
-                label: prefs.sound ? l.soundOn : l.soundOff,
-                palette: p,
-                round: true,
-                color: prefs.sound ? p.mint : p.ashDim,
-                onTap: prefs.toggleSound,
-              ),
-              const SizedBox(width: 6),
-              Pill(
-                label: prefs.lang.toggleLabel,
-                palette: p,
-                round: true,
-                onTap: prefs.toggleLang,
-              ),
-              const SizedBox(width: 6),
-              Pill(
-                label: prefs.dark ? l.themeLight : l.themeDark,
-                palette: p,
-                round: true,
-                onTap: prefs.toggleTheme,
-              ),
-              const SizedBox(width: 12),
-            ],
-            for (var side = 0; side < view.matchScores.length; side++)
-              Padding(
-                padding: const EdgeInsets.only(left: 12),
-                child: Column(
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _turnPill(TableSolution solution, TableView view, Copy l, Palette p) {
+    final mine = view.myTurn;
+    final who = view.currentPlayer < view.playerNames.length
+        ? view.playerNames[view.currentPlayer]
+        : l.seatFallback(view.currentPlayer);
+    return Semantics(
+      label: mine ? l.yourTurn : '$who, ${l.thinking}',
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: solution.veryTight ? 100 : 190),
+        child: Container(
+          padding: EdgeInsets.symmetric(
+            horizontal: solution.veryTight ? 7 : 10,
+            vertical: 5,
+          ),
+          decoration: BoxDecoration(
+            color: mine ? p.mint : Colors.transparent,
+            borderRadius: BorderRadius.circular(999),
+            border: mine ? null : Border.all(color: p.line),
+          ),
+          child: mine
+              ? Row(
                   mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Text(
-                      side == view.side ? l.you : l.them,
-                      style: mono(9, color: p.ashDim),
+                    Container(
+                      width: solution.fonts.turnDotSize,
+                      height: solution.fonts.turnDotSize,
+                      decoration: BoxDecoration(
+                        color: p.mintInk,
+                        shape: BoxShape.circle,
+                      ),
                     ),
-                    Text(
-                      '${view.matchScores[side]}',
-                      style: mono(
-                        17,
-                        color: side == view.side ? p.mint : p.ash,
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        l.yourTurn,
+                        overflow: TextOverflow.ellipsis,
+                        softWrap: false,
+                        style: mono(solution.fonts.turnFs, color: p.mintInk),
                       ),
                     ),
                   ],
+                )
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        who,
+                        overflow: TextOverflow.ellipsis,
+                        softWrap: false,
+                        style: mono(solution.fonts.turnFs, color: p.ash),
+                      ),
+                    ),
+                    if (!view.roundOver) ...[
+                      const SizedBox(width: 6),
+                      _Thinking(label: l.thinking, palette: p),
+                    ],
+                  ],
                 ),
-              ),
-          ],
         ),
       ),
     );
   }
 
-  static Widget _flexible(bool yes, Widget child) =>
-      yes ? Flexible(child: child) : child;
-
-  Widget _opponents(TableMetrics m, TableView view, Copy l, Palette p) {
-    final seats = [
-      for (var seat = 0; seat < view.numPlayers; seat++)
-        if (seat != view.seat) seat,
-    ];
-    final activity = Text(
-      _activity(view, l),
-      overflow: TextOverflow.ellipsis,
-      softWrap: false,
-      style: mono(10, color: p.ash),
-    );
-    // Three chips leave a narrow table nothing for the activity line, so there
-    // it gets the row underneath instead of a sliver of this one.
-    final ownRow = m.narrow;
-
-    // Bounded, so three opponents plus a long activity line on a four-handed
-    // table run out of room rather than off the felt.
-    return Positioned(
-      left: m.margin,
-      right: m.margin,
-      top: m.seatChipsY,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _scoreRow(TableSolution solution, TableView view, Copy l, Palette p) =>
+      Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            children: [
-              for (final seat in seats) ...[
-                // On a narrow row the three chips share it and their names give
-                // way; on a wide one they keep their natural size, because the
-                // activity line is the flexible child there.
-                _flexible(
-                  ownRow,
-                  _SeatChip(
-                    name: seat < view.playerNames.length
-                        ? view.playerNames[seat]
-                        : l.seatFallback(seat),
-                    cards: view.handSizes[seat],
-                    toPlay: seat == view.currentPlayer && !view.roundOver,
-                    partner: seat == view.partnerSeat,
-                    palette: p,
-                    nameWidth: m.seatNameWidth,
+          for (var side = 0; side < view.matchScores.length; side++) ...[
+            if (side > 0)
+              Container(
+                width: 1,
+                height: solution.fonts.scoreValueFs * 1.15,
+                margin: const EdgeInsets.symmetric(horizontal: 8),
+                color: p.line,
+              ),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    side == view.side ? l.you : l.them,
+                    style: mono(
+                      solution.fonts.scoreLabelFs,
+                      color: side == view.side ? p.mint : p.ashDim,
+                      height: 1,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-              ],
-              if (!view.myTurn && !view.roundOver) ...[
-                _Thinking(label: l.thinking, palette: p),
-                const SizedBox(width: 12),
-              ],
-              if (!ownRow) Flexible(child: activity),
-            ],
-          ),
-          if (ownRow) ...[
-            const SizedBox(height: 4),
-            SizedBox(width: double.infinity, child: activity),
+                  Text(
+                    '${view.matchScores[side]}',
+                    style: mono(
+                      solution.fonts.scoreValueFs,
+                      color: side == view.side ? p.mint : p.text,
+                      height: 1,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
         ],
+      );
+
+  Widget _theirStrip(
+    TableSolution solution,
+    TableView view,
+    Copy l,
+    Palette p,
+  ) {
+    final seats = [
+      for (final anchor in solution.seatAnchors)
+        if (anchor.band == SeatAnchorBand.theirStrip) anchor.seat,
+    ];
+    return Positioned.fromRect(
+      rect: solution.theirStrip,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: p.strip,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: p.line),
+        ),
+        child: Row(
+          children: [
+            for (var i = 0; i < seats.length; i++) ...[
+              if (i > 0) const SizedBox(width: 6),
+              Flexible(
+                child: _SeatChip(
+                  name: seats[i] < view.playerNames.length
+                      ? view.playerNames[seats[i]]
+                      : l.seatFallback(seats[i]),
+                  cards: seats[i] < view.handSizes.length
+                      ? view.handSizes[seats[i]]
+                      : 0,
+                  toPlay: seats[i] == view.currentPlayer && !view.roundOver,
+                  partner: false,
+                  palette: p,
+                  avatarSize: solution.fonts.avatarSize,
+                  nameFontSize: solution.fonts.nameFs,
+                  metaFontSize: solution.fonts.seatMetaFs,
+                  semanticsLabel:
+                      '${seats[i] < view.playerNames.length ? view.playerNames[seats[i]] : l.seatFallback(seats[i])}, '
+                      '${l.countCards(seats[i] < view.handSizes.length ? view.handSizes[seats[i]] : 0)}'
+                      '${seats[i] == view.currentPlayer && !view.roundOver ? ', ${l.thinking}' : ''}',
+                ),
+              ),
+            ],
+            if (!view.myTurn && !view.roundOver) ...[
+              const SizedBox(width: 6),
+              if (!solution.tight) _Thinking(label: l.thinking, palette: p),
+            ],
+            if (!solution.tight) ...[
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  _activity(view, l),
+                  overflow: TextOverflow.ellipsis,
+                  softWrap: false,
+                  style: mono(solution.fonts.seatMetaFs, color: p.ash),
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -775,100 +891,156 @@ class _GameScreenState extends State<GameScreen> {
     return false;
   }
 
-  Widget _strip(TableMetrics m, TableView view, Copy l, Palette p) {
-    final selected = c.selection.length;
-    final actions = _stripActions(l, p);
+  Widget _myStrip(TableSolution solution, TableView view, Copy l, Palette p) {
+    final partnerSeat = view.numPlayers == 4
+        ? view.partnerSeat ?? (view.seat + 2) % view.numPlayers
+        : null;
+    final refusal = _refusalText(l);
+    final coach = refusal == null ? _coach(view, l) : '${l.whyNot}: $refusal';
+    final coachColor = refusal != null
+        ? p.pink
+        : c.selection.isNotEmpty
+        ? p.text
+        : p.ashDim;
+    final actions = _stripActions(solution, l, p);
 
-    return Positioned(
-      left: m.margin,
-      right: m.margin,
-      top: m.stripY,
-      height: m.stripHeight,
+    final identity = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: solution.fonts.avatarSize,
+          height: solution.fonts.avatarSize,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(color: p.mint, shape: BoxShape.circle),
+          child: Text(
+            l.you.characters.first,
+            style: mono(solution.fonts.seatMetaFs, color: p.mintInk),
+          ),
+        ),
+        const SizedBox(width: 7),
+        Text(l.you, style: T.title(solution.fonts.nameFs, color: p.text)),
+        if (partnerSeat != null) ...[
+          const SizedBox(width: 8),
+          Flexible(
+            child: _SeatChip(
+              name: partnerSeat < view.playerNames.length
+                  ? view.playerNames[partnerSeat]
+                  : l.seatFallback(partnerSeat),
+              cards: partnerSeat < view.handSizes.length
+                  ? view.handSizes[partnerSeat]
+                  : 0,
+              toPlay: partnerSeat == view.currentPlayer && !view.roundOver,
+              partner: true,
+              palette: p,
+              avatarSize: solution.fonts.avatarSize,
+              nameFontSize: solution.fonts.nameFs,
+              metaFontSize: solution.fonts.seatMetaFs,
+              semanticsLabel:
+                  '${partnerSeat < view.playerNames.length ? view.playerNames[partnerSeat] : l.seatFallback(partnerSeat)}, '
+                  '${l.countCards(partnerSeat < view.handSizes.length ? view.handSizes[partnerSeat] : 0)}'
+                  '${partnerSeat == view.currentPlayer && !view.roundOver ? ', ${l.thinking}' : ''}',
+            ),
+          ),
+        ],
+      ],
+    );
+    final coachText = Text(
+      coach,
+      overflow: TextOverflow.ellipsis,
+      softWrap: false,
+      style: T.body(solution.fonts.coachFs, color: coachColor, height: 1.2),
+    );
+
+    return Positioned.fromRect(
+      rect: solution.myStrip,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
         decoration: BoxDecoration(
           color: p.strip,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: view.myTurn && !view.roundOver ? p.mint : p.line,
           ),
         ),
-        child: Row(
-          children: [
-            if (selected > 0) ...[
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: p.mint,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  '$selected ${l.selected}',
-                  style: mono(10, color: p.mintInk),
-                ),
+        child: solution.narrowAct
+            ? Column(
+                children: [
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Flexible(child: identity),
+                        const SizedBox(width: 8),
+                        Expanded(child: coachText),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Expanded(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: actions,
+                    ),
+                  ),
+                ],
+              )
+            : Row(
+                children: [
+                  Flexible(child: identity),
+                  const SizedBox(width: 10),
+                  Expanded(child: coachText),
+                  const SizedBox(width: 10),
+                  ...actions,
+                ],
               ),
-              const SizedBox(width: 12),
-            ],
-            for (final action in actions) ...[
-              action,
-              const SizedBox(width: 12),
-            ],
-            Expanded(
-              child: Text(
-                _coach(view, l),
-                style: T.body(13, color: p.ash, height: 1.4),
-              ),
-            ),
-            if (selected > 0) ...[
-              const SizedBox(width: 12),
-              TextLink(
-                label: l.clear,
-                palette: p,
-                fontSize: 10,
-                color: p.ashDim,
-                onTap: c.clearSelection,
-              ),
-            ],
-          ],
-        ),
       ),
     );
   }
 
-  /// Keeps the way your hand is ordered directly beneath the cards it moves.
-  Widget _handOrder(TableMetrics m, AppPrefs prefs, Palette p, Copy l) =>
-      Positioned(
-        left: 0,
-        right: 0,
-        top: m.handOrderY - kHandOrderHitPad,
-        height: kHandOrderHeight + 2 * kHandOrderHitPad,
-        child: Center(
-          child: HandOrderToggle(
-            suitLabel: l.orderBySuit,
-            rankLabel: l.orderByRank,
-            rankSelected: prefs.handOrder == HandOrder.rank,
-            palette: p,
-            onChanged: (rank) =>
-                prefs.setHandOrder(rank ? HandOrder.rank : HandOrder.suit),
-          ),
-        ),
-      );
-
-  /// The strip carries only the moves that have nowhere on the table to be
-  /// pressed: going out, and conceding a round nobody can draw in.
-  List<Widget> _stripActions(Copy l, Palette p) {
+  List<Widget> _stripActions(TableSolution solution, Copy l, Palette p) {
+    final selected = c.selection.length;
     final out = c.moves.firstWithTarget(MoveTarget.goOut);
     final end = c.moves.firstWithTarget(MoveTarget.endRound);
-    return [
-      if (out != null)
-        _StripButton(
+    final actions = <Widget>[];
+
+    void add(Widget action) {
+      if (actions.isNotEmpty) actions.add(const SizedBox(width: 8));
+      actions.add(action);
+    }
+
+    if (selected > 0) {
+      add(
+        Pill(
+          filled: true,
+          round: true,
+          label: '$selected ${l.selected}',
+          palette: p,
+          onTap: c.clearSelection,
+        ),
+      );
+      add(
+        TextLink(
+          label: l.clear,
+          palette: p,
+          fontSize: solution.fonts.chipFs,
+          color: p.ashDim,
+          onTap: c.clearSelection,
+        ),
+      );
+    }
+    if (out != null) {
+      add(
+        GoldButton(
+          outline: true,
           label: l.batida,
           palette: p,
-          tone: p.gold,
-          ink: p.goldInk,
+          fontSize: solution.fonts.chipFs,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           onTap: () => c.play(out),
         ),
-      if (end != null)
+      );
+    }
+    if (end != null) {
+      add(
         _StripButton(
           label: l.roundOver,
           palette: p,
@@ -876,8 +1048,30 @@ class _GameScreenState extends State<GameScreen> {
           ink: p.ash,
           onTap: () => c.play(end),
         ),
-    ];
+      );
+    }
+    return actions;
   }
+
+  /// Keeps the way your hand is ordered directly beneath the cards it moves.
+  Widget _handOrder(
+    TableSolution solution,
+    AppPrefs prefs,
+    Palette p,
+    Copy l,
+  ) => Positioned.fromRect(
+    rect: solution.handOrderToggle,
+    child: Center(
+      child: HandOrderToggle(
+        suitLabel: l.orderBySuit,
+        rankLabel: l.orderByRank,
+        rankSelected: prefs.handOrder == HandOrder.rank,
+        palette: p,
+        onChanged: (rank) =>
+            prefs.setHandOrder(rank ? HandOrder.rank : HandOrder.suit),
+      ),
+    ),
+  );
 
   String _coach(TableView view, Copy l) {
     if (view.roundOver || view.matchOver) return '';
@@ -891,30 +1085,6 @@ class _GameScreenState extends State<GameScreen> {
     if (c.canMeldSelection) return l.coachReady;
     if (c.selection.length == 1) return l.coachDiscard;
     return l.coachPlay;
-  }
-
-  Widget _whyNot(TableMetrics m, Copy l, Palette p) {
-    final text = _refusalText(l);
-    return Positioned(
-      left: m.margin,
-      right: m.margin,
-      top: m.whyNotY,
-      height: 26,
-      child: text == null
-          ? const SizedBox.shrink()
-          : Row(
-              children: [
-                Text(l.whyNot, style: mono(10, color: p.pink)),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    text,
-                    style: T.body(13, color: p.ash, height: 1.4),
-                  ),
-                ),
-              ],
-            ),
-    );
   }
 
   /// The host's own words win: it knows the reason, and it phrased it. The
@@ -937,10 +1107,8 @@ class _GameScreenState extends State<GameScreen> {
 
 /// The table's toggles, opened out.
 ///
-/// On a wide table these are four pills in the header. A narrow one has no room
-/// for them there, and at ten-point mono they were never really big enough to
-/// hit anyway — so they become the same choice rows the setup screen already
-/// uses, at the size a thumb expects.
+/// The header always folds these into the same choice rows the setup screen
+/// already uses, at the size a thumb expects.
 class _SettingsSheet extends StatelessWidget {
   final AppPrefs prefs;
   final Palette palette;
@@ -965,67 +1133,69 @@ class _SettingsSheet extends StatelessWidget {
       child: ColoredBox(
         color: p.scrim,
         child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: SheetCard(
-              palette: p,
-              children: [
-                Text(
-                  l.settingsTitle,
-                  style: T.display(24, tracking: -0.8, color: p.text),
-                ),
-                const SizedBox(height: 20),
-                ChoiceField(
-                  label: l.handOrder,
-                  palette: p,
-                  children: [
-                    Segment(
-                      label: l.orderBySuit,
-                      selected: prefs.handOrder == HandOrder.suit,
-                      palette: p,
-                      onTap: () => prefs.setHandOrder(HandOrder.suit),
-                    ),
-                    Segment(
-                      label: l.orderByRank,
-                      selected: prefs.handOrder == HandOrder.rank,
-                      palette: p,
-                      onTap: () => prefs.setHandOrder(HandOrder.rank),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                ChoiceRow(
-                  children: [
-                    Segment(
-                      label: prefs.sound ? l.soundOn : l.soundOff,
-                      selected: prefs.sound,
-                      palette: p,
-                      onTap: prefs.toggleSound,
-                    ),
-                    Segment(
-                      label: prefs.dark ? l.themeLight : l.themeDark,
-                      selected: false,
-                      palette: p,
-                      onTap: prefs.toggleTheme,
-                    ),
-                    Segment(
-                      label: prefs.lang.toggleLabel,
-                      selected: false,
-                      palette: p,
-                      onTap: prefs.toggleLang,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                Center(
-                  child: TextLink(
-                    label: l.close,
-                    palette: p,
-                    color: p.ashDim,
-                    onTap: onClose,
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: SheetCard(
+                palette: p,
+                children: [
+                  Text(
+                    l.settingsTitle,
+                    style: T.display(24, tracking: -0.8, color: p.text),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 20),
+                  ChoiceField(
+                    label: l.handOrder,
+                    palette: p,
+                    children: [
+                      Segment(
+                        label: l.orderBySuit,
+                        selected: prefs.handOrder == HandOrder.suit,
+                        palette: p,
+                        onTap: () => prefs.setHandOrder(HandOrder.suit),
+                      ),
+                      Segment(
+                        label: l.orderByRank,
+                        selected: prefs.handOrder == HandOrder.rank,
+                        palette: p,
+                        onTap: () => prefs.setHandOrder(HandOrder.rank),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  ChoiceRow(
+                    children: [
+                      Segment(
+                        label: prefs.sound ? l.soundOn : l.soundOff,
+                        selected: prefs.sound,
+                        palette: p,
+                        onTap: prefs.toggleSound,
+                      ),
+                      Segment(
+                        label: prefs.dark ? l.themeLight : l.themeDark,
+                        selected: false,
+                        palette: p,
+                        onTap: prefs.toggleTheme,
+                      ),
+                      Segment(
+                        label: prefs.lang.toggleLabel,
+                        selected: false,
+                        palette: p,
+                        onTap: prefs.toggleLang,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  Center(
+                    child: TextLink(
+                      label: l.close,
+                      palette: p,
+                      color: p.ashDim,
+                      onTap: onClose,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -1055,7 +1225,7 @@ class _MeldSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = palette;
     final l = context.copy;
-    final scale = TableMetrics.landscape.meldScale;
+    const scale = _kMeldSheetCardScale;
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -1063,66 +1233,68 @@ class _MeldSheet extends StatelessWidget {
       child: ColoredBox(
         color: p.scrim,
         child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Container(
-              padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
-              decoration: BoxDecoration(
-                color: p.sheet,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: p.line),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        meldLabel(meld),
-                        style: mono(10, color: p.ash, tracking: 1.4),
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
-                        '${meld.points}',
-                        style: mono(
-                          10,
-                          color: meld.isCanastra
-                              ? (meld.isClean ? p.gold : p.pink)
-                              : p.ashDim,
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+                decoration: BoxDecoration(
+                  color: p.sheet,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: p.line),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          meldLabel(meld),
+                          style: mono(10, color: p.ash, tracking: 1.4),
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  Wrap(
-                    spacing: 4,
-                    runSpacing: 4,
-                    children: [
-                      for (var i = 0; i < meld.cards.length; i++)
-                        SizedBox(
-                          width: kCardWidth * scale,
-                          height: kCardHeight * scale,
-                          child: FittedBox(
-                            child: PlayingCard(
-                              card: meld.cards[i],
-                              palette: p,
-                              asWild: meld.wildIndices.contains(i),
-                            ),
+                        const SizedBox(width: 12),
+                        Text(
+                          '${meld.points}',
+                          style: mono(
+                            10,
+                            color: meld.isCanastra
+                                ? (meld.isClean ? p.gold : p.pink)
+                                : p.ashDim,
                           ),
                         ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  Center(
-                    child: TextLink(
-                      label: l.close,
-                      palette: p,
-                      color: p.ashDim,
-                      onTap: onClose,
+                      ],
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 14),
+                    Wrap(
+                      spacing: 4,
+                      runSpacing: 4,
+                      children: [
+                        for (var i = 0; i < meld.cards.length; i++)
+                          SizedBox(
+                            width: kCardWidth * scale,
+                            height: kCardHeight * scale,
+                            child: FittedBox(
+                              child: PlayingCard(
+                                card: meld.cards[i],
+                                palette: p,
+                                asWild: meld.wildIndices.contains(i),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Center(
+                      child: TextLink(
+                        label: l.close,
+                        palette: p,
+                        color: p.ashDim,
+                        onTap: onClose,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -1156,34 +1328,36 @@ class _ConfirmLeave extends StatelessWidget {
       child: ColoredBox(
         color: p.scrim,
         child: Center(
-          child: Container(
-            width: 380,
-            padding: const EdgeInsets.fromLTRB(32, 28, 32, 26),
-            decoration: BoxDecoration(
-              color: p.sheet,
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: p.line),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  copy.leaveTitle,
-                  style: T.display(24, tracking: -0.8, color: p.text),
-                ),
-                const SizedBox(height: 22),
-                MintButton(label: copy.leaveStay, palette: p, onTap: onStay),
-                const SizedBox(height: 16),
-                Center(
-                  child: TextLink(
-                    label: copy.leaveConfirm,
-                    palette: p,
-                    color: p.pink,
-                    onTap: onLeave,
+          child: SingleChildScrollView(
+            child: Container(
+              width: 380,
+              padding: const EdgeInsets.fromLTRB(32, 28, 32, 26),
+              decoration: BoxDecoration(
+                color: p.sheet,
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: p.line),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    copy.leaveTitle,
+                    style: T.display(24, tracking: -0.8, color: p.text),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 22),
+                  MintButton(label: copy.leaveStay, palette: p, onTap: onStay),
+                  const SizedBox(height: 16),
+                  Center(
+                    child: TextLink(
+                      label: copy.leaveConfirm,
+                      palette: p,
+                      color: p.pink,
+                      onTap: onLeave,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -1240,11 +1414,10 @@ class _SeatChip extends StatelessWidget {
   final bool toPlay;
   final bool partner;
   final Palette palette;
-
-  /// How much room the name may take. Online names come from players, so on a
-  /// narrow table three of them would otherwise push the card counts off the
-  /// felt.
-  final double nameWidth;
+  final double avatarSize;
+  final double nameFontSize;
+  final double metaFontSize;
+  final String semanticsLabel;
 
   const _SeatChip({
     required this.name,
@@ -1252,56 +1425,69 @@ class _SeatChip extends StatelessWidget {
     required this.toPlay,
     required this.partner,
     required this.palette,
-    required this.nameWidth,
+    required this.avatarSize,
+    required this.nameFontSize,
+    required this.metaFontSize,
+    required this.semanticsLabel,
   });
 
   @override
   Widget build(BuildContext context) {
     final p = palette;
-    return AnimatedContainer(
-      duration: Motion.of(context, Motion.base),
-      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
-      decoration: BoxDecoration(
-        color: p.panel,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: toPlay ? p.mint : p.line),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 22,
-            height: 22,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: partner ? p.mint : p.avatar,
-              borderRadius: BorderRadius.circular(11),
-            ),
-            child: Text(
-              name.isEmpty ? '?' : name.characters.first.toUpperCase(),
-              style: mono(10, color: partner ? p.mintInk : p.avatarInk),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Flexible(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: nameWidth),
-              child: Text(
-                name,
-                overflow: TextOverflow.ellipsis,
-                softWrap: false,
-                style: T.title(13, color: p.text),
+    return Semantics(
+      label: semanticsLabel,
+      excludeSemantics: true,
+      child: AnimatedContainer(
+        duration: Motion.of(context, Motion.base),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: p.panel,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: toPlay ? p.mint : p.line),
+        ),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: avatarSize,
+                height: avatarSize,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: partner ? p.mint : p.avatar,
+                  shape: BoxShape.circle,
+                ),
+                child: Text(
+                  name.isEmpty ? '?' : name.characters.first.toUpperCase(),
+                  style: mono(
+                    metaFontSize,
+                    color: partner ? p.mintInk : p.avatarInk,
+                  ),
+                ),
               ),
-            ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  name,
+                  overflow: TextOverflow.ellipsis,
+                  softWrap: false,
+                  style: T.title(nameFontSize, color: p.text),
+                ),
+              ),
+              const SizedBox(width: 6),
+              // Two cards or fewer is a threat, and the wild colour is the app's
+              // word for "watch out".
+              Text(
+                '$cards',
+                style: mono(
+                  metaFontSize,
+                  color: cards <= 2 ? p.pink : p.ashDim,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          // Two cards or fewer is a threat, and the wild colour is the app's
-          // word for "watch out".
-          Text(
-            '$cards',
-            style: mono(13, color: cards <= 2 ? p.pink : p.ashDim),
-          ),
-        ],
+        ),
       ),
     );
   }

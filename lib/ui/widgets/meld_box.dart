@@ -15,9 +15,9 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../engine/cards.dart';
-import '../../game/move_index.dart';
 import '../../multiplayer/table_view.dart';
 import '../app_scope.dart';
+import '../copy.dart';
 import '../theme.dart';
 import 'controls.dart';
 
@@ -26,6 +26,16 @@ class MeldBox extends StatefulWidget {
   final Palette palette;
   final double width;
   final double height;
+
+  /// Reference width for one card inside the meld.
+  ///
+  /// Seventy-five keeps the old 12px corner at the default scale; boxes that
+  /// are narrower than that cap the value to avoid oversized caption chrome.
+  final double meldCardWidth;
+
+  /// Caption sizing remains caller-controlled until the fluid table supplies
+  /// the final rendered meld-card width.
+  final double captionFontSize;
 
   /// The selection would fit here.
   final bool open;
@@ -53,7 +63,10 @@ class MeldBox extends StatefulWidget {
     this.compact = false,
     this.open = false,
     this.onTap,
-  });
+    this.meldCardWidth = 75,
+    this.captionFontSize = 9,
+  }) : assert(meldCardWidth > 0),
+       assert(captionFontSize > 0);
 
   @override
   State<MeldBox> createState() => _MeldBoxState();
@@ -105,6 +118,15 @@ class _MeldBoxState extends State<MeldBox> with TickerProviderStateMixin {
     final p = widget.palette;
     final l = context.copy;
     final accent = meld.isClean ? p.gold : p.pink;
+    final mcw = math.min(widget.meldCardWidth, widget.width);
+    final cornerRadius = mcw * 0.16;
+    final captionPad = mcw * 0.11;
+    final captionBottom = math.max(5.0, mcw * 0.11);
+    final captionGap = math.max(4.0, mcw * 0.09);
+    final capFs = widget.compact
+        ? widget.captionFontSize * 8 / 9
+        : widget.captionFontSize;
+    final strongBorderWidth = math.max(1.75, p.cardBorderW * 1.3);
     final spokenName = meld.isSequence
         ? l.runName(
             rankAt(meld.startPos!),
@@ -120,82 +142,102 @@ class _MeldBoxState extends State<MeldBox> with TickerProviderStateMixin {
       button: widget.onTap != null,
       child: Hoverable(
         onTap: widget.onTap,
-        builder: (hovered) => SizedBox(
-          width: widget.width,
-          height: widget.height,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Positioned.fill(
-                child: AnimatedContainer(
-                  duration: Motion.of(context, Motion.quick),
-                  decoration: BoxDecoration(
-                    color: widget.open ? p.panelHot : p.panel,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: widget.open || hovered
-                          ? p.mint
-                          : meld.isCanastra
-                          ? accent
-                          : p.line,
-                      width: widget.open ? 2 : 1,
+        builder: (hovered) {
+          final active = widget.open || hovered;
+          final borderColor = meld.isCanastra
+              ? accent
+              : active
+              ? p.mint
+              : p.line;
+          final borderWidth = meld.isCanastra || active
+              ? strongBorderWidth
+              : p.cardBorderW;
+
+          return SizedBox(
+            width: widget.width,
+            height: widget.height,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Positioned.fill(
+                  child: AnimatedContainer(
+                    duration: Motion.of(context, Motion.quick),
+                    decoration: BoxDecoration(
+                      color: widget.open ? p.panelHot : p.panel,
+                      borderRadius: BorderRadius.circular(cornerRadius),
+                      border: Border.all(
+                        color: borderColor,
+                        width: borderWidth,
+                      ),
+                      boxShadow: widget.open ? p.glowShadow() : null,
                     ),
-                    boxShadow: widget.open ? p.glowShadow() : null,
                   ),
                 ),
-              ),
-              // The caption sits under the cards, which the layout draws on top.
-              Positioned(
-                left: widget.compact ? 6 : 9,
-                right: widget.compact ? 6 : 9,
-                bottom: widget.compact ? 4 : 6,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        widget.compact ? '×${meld.size}' : meldLabel(meld),
+                // Keeping the complete caption inside the frame prevents a
+                // newly earned seal from borrowing space from its neighbour.
+                Positioned(
+                  left: captionPad,
+                  right: captionPad,
+                  bottom: captionBottom,
+                  // The solver reserves the rigid points width. The label gets
+                  // the remaining room and only ellipsizes under real pressure.
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          widget.compact
+                              ? '×${meld.size}'
+                              : shortMeldLabel(context.prefs.lang, meld),
+                          overflow: TextOverflow.ellipsis,
+                          softWrap: false,
+                          style: mono(
+                            capFs,
+                            tracking: capFs * 0.05,
+                            color: p.ash,
+                          ).copyWith(fontWeight: FontWeight.w500),
+                        ),
+                      ),
+                      SizedBox(width: captionGap),
+                      if (meld.isCanastra) ...[
+                        Flexible(
+                          fit: FlexFit.loose,
+                          child: _Seal(
+                            progress: _stamp,
+                            clean: meld.isClean,
+                            palette: p,
+                            captionFontSize: capFs,
+                            meldCardWidth: mcw,
+                          ),
+                        ),
+                        SizedBox(width: captionGap),
+                      ],
+                      Text(
+                        '${meld.points}',
                         overflow: TextOverflow.ellipsis,
                         softWrap: false,
-                        style: mono(widget.compact ? 8 : 9, color: p.ash),
+                        textAlign: TextAlign.right,
+                        style: mono(
+                          capFs,
+                          color: meld.isCanastra ? accent : p.ashDim,
+                        ).copyWith(fontWeight: FontWeight.w500),
                       ),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      '${meld.points}',
-                      overflow: TextOverflow.ellipsis,
-                      softWrap: false,
-                      style: mono(
-                        widget.compact ? 8 : 9,
-                        color: meld.isCanastra ? accent : p.ashDim,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (meld.isCanastra)
-                Positioned(
-                  right: widget.compact ? -3 : -8,
-                  top: widget.compact ? -3 : -7,
-                  child: _Seal(
-                    progress: _stamp,
-                    clean: meld.isClean,
-                    palette: p,
-                    compact: widget.compact,
+                    ],
                   ),
                 ),
-              if (widget.bonus != 0)
-                Positioned(
-                  right: -6,
-                  top: -16,
-                  child: _FlyingScore(
-                    progress: _fly,
-                    value: widget.bonus,
-                    palette: p,
+                if (widget.bonus != 0)
+                  Positioned(
+                    right: captionPad,
+                    bottom: captionBottom + capFs,
+                    child: _FlyingScore(
+                      progress: _fly,
+                      value: widget.bonus,
+                      palette: p,
+                    ),
                   ),
-                ),
-            ],
-          ),
-        ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -203,27 +245,27 @@ class _MeldBoxState extends State<MeldBox> with TickerProviderStateMixin {
 
 /// LIMPA or SUJA, slammed down like a rubber stamp: in from far too big,
 /// undershooting once before it settles.
-///
-/// A stacked meld is barely wider than the card it shows, so there the stamp is
-/// struck from a smaller die — the same word at the same angle in the same two
-/// colours, only sized to hang off its own corner rather than across the row
-/// label above it and the meld beside it.
 class _Seal extends StatelessWidget {
   final Animation<double> progress;
   final bool clean;
   final Palette palette;
-  final bool compact;
+  final double captionFontSize;
+  final double meldCardWidth;
 
   const _Seal({
     required this.progress,
     required this.clean,
     required this.palette,
-    required this.compact,
+    required this.captionFontSize,
+    required this.meldCardWidth,
   });
 
   @override
   Widget build(BuildContext context) {
     final accent = clean ? palette.gold : palette.pink;
+    final ink = clean ? palette.goldInk : Colors.white;
+    final sealFontSize = captionFontSize * 0.86;
+    final horizontalPadding = math.max(4.0, meldCardWidth * 0.09);
     return AnimatedBuilder(
       animation: progress,
       builder: (context, child) {
@@ -242,17 +284,22 @@ class _Seal extends StatelessWidget {
       },
       child: Container(
         padding: EdgeInsets.symmetric(
-          horizontal: compact ? 4 : 7,
-          vertical: compact ? 2 : 3,
+          horizontal: horizontalPadding,
+          vertical: 1,
         ),
         decoration: BoxDecoration(
-          color: palette.sealBg,
-          borderRadius: BorderRadius.circular(compact ? 3 : 4),
-          border: Border.all(color: accent, width: compact ? 1.2 : 1.6),
+          color: accent,
+          borderRadius: BorderRadius.circular(3),
         ),
         child: Text(
           clean ? 'LIMPA' : 'SUJA',
-          style: mono(compact ? 7 : 9, color: accent),
+          overflow: TextOverflow.ellipsis,
+          softWrap: false,
+          style: mono(
+            sealFontSize,
+            tracking: sealFontSize * 0.09,
+            color: ink,
+          ).copyWith(fontWeight: FontWeight.w500),
         ),
       ),
     );
